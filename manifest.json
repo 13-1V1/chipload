@@ -8,18 +8,36 @@
   "lang": "en-US",
   "dir": "ltr",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "orientation": "any",
   "background_color": "#020912",
   "theme_color": "#081a33",
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "favicon.png",
-      "sizes": "1024x1024",
+      "src": "assets/icons/app-192.png",
+      "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/app-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -28,28 +46,48 @@
       "short_name": "Feeds",
       "description": "Compute SFM, RPM, and feed rate for a material and tool.",
       "url": "./#tool-feeds",
-      "icons": [{ "src": "favicon.png", "sizes": "1024x1024" }]
+      "icons": [
+        {
+          "src": "assets/icons/app-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Bolt Circle",
       "short_name": "Bolt Circle",
       "description": "Lay out evenly spaced holes on a bolt circle with optional G-code.",
       "url": "./#tool-bolt",
-      "icons": [{ "src": "favicon.png", "sizes": "1024x1024" }]
+      "icons": [
+        {
+          "src": "assets/icons/app-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Thread",
       "short_name": "Thread",
       "description": "Tap-drill size and basic thread geometry for UN and metric threads.",
       "url": "./#tool-thread",
-      "icons": [{ "src": "favicon.png", "sizes": "1024x1024" }]
+      "icons": [
+        {
+          "src": "assets/icons/app-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Right Triangle",
       "short_name": "Triangle",
       "description": "Solve a right triangle from any two knowns.",
       "url": "./#tool-triangle",
-      "icons": [{ "src": "favicon.png", "sizes": "1024x1024" }]
+      "icons": [
+        {
+          "src": "assets/icons/app-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }

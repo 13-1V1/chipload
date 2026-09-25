@@ -1,4 +1,4 @@
-export const CORE_VERSION = "3.1.0";
+export const CORE_VERSION = "3.2.0";
 
 export const CALCULATION_SOURCES = Object.freeze({
   tapDrill: {
@@ -54,7 +54,8 @@ export function fmt(value, places = 3) {
 }
 
 export function parseFraction(value) {
-  const text = String(value ?? "").trim();
+  // A single comma is accepted as a decimal separator, never as a grouping mark.
+  const text = String(value ?? "").trim().replace(/^([+-]?\d+),(\d+)$/, "$1.$2");
   if (!text) return NaN;
   const match = text.match(/^([+-])?(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)$/);
   if (match) {

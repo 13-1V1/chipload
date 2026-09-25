@@ -1,12 +1,17 @@
 {
   "name": "marcos-machinist-calculator",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test core.test.mjs pages.test.mjs",
-    "check": "node --check calc-core.js && node --check sw.js && node --check serve.mjs && node --test core.test.mjs pages.test.mjs",
+    "test": "node --test core.test.mjs pages.test.mjs worker.test.mjs",
+    "check": "node scripts/check.mjs",
     "serve": "node serve.mjs",
-    "serve:pages": "node serve.mjs --base=/Machinist_calc/"
+    "serve:pages": "node serve.mjs --base=/Machinist_calc/",
+    "test:browser": "node --test browser.test.mjs",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
   }
 }

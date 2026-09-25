@@ -1,66 +1,46 @@
-const APP_VERSION = "3.1.0";
-const CACHE = `marcos-calc-v${APP_VERSION}`;
-const PRECACHE = ["./", "./index.html", "./calc-core.js", "./favicon.png", "./manifest.json", "./tests.html", "./assets/fonts/ibm-plex-sans-latin.woff2", "./assets/fonts/roboto-slab-700-latin.woff2"];
+const APP_VERSION = "3.2.0";
+const CACHE_PREFIX = "marcos-calc-v";
+const CACHE = `${CACHE_PREFIX}${APP_VERSION}`;
+const PRECACHE = ["./index.html", "./app.css?v=3.2.0", "./app.js?v=3.2.0", "./calc-core.js?v=3.2.0", "./ui-state.js?v=3.2.0", "./units.js?v=3.2.0", "./persistence.js?v=3.2.0", "./mobile-ui.js?v=3.2.0", "./pwa.js?v=3.2.0", "./favicon.png", "./manifest.json", "./tests.html", "./assets/fonts/ibm-plex-sans-latin.woff2", "./assets/fonts/roboto-slab-700-latin.woff2", "./assets/icons/brand-96.png", "./assets/icons/brand-192.png", "./assets/icons/apple-touch-180.png", "./assets/icons/app-192.png", "./assets/icons/app-512.png", "./assets/icons/maskable-512.png"];
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(PRECACHE))
-  );
-  // Do NOT auto skipWaiting. The page offers the user a "Reload" toast that
-  // posts {type: "SKIP_WAITING"} when accepted — this avoids pulling the rug
-  // out from a user mid-calculation when a new version is deployed.
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)));
+  // Wait for explicit acceptance before replacing an installed version.
 });
-
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+self.addEventListener("activate", event => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE).map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
-
-self.addEventListener("message", (e) => {
-  if (e.data && e.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-  if (e.data && e.data.type === "GET_VERSION" && e.source) {
-    e.source.postMessage({ type: "APP_VERSION", version: APP_VERSION });
-  }
+self.addEventListener("message", event => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+  if (event.data?.type === "GET_VERSION" && event.source) event.source.postMessage({type:"APP_VERSION",version:APP_VERSION});
 });
-
-self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
-  if (e.request.mode === "navigate") {
-    e.respondWith(
-      fetch(e.request)
-        .then((response) => {
-          if (response.ok) {
-            const pathname = new URL(e.request.url).pathname;
-            const requestCopy = response.clone();
-            const fallbackCopy = response.clone();
-            caches.open(CACHE).then((cache) => {
-              cache.put(e.request, requestCopy);
-              if (pathname.endsWith("/") || pathname.endsWith("/index.html")) cache.put("./index.html", fallbackCopy);
-            });
-          }
-          return response;
-        })
-        .catch(() => caches.match(e.request).then((cached) => cached || caches.match("./index.html")))
-    );
-    return;
-  }
-  e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const network = fetch(e.request)
-        .then((response) => {
-          if (response.ok) {
-            caches.open(CACHE).then((c) => c.put(e.request, response.clone()));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
-  );
+self.addEventListener("fetch", event => {
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET" || !url.href.startsWith(self.registration.scope)) return;
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    if (event.request.mode === "navigate") {
+      try {
+        const response = await fetch(event.request);
+        if (response.ok && (url.pathname.endsWith("/") || url.pathname.endsWith("/index.html"))) {
+          await cache.put("./index.html", response.clone());
+        }
+        return response;
+      } catch {
+        return await cache.match(event.request) || await cache.match("./index.html") || Response.error();
+      }
+    }
+    // Versioned modules keep an existing page on one consistent release.
+    const cached = await cache.match(event.request);
+    if (cached) return cached;
+    try {
+      const response = await fetch(event.request);
+      if (response.ok) await cache.put(event.request, response.clone());
+      return response;
+    } catch { return Response.error(); }
+  })());
 });

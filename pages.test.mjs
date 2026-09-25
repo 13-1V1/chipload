@@ -9,19 +9,19 @@ const read = (name) => readFile(resolve(root, name), "utf8");
 test("GitHub Pages entry point uses repository-relative application assets", async () => {
   const html = await read("index.html");
 
-  assert.match(html, /<script\s+type="module">/);
-  assert.match(html, /from\s+"\.\/calc-core\.js"/);
-  assert.match(html, /navigator\.serviceWorker\.register\("\.\/sw\.js"\)/);
+  assert.match(html, /<script\s+type="module" src="\.\/app\.js\?v=/);
+  assert.match(await read("app.js"), /from\s+"\.\/calc-core\.js\?v=/);
+  assert.match(await read("pwa.js"), /navigator\.serviceWorker\.register\("\.\/sw\.js"\)/);
   assert.match(html, /<link\s+rel="manifest"\s+href="manifest\.json"/);
 
-  const assetReferences = [...html.matchAll(/(?:src|href)="([^"#?]+)"/g)]
+  const assetReferences = [...html.matchAll(/(?:src|href)="([^"#]+)"/g)]
     .map((match) => match[1])
     .filter((reference) => !/^(?:https?:|data:|mailto:|tel:)/i.test(reference));
 
   assert.ok(assetReferences.length > 0);
   for (const reference of assetReferences) {
     assert.ok(!reference.startsWith("/"), `${reference} must remain relative for a project Pages URL`);
-    await access(resolve(root, reference));
+    await access(resolve(root, reference.split("?")[0]));
   }
 });
 
@@ -52,26 +52,19 @@ test("service worker precache is complete and repository-relative", async () => 
 
   for (const reference of precache) {
     assert.ok(reference === "./" || reference.startsWith("./"), `${reference} must be relative`);
-    if (reference !== "./") await access(resolve(root, reference.slice(2)));
+    if (reference !== "./") await access(resolve(root, reference.slice(2).split("?")[0]));
   }
   assert.ok(precache.includes("./index.html"));
-  assert.ok(precache.includes("./calc-core.js"));
+  const html = await read("index.html");
+  const modules = ["app.js", "units.js", "ui-state.js", "mobile-ui.js", "persistence.js", "pwa.js"];
+  const references = [...html.matchAll(/(?:src|href)="(\.\/[^"#]+\?v=[^"]+)"/g)].map(match => match[1]);
+  for (const file of modules) {
+    references.push(...[...(await read(file)).matchAll(/from\s+"(\.\/[^"#]+\.js\?v=[^"]+)"/g)].map(match => match[1]));
+  }
+  for (const reference of references) assert.ok(precache.includes(reference), `Offline cache is missing ${reference}`);
   assert.ok(precache.includes("./manifest.json"));
   assert.ok(precache.includes("./assets/fonts/ibm-plex-sans-latin.woff2"));
   assert.ok(precache.includes("./assets/fonts/roboto-slab-700-latin.woff2"));
-});
-
-test("responsive UI contracts keep primary mobile workflows discoverable", async () => {
-  const html = await read("index.html");
-
-  assert.match(html, /@font-face[\s\S]*ibm-plex-sans-latin\.woff2/);
-  assert.match(html, /@font-face[\s\S]*roboto-slab-700-latin\.woff2/);
-  assert.match(html, /id="liveCalcToggle" aria-label="Live calculation"/);
-  assert.match(html, /id="sfAdvancedOptions"/);
-  assert.match(html, /id="sfAutoSummary"/);
-  assert.match(html, /role="tablist" aria-label="Shop workspace sections"/);
-  assert.equal((html.match(/data-workspace-tab=/g) || []).length, 5);
-  assert.equal((html.match(/data-workspace-panel=/g) || []).length, 5);
 });
 
 test("application and offline cache versions stay synchronized", async () => {

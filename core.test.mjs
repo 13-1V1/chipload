@@ -29,12 +29,9 @@ const near = (actual, expected, tolerance = 1e-9) => {
   assert.ok(Math.abs(actual - expected) <= tolerance, `expected ${expected} ± ${tolerance}, got ${actual}`);
 };
 
-test("application module parses and HTML ids are unique", () => {
+test("application entry point is modular and HTML ids are unique", () => {
   const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
-  const moduleMatch = html.match(/<script type="module">([\s\S]*?)<\/script>/);
-  assert.ok(moduleMatch, "index.html must contain its module script");
-  const body = moduleMatch[1].replace(/^\s*import\s*\{[\s\S]*?\}\s*from\s*["'][^"']+["'];\s*/, "");
-  assert.doesNotThrow(() => new Function(body));
+  assert.match(html, /<script type="module" src="\.\/app\.js\?v=/);
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, "duplicate HTML id found");
 });
@@ -43,7 +40,11 @@ test("web app manifest is valid JSON and describes the real icon size", () => {
   const manifest = JSON.parse(readFileSync(new URL("./manifest.json", import.meta.url), "utf8"));
   assert.equal(manifest.id, "./");
   assert.equal(manifest.scope, "./");
-  assert.equal(manifest.icons[0].sizes, "1024x1024");
+  for (const icon of manifest.icons) {
+    const png = readFileSync(new URL(icon.src, import.meta.url));
+    assert.equal(icon.sizes, `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`);
+  }
+  assert.ok(manifest.icons.some(icon => icon.purpose === "maskable"));
 });
 
 test("formatter preserves integer trailing zeros", () => {
@@ -58,6 +59,9 @@ test("dimensions support decimals, fractions, mixed fractions, and suffix conver
   near(parseDimension("1 1/4", "in"), 1.25);
   near(parseDimension("25.4 mm", "in"), 1);
   near(parseDimension('0.5 in', "mm"), 12.7);
+  near(parseDimension("-0,5 mm", "mm"), -0.5);
+  near(parseDimension("1 1/2", "in"), 1.5);
+  assert.ok(Number.isNaN(parseDimension("1,2,3", "mm")));
 });
 
 test("thread parser recognizes Unified, machine screw, and metric forms", () => {

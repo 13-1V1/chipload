@@ -4,7 +4,7 @@ A responsive, offline-capable machinist calculator for threads, inspection, bolt
 
 **Live app:** [ianarsenault-tn.github.io/Machinist_calc](https://ianarsenault-tn.github.io/Machinist_calc/)
 
-**Current release:** 3.1.0
+**Current release:** 3.2.0
 
 ## Overview
 
@@ -21,7 +21,19 @@ The app includes tools for:
 - Tapping feed, thread milling, reamer allowance, sine bars, tapers, ball-nose scallops, and tolerance stacks
 - Reusable machine, tool, material, and job/setup profiles stored on the device
 
-## What's New in 3.1.0
+## What's New in 3.2.0
+
+- Mobile Calculate/answer bar, shorter primary forms, and explicit calculations that bring the answer into view
+- Live updates preserve keyboard focus and expanded details; invalid or changed inputs mark the previous answer stale and disable Copy, Share, Print, and exports
+- Inch/metric switches convert entered dimensions, speed overrides, pitch/TPI, coordinates, and saved profile values; clearing a form preserves its units
+- Decimal-comma parsing and mobile sign, fraction, mixed-fraction space, Next, and Done controls
+- Readable form labels, announced explicit results, bounded profile actions, and a mobile Shop section picker
+- Working home-screen shortcuts, installation help, smaller branding assets, and dedicated install/maskable icons
+- First offline installation keeps unsaved input on screen; later updates activate when accepted, with form edits flushed first
+- Separate style/UI modules, debounced writes of changed forms, deduplicated history, and scoped offline-cache cleanup
+- Chromium and WebKit regression checks in CI for calculations, units, mobile layouts, persistence, and offline behavior
+
+## Previous release: 3.1.0
 
 - Reworked responsive header and calculator navigation for desktop, tablet, and narrow mobile screens down to 320 px
 - Increased interactive controls to a minimum 44 px touch target where practical
@@ -231,7 +243,7 @@ The choice is saved in `localStorage` and re-applied on every visit. On mobile, 
 
 ## Auto-Calculate (Live) Mode
 
-Turn on the **Live** switch in the header to recalculate every tool automatically as you type. A short debounce (~250 ms) keeps the UI responsive while still updating results almost immediately. Validation warnings are suppressed in live mode so the last good result stays visible while you finish typing an incomplete value.
+Turn on the **Live** switch in the header to recalculate as you type. A short debounce (~250 ms) keeps entry responsive. Live updates keep the keyboard focus, scroll position, and expanded result details. Incomplete or invalid input displays an inline warning and marks the previous answer stale; copying, sharing, printing, and exporting remain disabled until a valid calculation completes. Explicit Calculate or Enter reveals the answer on phones and announces it to assistive technology.
 
 The preference is saved in `localStorage` and persists across reloads.
 
@@ -254,7 +266,7 @@ Number shortcuts are ignored while typing in form controls so they never fight w
 
 Every tool keeps a rolling list of the last five results. After any calculation, a collapsible **Recent** panel appears below the result. Clicking any entry restores the form values and recalculates immediately — useful when running the same thread spec or bolt pattern several times in a session.
 
-History is stored in the browser using `localStorage` and persists across page reloads.
+History is stored in the browser using `localStorage` and persists across page reloads. Repeating an identical input set moves its existing entry to the top; Live history waits until input settles.
 
 ## Shareable URLs
 
@@ -276,7 +288,7 @@ Marcos's Calculator can be installed as a Progressive Web App on any device that
 
 After the first load, the app caches itself and works fully without a network connection. This is intentional — shop floors are often WiFi dead zones.
 
-The service worker uses network-first navigation with an exact-page cache and offline app fallback. Static assets use stale-while-revalidate. The header reports connection state, and Shop setup reports the active core/offline-cache version.
+The service worker uses network-first navigation and an offline app fallback. Versioned application modules use cache-first loading so an open page keeps a consistent release. Cache cleanup affects only this app's cache prefix. First installation does not reload the page; later updates offer an Update button and save pending form edits before activation. The header reports connection state, and **Shop → Status & data** reports the active core/offline-cache version and offers installation help. Wait for the offline cache to show Ready before leaving the network.
 
 ## Project Structure
 
@@ -285,17 +297,30 @@ project-root/
 ├── .github/workflows/quality.yml
 ├── .nojekyll
 ├── assets/
+│   ├── brand-source.png
+│   ├── icons/
 │   └── fonts/
 │       ├── ibm-plex-sans-latin.woff2
 │       ├── roboto-slab-700-latin.woff2
 │       └── font license files
 ├── calc-core.js
+├── app.css
+├── app.js
+├── ui-state.js
+├── units.js
+├── mobile-ui.js
+├── persistence.js
+├── pwa.js
+├── browser.test.mjs
 ├── core.test.mjs
+├── worker.test.mjs
 ├── favicon.png
 ├── index.html
 ├── manifest.json
 ├── package.json
+├── package-lock.json
 ├── pages.test.mjs
+├── scripts/
 ├── serve.mjs
 ├── sw.js
 ├── tests.html
@@ -307,15 +332,21 @@ project-root/
 - `assets/fonts/`
   - Self-hosted IBM Plex Sans and Roboto Slab webfonts plus their license texts; both fonts are included in the offline precache
 - `favicon.png`
-  - Logo asset used for the browser favicon, touch icon, social preview image, and visible header branding
+  - 32 px browser favicon; `assets/icons/` contains header, touch, social, install, and maskable sizes generated from the preserved `assets/brand-source.png`
 - `index.html`
-  - Application structure, styling, and browser integration
+  - Semantic application structure and versioned module/style entry points
+- `app.css` and `app.js`
+  - Responsive styles and calculator/workspace integration
+- `ui-state.js`, `units.js`, `mobile-ui.js`, `persistence.js`, and `pwa.js`
+  - Result validity, loss-resistant unit conversion, mobile controls, changed-form persistence, and install/update behavior
 - `calc-core.js`
   - Shared pure calculation/parsing/formatting functions used by the app and tests
 - `core.test.mjs`
   - Dependency-free Node test suite
 - `pages.test.mjs`
   - GitHub Pages compatibility checks for relative assets, manifest scope, and service-worker precaching
+- `browser.test.mjs` and `worker.test.mjs`
+  - Chromium/WebKit user-flow regressions and isolated service-worker lifecycle/scope checks
 - `tests.html`
   - In-browser calculation harness
 - `serve.mjs`
@@ -323,7 +354,7 @@ project-root/
 - `manifest.json`
   - Web App Manifest for PWA installation (name, icons, theme color, display mode)
 - `sw.js`
-  - Service worker — handles offline caching with stale-while-revalidate
+  - Service worker — scoped offline caching and explicit update activation
 - `README.md`
   - Project documentation
 
@@ -354,6 +385,19 @@ Run the automated checks with:
 ```powershell
 npm test
 ```
+
+For syntax checks and mobile browser regressions (development dependencies only):
+
+```powershell
+npm ci
+npx playwright install chromium webkit
+npm run check
+npm run test:browser
+```
+
+On Linux, use `npx playwright install --with-deps chromium webkit`. The browser suite starts its own local Pages-subpath server and saves screenshots under `output/playwright/`. `CALC_BASE_URL` can point it at a separately hosted copy. Physical phone keyboards and installed-app behavior still benefit from device testing.
+
+To regenerate the existing brand's icons after editing its source image, run `npm run icons` with Chromium installed. No image generation service or production dependency is needed.
 
 ### Alternative local server
 
@@ -471,7 +515,8 @@ sudo apt install nginx
 2. Copy all project files into the default web root:
 
 ```bash
-sudo cp index.html calc-core.js manifest.json sw.js favicon.png tests.html /var/www/html/
+sudo cp index.html *.js app.css manifest.json favicon.png tests.html /var/www/html/
+sudo cp -r assets /var/www/html/
 ```
 
 3. Reload Nginx:
@@ -498,7 +543,8 @@ sudo apt install apache2
 2. Copy all project files into the default web root:
 
 ```bash
-sudo cp index.html calc-core.js manifest.json sw.js favicon.png tests.html /var/www/html/
+sudo cp index.html *.js app.css manifest.json favicon.png tests.html /var/www/html/
+sudo cp -r assets /var/www/html/
 ```
 
 3. Restart Apache:
@@ -548,14 +594,14 @@ All application assets, module imports, manifest URLs, shortcuts, and service-wo
 - The service worker (`sw.js`) and manifest (`manifest.json`) must be in the same directory as `index.html`
 - No backend runtime is required for production hosting
 - Theme, forms, histories, machine/tool/material libraries, and jobs are stored in the browser using `localStorage`
-- If you later split the project into multiple files, make sure relative paths remain correct
+- Keep the versioned entry/import URLs and service-worker precache entries in sync when publishing changes
 
 ## Usage Tips
 
 - Use the top navigation, number keys `1`–`8`, or `Ctrl`/`Cmd`+`K` to jump between tools quickly
 - On a wide monitor, flip the view toggle to **Multi-panel** to see every calculator at once
 - Turn on **Live** mode to see results update in real time as you tune a value
-- On mobile, choose one calculator from the compact picker; tap a populated result header to expand/collapse its details
+- On mobile, choose a calculator from the compact picker and use the bottom Calculate/answer bar; tap Show result details for the full breakdown
 - Tap any chip button (including machine screw sizes and operation presets) to load values and calculate in one tap
 - Use the **Recent** panel to rerun a previous setup without re-entering values
 - Use the **Share** button to send a link for shift handoffs or setup documentation — on mobile this opens the native share sheet
@@ -621,8 +667,8 @@ The main parts to edit are:
 
 - HTML structure for tool sections
 - CSS theme tokens and layout rules
-- Browser integration in `index.html` and pure math/result formatting in `calc-core.js`
-- `MACHINE_SCREW_DIAMETERS` and coarse metric pitch defaults in `calc-core.js`, plus standard thread/drill tables in `index.html`
+- Browser integration in `app.js` and the UI modules, styles in `app.css`, and pure math/result formatting in `calc-core.js`
+- `MACHINE_SCREW_DIAMETERS` and coarse metric pitch defaults in `calc-core.js`, plus standard thread/drill tables in `app.js`
 - `SF_DEFAULTS`, `MATERIAL_LABELS`, and `TOOL_LABELS` constants for speeds & feeds defaults and labels
 
 ## Contributing
