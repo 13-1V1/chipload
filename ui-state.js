@@ -1,5 +1,5 @@
 // Result validity is shared by the forms, result actions, and mobile answer bar.
-export function createResultState({ results, capture, context = () => null }) {
+export function createResultState({ results, capture, captureSnapshot = capture, context = () => null }) {
   const pendingMode = new WeakMap();
   const submissions = new WeakMap();
   const submissionTimers = new WeakMap();
@@ -15,7 +15,7 @@ export function createResultState({ results, capture, context = () => null }) {
   const announce = message => { if (announcer) announcer.textContent = message; };
 
   function disableActions(target, disabled) {
-    target.shell.querySelectorAll(".result-actions button, [data-to-mow], [data-bc-export]").forEach(button => { button.disabled = disabled; });
+    target.shell.querySelectorAll(".result-actions button, [data-copy-value], [data-to-mow], [data-bc-export]").forEach(button => { button.disabled = disabled; });
   }
   for (const [tool, target] of Object.entries(results)) {
     target.state = "empty";
@@ -112,7 +112,7 @@ export function createResultState({ results, capture, context = () => null }) {
   }
   // Guard all derived-result actions, including program/coordinate exports.
   document.addEventListener("click", event => {
-    const button = event.target.closest?.(".result-actions button, [data-to-mow], [data-bc-export]");
+    const button = event.target.closest?.(".result-actions button, [data-copy-value], [data-to-mow], [data-bc-export]");
     const tool = button?.closest("[data-tool]")?.dataset.tool;
     if (tool && !isCurrent(tool)) {
       event.preventDefault();
@@ -141,7 +141,7 @@ export function createResultState({ results, capture, context = () => null }) {
       if (!current) clearFieldErrors(form);
       target.state = current ? "current" : "empty";
       target.snapshot = current ? fingerprint(form) : null;
-      target.formState = current ? structuredClone(capture(form)) : null;
+      target.formState = current ? structuredClone(captureSnapshot(form)) : null;
       target.shell.dataset.resultState = target.state;
       const more = target.shell.querySelector(".result-more");
       if (more) more.hidden = !current;

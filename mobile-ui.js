@@ -1,4 +1,8 @@
 export function initMobileUI({ results, state, submit }) {
+  document.body.classList.add("has-mobile-dock");
+  document.querySelectorAll(".tool-form").forEach(form => {
+    form.setAttribute("aria-label", form.closest(".tool-card").querySelector("h2").textContent);
+  });
   const dock = document.getElementById("mobileDock");
   const answer = document.getElementById("mobileAnswer");
   const action = document.getElementById("mobileCalculate");
@@ -46,6 +50,11 @@ export function initMobileUI({ results, state, submit }) {
     const summary = document.createElement("summary");
     summary.textContent = "More";
     more.append(summary, print);
+    const fullFeedResult = actions.querySelector("#sfCopy");
+    if (fullFeedResult) {
+      fullFeedResult.textContent = "Copy all details";
+      more.append(fullFeedResult);
+    }
     actions.append(more);
   });
   updateDock();

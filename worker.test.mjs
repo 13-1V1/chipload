@@ -9,7 +9,7 @@ function worker(overrides = {}) {
   let claims = 0;
   let skips = 0;
   const caches = {
-    keys: async () => ["another-app-v1", "marcos-calc-v3.1.0", "marcos-calc-v3.2.0"],
+    keys: async () => ["another-app-v1", "marcos-calc-v3.1.0", "marcos-calc-v3.3.0"],
     delete: async key => deleted.push(key),
     open: async () => ({ addAll: async () => {}, match: async () => undefined }),
   };

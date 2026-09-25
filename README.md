@@ -4,7 +4,7 @@ A responsive, offline-capable machinist calculator for threads, inspection, bolt
 
 **Live app:** [ianarsenault-tn.github.io/Machinist_calc](https://ianarsenault-tn.github.io/Machinist_calc/)
 
-**Current release:** 3.2.0
+**Current release:** 3.3.0
 
 ## Overview
 
@@ -21,7 +21,16 @@ The app includes tools for:
 - Tapping feed, thread milling, reamer allowance, sine bars, tapers, ball-nose scallops, and tolerance stacks
 - Reusable machine, tool, material, and job/setup profiles stored on the device
 
-## What's New in 3.2.0
+## What's New in 3.3.0
+
+- Milling, drilling, and reaming are primary Speeds & Feeds inputs.
+- Mobile forms use the calculator picker and bottom Calculate action; repeated headings and empty result cards are removed. The form Calculate button returns while the mobile keyboard is open.
+- RPM and feed have separate values, units, and copy actions, with visible machine-limit status. Result details are collapsed on every screen size.
+- Recent calculations show their inputs; up to 12 favorites per calculator can be restored or removed on the device.
+- New shared links, favorites, history entries, and saved jobs carry their effective machine limits and custom material values. Restoring them leaves the local shop library intact; Use my shop settings returns to the local profiles. Links record their calculator version and identify version differences on restore. Older links still open using the available settings.
+- Chromium and WebKit coverage includes cross-device sharing, favorites, individual copy actions, and mobile workflow density.
+
+## Previous release: 3.2.0
 
 - Mobile Calculate/answer bar, shorter primary forms, and explicit calculations that bring the answer into view
 - Live updates preserve keyboard focus and expanded details; invalid or changed inputs mark the previous answer stale and disable Copy, Share, Print, and exports
@@ -268,9 +277,11 @@ Every tool keeps a rolling list of the last five results. After any calculation,
 
 History is stored in the browser using `localStorage` and persists across page reloads. Repeating an identical input set moves its existing entry to the top; Live history waits until input settles.
 
+Entries show the input setup above the answer. Choose **Favorite** on a current result to keep it in the **Favorites** panel above that calculator's inputs. Each calculator holds up to 12 favorites, independently of Recent history. Restoring one fills the inputs and recalculates; **Remove** deletes only that favorite. Favorites stay on this device and are not included in workspace JSON exports.
+
 ## Shareable URLs
 
-After any calculation, a **Share** button appears next to the Copy button. Clicking it encodes the active tool and all current form values into the page URL hash. On mobile and any browser that supports the Web Share API, this opens the native share sheet so you can send the link via Messages, email, Slack, or any installed app. On desktop browsers without Web Share, the link is copied to the clipboard instead. Opening the URL on any device restores the tool, fills in all the values, and runs the calculation automatically.
+After any calculation, **Share** encodes the inputs and effective machine/custom material settings into the URL hash. On browsers with Web Share, it opens the native share sheet; otherwise it copies the link. Opening it restores and recalculates the setup without replacing the recipient's shop library. Empty overrides and an explicit absence of machine limits are preserved. A **Saved calculation settings** banner identifies restored settings; **Use my shop settings** switches back to local profiles. Links record the originating calculator version and show a notice when recalculated with a different version. Bolt-circle G-code still requires fresh preflight acknowledgments.
 
 This is useful for:
 

@@ -1,4 +1,4 @@
-export const CORE_VERSION = "3.2.0";
+export const CORE_VERSION = "3.3.0";
 
 export const CALCULATION_SOURCES = Object.freeze({
   tapDrill: {

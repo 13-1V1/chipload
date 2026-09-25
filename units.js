@@ -1,4 +1,4 @@
-import { parseDimension, parseFraction } from "./calc-core.js?v=3.2.0";
+import { parseDimension, parseFraction } from "./calc-core.js?v=3.3.0";
 
 // Canonical values survive repeated unit switches without rounding accumulation.
 export function createUnitController() {

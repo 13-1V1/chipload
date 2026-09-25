@@ -17,7 +17,7 @@
   <meta name="twitter:image" content="assets/icons/app-512.png" />
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#081a33" />
-  <link rel="stylesheet" href="./app.css?v=3.2.0" />
+  <link rel="stylesheet" href="./app.css?v=3.3.0" />
 </head>
 <body>
   <header class="site-header" id="siteHeader">
@@ -645,7 +645,14 @@
         </button>
         <div class="tool-body" id="tool-feeds-body">
           <form class="tool-form" id="feedsForm">
-            <div class="field">
+            <div class="field-grid two compact-pair"><div class="field"><label for="sfOperation">Operation</label><select id="sfOperation"><option value="milling">Milling</option><option value="drilling">Drilling</option><option value="reaming">Reaming</option></select></div><div class="field">
+                <label for="sfUnits">Units</label>
+                <select id="sfUnits">
+                  <option value="in">Inches</option>
+                  <option value="mm" selected>Millimeters</option>
+                </select>
+              </div></div>
+            <div class="field-grid two compact-pair"><div class="field">
                 <label for="sfMaterial">Material</label>
                 <select id="sfMaterial">
                   <option value="aluminum">Aluminum (6061)</option>
@@ -659,7 +666,14 @@
                   <option value="plastic">Plastic (acetal/nylon)</option>
                   <option value="custom">Custom (override below)</option>
                 </select>
-              </div>
+              </div><div class="field">
+                <label for="sfTool">Tool type</label>
+                <select id="sfTool">
+                  <option value="hss">HSS</option>
+                  <option value="carbide" selected>Carbide</option>
+                  <option value="coated">Coated carbide</option>
+                </select>
+              </div></div>
             <div class="field-grid two compact-pair"><div class="field">
                 <label for="sfDiameter">Tool diameter (<span class="unit-token" id="sfDiameterUnit">mm</span>)</label>
                 <input id="sfDiameter" type="text" inputmode="decimal" placeholder="6 or 3/8" />
@@ -667,24 +681,10 @@
                 <label for="sfFlutes">Number of flutes</label>
                 <input id="sfFlutes" type="number" inputmode="decimal" step="1" min="1" value="2" />
               </div></div>
-            <div class="field-grid two compact-pair"><div class="field">
-                <label for="sfTool">Tool type</label>
-                <select id="sfTool">
-                  <option value="hss">HSS</option>
-                  <option value="carbide" selected>Carbide</option>
-                  <option value="coated">Coated carbide</option>
-                </select>
-              </div><div class="field">
-                <label for="sfUnits">Units</label>
-                <select id="sfUnits">
-                  <option value="in">Inches</option>
-                  <option value="mm" selected>Millimeters</option>
-                </select>
-              </div></div>
             <details class="progressive-disclosure" id="sfSetupOptions">
               <summary><span class="disclosure-summary-copy"><span>Machine &amp; saved tools</span><small id="sfSetupSummary">Milling · Manual tool · No machine limit</small></span></summary>
               <div class="disclosure-content">
-                <div class="field"><label for="sfSavedTool">Saved tool</label><select id="sfSavedTool"><option value="">Manual tool values</option></select></div><div class="field"><label for="sfOperation">Operation</label><select id="sfOperation"><option value="milling">Milling</option><option value="drilling">Drilling</option><option value="reaming">Reaming</option></select></div>
+                <div class="field"><label for="sfSavedTool">Saved tool</label><select id="sfSavedTool"><option value="">Manual tool values</option></select></div>
                 <div class="provenance-card"><strong id="activeMachineName">No machine limit</strong><span id="activeMachineLimits">Open Shop setup to select a machine profile.</span><button class="mini-btn" type="button" id="sfOpenWorkspace">Shop setup</button></div>
               </div>
             </details>
@@ -741,7 +741,7 @@
               <div class="result-head">
                 <div>
                   <div class="result-label">Primary answer</div>
-                  <div class="result-primary" id="sfPrimary">Spindle RPM and feed rate will show here.</div>
+                  <div class="result-primary" id="sfPrimary">Spindle RPM and feed rate will show here.</div><div class="answer-metrics" id="sfMetrics" hidden></div><p class="limit-summary" id="sfLimitSummary"></p>
                 </div>
                 <div class="result-actions">
                   <button class="copy-btn" id="sfCopy" type="button" hidden>Copy result</button>
@@ -1065,6 +1065,6 @@
   <aside id="mobileDock" class="mobile-dock" aria-label="Calculator actions"><button type="button" id="mobileAnswer" class="mobile-answer">Enter values to begin</button><button type="button" id="mobileCalculate" class="action-btn primary">Calculate</button></aside>
   <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="false"></div>
 
-  <script type="module" src="./app.js?v=3.2.0"></script>
+  <script type="module" src="./app.js?v=3.3.0"></script>
 </body>
 </html>

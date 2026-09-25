@@ -290,8 +290,9 @@ for(const [engineName,engine] of Object.entries({chromium,webkit})) {
       await tool(page,"feeds");
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       await page.evaluate(()=>window.scrollTo({top:0,behavior:"instant"}));
-      const calculateButton=await page.locator('#feedsForm button[type="submit"]').boundingBox();
-      assert.ok(calculateButton.y < 800,`Primary feeds workflow too tall: ${calculateButton.y}`);
+      const lastInput=await page.locator("#sfFlutes").boundingBox();
+      assert.ok(lastInput.y + lastInput.height < 700,`Primary feeds workflow too tall: ${lastInput.y}`);
+      assert.equal(await page.locator('#feedsForm button[type="submit"]').isVisible(),false);
       for(const theme of ["light","dark"]) {
         if(await page.locator('html').getAttribute('data-theme')!==theme) await page.locator('#themeToggle').click();
         await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -326,6 +327,163 @@ for(const [engineName,engine] of Object.entries({chromium,webkit})) {
       await linked.close();
     }));
 
+    test("primary operation, individual answers and mobile actions stay usable",async t=>scenario(t,async page=>{
+      await tool(page,"feeds");
+      assert.equal(await page.locator("#sfOperation").isVisible(),true);
+      assert.equal(await page.locator("#sfSetupOptions").getAttribute("open"),null);
+      assert.equal(await page.locator("#tool-feeds .tool-toggle").isVisible(),false);
+      assert.equal(await page.locator("#tool-feeds .result-shell").isVisible(),false);
+      await page.locator("#sfDiameter").fill("0.375");
+      await page.locator("#sfOperation").selectOption("drilling");
+      await calculate(page,"feeds");
+      assert.match(await page.locator("#sfPrimary").innerText(),/2674 RPM/);
+      await page.evaluate(()=>Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async text=>{window.copiedValue=text;}}}));
+      for(const label of ["RPM","feed"]) {
+        const button=page.getByRole("button",{name:`Copy ${label} value`,exact:true});
+        const value=await button.getAttribute("data-copy-value");
+        await button.click();
+        assert.equal(await page.evaluate(()=>window.copiedValue),value);
+      }
+      const metrics=await page.locator("#sfMetrics").boundingBox();
+      const dock=await page.locator("#mobileDock").boundingBox();
+      assert.ok(metrics.y+metrics.height<=dock.y,"Both values visible above Calculate");
+      await page.locator("#sfDiameter").fill("0.5");
+      assert.equal(await page.getByRole("button",{name:"Copy RPM value",exact:true}).isDisabled(),true);
+      assert.equal(await page.locator('[data-favorite="feeds"]').isDisabled(),true);
+      // Simulate the viewport reduction produced by an on-screen keyboard.
+      await page.evaluate(()=>{Object.defineProperty(visualViewport,"height",{configurable:true,value:350});visualViewport.dispatchEvent(new Event("resize"));});
+      assert.equal(await page.locator("#mobileCalculate").isVisible(),false);
+      assert.equal(await page.locator('#feedsForm button[type="submit"]').isVisible(),true);
+      await page.locator("#sfDiameter").press("Enter");
+      await page.waitForFunction(()=>document.querySelector('#tool-feeds .result-shell').dataset.resultState==="current");
+      await page.evaluate(()=>{delete visualViewport.height;visualViewport.dispatchEvent(new Event("resize"));});
+      await page.setViewportSize({width:1280,height:900});
+      assert.equal(await page.locator("#sfStats").isVisible(),false);
+      await page.locator("#tool-feeds .result-detail-toggle").click();
+      assert.equal(await page.locator("#sfStats").isVisible(),true);
+      for(const theme of ["light","dark"]) {
+        if(await page.locator("html").getAttribute("data-theme")!==theme) await page.locator("#themeToggle").click();
+        const {button,icon}=await page.evaluate(()=>({
+          button:document.getElementById("themeToggle").getBoundingClientRect().toJSON(),
+          icon:[...document.querySelectorAll("#themeIcon svg")].find(svg=>getComputedStyle(svg).display!=="none").getBoundingClientRect().toJSON(),
+        }));
+        near(icon.x+icon.width/2,button.x+button.width/2,0.6);
+        near(icon.y+icon.height/2,button.y+button.height/2,0.6);
+      }
+    }));
+
+    test("favorites restore recognizable setups and persist independently of recent history",async t=>scenario(t,async page=>{
+      await tool(page,"feeds");
+      await page.locator("#sfDiameter").fill("3/8");
+      await calculate(page,"feeds");
+      await page.locator('[data-favorite="feeds"]').click();
+      await page.locator("#histToggle-feeds").click();
+      await page.locator('#histList-feeds .history-item-primary').waitFor({state:"visible"});
+      await page.waitForFunction(()=>document.querySelector('#histList-feeds .history-item-primary').innerText.length>0);
+      assert.match(await page.locator('#histList-feeds .history-item-primary').innerText(),/3\/8 in Carbide.*Mild steel.*milling/);
+      await page.locator('[data-hist-clear="feeds"]').click();
+      await page.locator("#btnSfClear").click();
+      await page.reload();
+      await page.waitForFunction(()=>document.documentElement.dataset.appReady==="true");
+      await page.locator("#favorites-feeds summary").click();
+      await page.locator('[data-favorite-restore="feeds"]').click();
+      assert.equal(await page.locator("#sfDiameter").inputValue(),"3/8");
+      assert.match(await page.locator("#sfPrimary").innerText(),/3565 RPM/);
+      assert.equal(await page.locator('[data-favorite="feeds"]').getAttribute("aria-pressed"),"true");
+      assert.match(await page.locator("#feedsForm .setup-context").innerText(),/No machine limits/);
+      await page.locator('[data-favorite-remove="feeds"]').click();
+      assert.equal(await page.locator("#favorites-feeds").isVisible(),false);
+      assert.equal(await page.locator("#histBadge-feeds").innerText(),"1");
+    }));
+
+    test("shared calculations reproduce custom materials and limits on another device",async t=>scenario(t,async page=>{
+      const machine={id:"mill",name:"Source mill",units:"in",maxRpm:1000,maxFeed:2,controller:"haas",workOffset:"G55",safeZ:0.1};
+      const workspace={machines:[machine],materials:[{id:"stock",name:"Shop stock",sfm:350,chipIn:0.003}],tools:[],jobs:[],activeMachineId:"mill"};
+      await page.evaluate(workspace=>localStorage.setItem("marcos_shop_workspace_v3",JSON.stringify(workspace)),workspace);
+      await page.reload();
+      await page.waitForFunction(()=>document.documentElement.dataset.appReady==="true");
+      await tool(page,"feeds");
+      await page.locator("#sfMaterial").selectOption("user:stock");
+      await page.locator("#sfDiameter").fill("3/8");
+      await calculate(page,"feeds");
+      assert.match(await page.locator("#sfPrimary").innerText(),/1000 RPM.*2 IPM/);
+      const expected=await page.locator("#sfPrimary").innerText();
+      const share=async(name="feeds")=>{
+        await page.evaluate(()=>Object.defineProperty(navigator,"share",{configurable:true,value:async({url})=>{window.sharedUrl=url;}}));
+        await page.locator(`[data-share-tool="${name}"]`).click();
+        return page.evaluate(()=>window.sharedUrl);
+      };
+      const url=await share();
+      const params=new URLSearchParams(new URL(url).hash.slice(1));
+      assert.equal(params.get("sfSpeed"),"");
+      assert.equal(JSON.parse(params.get("__context")).machine.maxRpm,1000);
+      const recipient=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:"block"});
+      try {
+        const second=await recipient.newPage();
+        const local={...workspace,machines:[{...machine,name:"Recipient mill",units:"mm",maxRpm:500,maxFeed:254}],materials:[{...workspace.materials[0],sfm:900,chipIn:.01}]};
+        await second.goto(base);
+        await second.waitForFunction(()=>document.documentElement.dataset.appReady==="true");
+        await second.evaluate(local=>{
+          localStorage.setItem("marcos_shop_workspace_v3",JSON.stringify(local));
+          localStorage.setItem("marcos_persist_feedsForm",JSON.stringify({sfUnits:"mm",sfSpeed:"900",sfChipLoad:".4"}));
+        },local);
+        await second.goto(url);
+        await second.waitForFunction(()=>document.querySelector('#tool-feeds .result-shell').dataset.resultState==="current");
+        assert.equal(await second.locator("#sfPrimary").innerText(),expected);
+        assert.match(await second.locator("#sfLimitSummary").innerText(),/RPM limit applied.*Feed limit applied/);
+        assert.equal(await second.locator("#sfSpeed").inputValue(),"");
+        assert.deepEqual(await second.evaluate(()=>JSON.parse(localStorage.getItem("marcos_shop_workspace_v3"))),local);
+        await second.locator('[data-favorite="feeds"]').click();
+        await second.evaluate(()=>history.replaceState(null,"",location.pathname));
+        await second.waitForTimeout(400);
+        await second.reload();
+        await second.waitForFunction(()=>document.documentElement.dataset.appReady==="true");
+        await calculate(second,"feeds");
+        assert.equal(await second.locator("#sfPrimary").innerText(),expected);
+        await second.locator('[data-use-local="feeds"]').click();
+        assert.equal(await second.locator("#sfCopy").isDisabled(),true);
+        await calculate(second,"feeds");
+        assert.match(await second.locator("#sfPrimary").innerText(),/500 RPM/);
+        await second.locator("#favorites-feeds summary").click();
+        await second.locator('[data-favorite-restore="feeds"]').click();
+        assert.equal(await second.locator("#sfPrimary").innerText(),expected);
+        // Selecting a machine explicitly updates a restored calculation too.
+        await second.locator("#workspaceBtn").click();
+        await second.locator('#machineProfileList [data-action="activate"]').click();
+        await second.locator("#workspaceClose").click();
+        await calculate(second,"feeds");
+        assert.match(await second.locator("#sfPrimary").innerText(),/500 RPM/);
+        // Advanced calculators use the same portable RPM/feed envelope.
+        await tool(page,"advanced");
+        await page.locator("#advTapRpm").fill("2000");
+        await calculate(page,"advanced");
+        const tapping=await page.locator("#advancedPrimary").innerText();
+        await second.goto(await share("advanced"));
+        await second.waitForFunction(()=>document.querySelector('#tool-advanced .result-shell').dataset.resultState==="current");
+        assert.equal(await second.locator("#advancedPrimary").innerText(),tapping);
+        // An explicitly unlimited sender must also override the receiver's local cap.
+        await page.evaluate(()=>localStorage.removeItem("marcos_shop_workspace_v3"));
+        await page.reload();
+        await page.waitForFunction(()=>document.documentElement.dataset.appReady==="true");
+        await tool(page,"feeds");
+        await page.locator("#sfMaterial").selectOption("mildSteel");
+        await calculate(page,"feeds");
+        await second.goto(await share());
+        await second.waitForFunction(()=>document.querySelector('#tool-feeds .result-shell').dataset.resultState==="current");
+        assert.match(await second.locator("#sfPrimary").innerText(),/3565 RPM/);
+        assert.match(await second.locator("#sfLimitSummary").innerText(),/No machine limits/);
+        // Unsupported settings do not silently produce an answer with local defaults.
+        const bad=new URL(await share());
+        const badParams=new URLSearchParams(bad.hash.slice(1));
+        badParams.set("__context",JSON.stringify({version:99}));
+        bad.hash=badParams.toString();
+        await second.goto(bad.href);
+        await second.waitForFunction(()=>document.querySelector('#tool-feeds .result-shell').dataset.resultState==="invalid");
+        assert.match(await second.locator("#sfWarn").innerText(),/unsupported/);
+        assert.equal(await second.locator("#sfCopy").isDisabled(),true);
+      } finally { await recipient.close(); }
+    }));
+
     if(engineName==="chromium") test("first install does not reload; offline calculation and unrelated cache survive",async t=>scenario(t,async(page,context)=>{
       let navigations=0;
       page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigations++;});
@@ -350,7 +508,7 @@ for(const [engineName,engine] of Object.entries({chromium,webkit})) {
         try {
           const upstream=await fetch(new URL(request.url,base));
           let body=Buffer.from(await upstream.arrayBuffer());
-          if(updated && request.url.endsWith('/sw.js')) body=Buffer.from(body.toString().replace('const APP_VERSION = "3.2.0"','const APP_VERSION = "3.2.0-update-test"'));
+          if(updated && request.url.endsWith('/sw.js')) body=Buffer.from(body.toString().replace('const APP_VERSION = "3.3.0"','const APP_VERSION = "3.3.0-update-test"'));
           response.writeHead(upstream.status,{'Content-Type':upstream.headers.get('content-type'),'Cache-Control':'no-store'});
           response.end(body);
         } catch {response.writeHead(502);response.end();}

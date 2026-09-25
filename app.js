@@ -1,8 +1,9 @@
-import { createResultState } from "./ui-state.js?v=3.2.0";
-import { createUnitController } from "./units.js?v=3.2.0";
-import { initFormPersistence } from "./persistence.js?v=3.2.0";
-import { initMobileUI, initInputHelpers } from "./mobile-ui.js?v=3.2.0";
-import { initPwa } from "./pwa.js?v=3.2.0";
+import { createResultState } from "./ui-state.js?v=3.3.0";
+import { createUnitController } from "./units.js?v=3.3.0";
+import { initFormPersistence } from "./persistence.js?v=3.3.0";
+import { initMobileUI, initInputHelpers } from "./mobile-ui.js?v=3.3.0";
+import { initPwa } from "./pwa.js?v=3.3.0";
+import { readSetupContext } from "./setup-context.js?v=3.3.0";
 import {
   CORE_VERSION,
   CALCULATION_SOURCES,
@@ -30,7 +31,7 @@ import {
   ballNoseScallopHeight,
   ballNoseStepover,
   toleranceStack
-} from "./calc-core.js?v=3.2.0";
+} from "./calc-core.js?v=3.3.0";
 (function initTheme(){
   const key = "marcos_calc_theme_mode";
   const btn = document.getElementById("themeToggle");
@@ -61,6 +62,7 @@ import {
 const unitController = createUnitController();
 const gcodePreflightIds = ["bcCheckUnits", "bcCheckOffset", "bcCheckMotion"];
 const historyTimers = new Map();
+const calculationContexts = new Map();
 const SQRT3 = Math.sqrt(3);
 const BASIC_PITCH_DIAMETER_FACTOR = 0.6495190528;
 const BASIC_INTERNAL_MINOR_FACTOR = 1.0825317547;
@@ -80,9 +82,9 @@ const results = {
   advanced: { shell: document.querySelector("#tool-advanced .result-shell"), primary: document.getElementById("advancedPrimary"), stats: document.getElementById("advancedStats"), details: document.getElementById("advancedDetails"), copy: document.getElementById("advancedCopy") }
 };
 const resultState = createResultState({
-  results, capture: captureFormInputs,
+  results, capture: captureFormInputs, captureSnapshot: captureCalculationSnapshot,
   context: tool => ["feeds", "bolt", "advanced"].includes(tool)
-    ? { machine: getActiveMachineProfile(), materials: shopWorkspace.materials, tools: shopWorkspace.tools } : null,
+    ? portableContext(tool) : null,
 });
 
 function escapeHtml(value){
@@ -142,6 +144,13 @@ function setResult(toolName, config){
   target.primary.textContent = config.primary;
   target.stats.innerHTML = renderStats(config.stats || []);
   target.details.innerHTML = config.detailsHtml || "";
+  if (toolName === "feeds") {
+    const metrics = document.getElementById("sfMetrics");
+    metrics.hidden = !config.metrics;
+    target.primary.classList.toggle("sr-only", Boolean(config.metrics));
+    metrics.innerHTML = (config.metrics || []).map(item => `<div class="answer-metric"><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)} <small>${escapeHtml(item.unit)}</small></strong><button class="mini-btn" type="button" data-copy-value="${escapeHtml(item.value)}" aria-label="Copy ${escapeHtml(item.label)} value">Copy ${escapeHtml(item.label)}</button></div>`).join("");
+    document.getElementById("sfLimitSummary").textContent = config.limitSummary || "";
+  }
   if (config.copyText){
     target.copy.hidden = false;
     target.copy.dataset.copyText = config.copyText;
@@ -162,12 +171,13 @@ function setResult(toolName, config){
   const printBtn = target.shell.querySelector("[data-print]");
   if (printBtn) printBtn.hidden = !config.copyText;
   resultState.rendered(toolName, config);
+  updateFavoriteButton(toolName);
   if (config.animate && resultState.mode(document.getElementById(`${toolName}Form`)) !== "live") flashResult(target.shell);
   if (config.saveHistory && config.primary && config.formState){
     clearTimeout(historyTimers.get(toolName));
     const save = () => {
       if (!resultState.isCurrent(toolName)) return;
-      histSave(toolName, { ts: Date.now(), primary: config.primary, formState: config.formState });
+      histSave(toolName, { ts: Date.now(), label: describeSetup(toolName, target.formState), primary: config.primary, formState: target.formState });
       histRender(toolName);
     };
     if (resultState.mode(document.getElementById(toolName + "Form")) === "live") historyTimers.set(toolName, setTimeout(save, 800));
@@ -183,17 +193,17 @@ Object.values(results).forEach((target) => {
   detailsButton.textContent = "Show result details";
   detailsButton.setAttribute("aria-expanded", "false");
   head.after(detailsButton);
-  const toggleMobileResult = () => {
-    if (!window.matchMedia("(max-width: 620px)").matches || !target.shell.classList.contains("has-result")) return;
+  const toggleResultDetails = () => {
+    if (!target.shell.classList.contains("has-result")) return;
     const expanded = target.shell.classList.toggle("expanded");
     detailsButton.setAttribute("aria-expanded", String(expanded));
     detailsButton.textContent = expanded ? "Hide result details" : "Show result details";
   };
   head.addEventListener("click", (event) => {
-    if (event.target.closest("button")) return;
-    toggleMobileResult();
+    if (event.target.closest("button, summary, a")) return;
+    toggleResultDetails();
   });
-  detailsButton.addEventListener("click", toggleMobileResult);
+  detailsButton.addEventListener("click", toggleResultDetails);
 });
 
 // ── Local shop workspace: machines, tools, materials, and saved setups ──
@@ -222,6 +232,62 @@ function saveWorkspace(){
 function getActiveMachineProfile(){
   return shopWorkspace.machines.find((item) => item.id === shopWorkspace.activeMachineId) || null;
 }
+function getCalculationMachine(tool){
+  return calculationContexts.has(tool) ? calculationContexts.get(tool).machine : getActiveMachineProfile();
+}
+function getCalculationMaterial(value){
+  const saved = calculationContexts.get("feeds")?.material;
+  return saved && value === `user:${saved.id}` ? saved : shopWorkspace.materials.find(item => value === `user:${item.id}`);
+}
+function portableContext(tool){
+  return readSetupContext(JSON.stringify({ version: 1, calculatorVersion: CORE_VERSION,
+    machine: getCalculationMachine(tool),
+    material: tool === "feeds" ? getCalculationMaterial(document.getElementById("sfMaterial").value) || null : null }));
+}
+function captureCalculationSnapshot(form){
+  const state = captureFormInputs(form);
+  // Tool dimensions and overrides are already captured; a library ID is device-local.
+  delete state.sfSavedTool;
+  const tool = form.closest("[data-tool]").dataset.tool;
+  if (["feeds", "bolt", "advanced"].includes(tool)) state.__context = JSON.stringify(portableContext(tool));
+  return state;
+}
+function renderCalculationContext(tool){
+  const form = document.getElementById(`${tool}Form`);
+  let banner = form.querySelector(".setup-context");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.className = "setup-context";
+    form.prepend(banner);
+  }
+  const context = calculationContexts.get(tool);
+  banner.hidden = !context;
+  if (!context) return;
+  banner.innerHTML = `<span><strong>Saved calculation settings</strong><br>${escapeHtml(context.machine ? context.machine.name + " · " + machineLimitCopy(context.machine) : "No machine limits")}${context.material ? `<br>${escapeHtml(context.material.name)}` : ""}${context.calculatorVersion !== CORE_VERSION ? `<br>Created with calculator ${escapeHtml(context.calculatorVersion)}; recalculated with ${CORE_VERSION}.` : ""}</span><button class="mini-btn" type="button" data-use-local="${tool}">Use my shop settings</button>`;
+}
+function ensureContextMaterial(){
+  const material = calculationContexts.get("feeds")?.material;
+  const select = document.getElementById("sfMaterial");
+  select.querySelectorAll("[data-context-material]").forEach(option => option.remove());
+  if (!material) return;
+  // The snapshot takes precedence even if this device has a record with the same ID.
+  [...select.options].filter(option => option.value === `user:${material.id}`).forEach(option => option.remove());
+  const option = new Option(`${material.name} (saved calculation)`, `user:${material.id}`);
+  option.dataset.contextMaterial = "";
+  select.append(option);
+}
+document.addEventListener("click", event => {
+  const button = event.target.closest("[data-use-local]");
+  if (!button) return;
+  const tool = button.dataset.useLocal;
+  calculationContexts.delete(tool);
+  renderCalculationContext(tool);
+  refreshWorkspaceUI();
+  if (tool === "feeds") sfSyncUnitLabels();
+  const form = document.getElementById(`${tool}Form`);
+  resultState.invalidate(form, "Shop settings selected — recalculate.");
+  form.dispatchEvent(new Event("input", { bubbles: true }));
+});
 function machineFeedLimit(machine, targetUnits){
   if (!machine || !(machine.maxFeed > 0)) return Infinity;
   if (machine.units === targetUnits) return machine.maxFeed;
@@ -229,12 +295,12 @@ function machineFeedLimit(machine, targetUnits){
 }
 function getWorkspaceMaterialDefaults(value){
   if (!String(value).startsWith("user:")) return null;
-  const item = shopWorkspace.materials.find((candidate) => candidate.id === String(value).slice(5));
+  const item = getCalculationMaterial(value);
   return item ? { sfm: item.sfm, chipIn: item.chipIn } : null;
 }
 function workspaceMaterialLabel(value){
   if (!String(value).startsWith("user:")) return null;
-  return shopWorkspace.materials.find((candidate) => candidate.id === String(value).slice(5))?.name || "Saved material";
+  return getCalculationMaterial(value)?.name || "Saved material";
 }
 function machineLimitCopy(machine){
   if (!machine) return "Open Shop setup to select a machine profile.";
@@ -261,7 +327,7 @@ function refreshWorkspaceUI(){
   const materialSelect = document.getElementById("sfMaterial");
   if (materialSelect){
     const selected = materialSelect.value;
-    materialSelect.querySelectorAll("option[data-user-material]").forEach((option) => option.remove());
+    materialSelect.querySelectorAll("option[data-user-material], option[data-context-material]").forEach((option) => option.remove());
     shopWorkspace.materials.forEach((item) => {
       const option = document.createElement("option");
       option.value = `user:${item.id}`;
@@ -269,12 +335,15 @@ function refreshWorkspaceUI(){
       option.dataset.userMaterial = "";
       materialSelect.appendChild(option);
     });
+    ensureContextMaterial();
     if ([...materialSelect.options].some(option => option.value === selected)) materialSelect.value = selected;
+    else if (selected.startsWith("user:")) materialSelect.value = "custom";
   }
   const setupSummary = document.getElementById("sfSetupSummary");
-  if (setupSummary) setupSummary.textContent = `${document.getElementById("sfOperation").selectedOptions[0].text} · ${activeMachine ? activeMachine.name + " · " + machineLimitCopy(activeMachine) : "No machine limit"}`;
-  document.getElementById("activeMachineName").textContent = activeMachine ? activeMachine.name : "No machine limit";
-  document.getElementById("activeMachineLimits").textContent = machineLimitCopy(activeMachine);
+  const calculationMachine = getCalculationMachine("feeds");
+  if (setupSummary) setupSummary.textContent = calculationMachine ? calculationMachine.name + " · " + machineLimitCopy(calculationMachine) : "No machine limits";
+  document.getElementById("activeMachineName").textContent = calculationMachine ? calculationMachine.name : "No machine limit";
+  document.getElementById("activeMachineLimits").textContent = machineLimitCopy(calculationMachine);
   document.getElementById("coreVersionLabel").textContent = CORE_VERSION;
   document.getElementById("dialogNetworkStatus").textContent = navigator.onLine ? "Online" : "Offline";
   applyActiveMachineToGcode(false);
@@ -375,7 +444,7 @@ refreshWorkspaceUI();
     const forms = {};
     ["threadForm","mowForm","boltForm","triangleForm","feedsForm","chamferForm","circle3Form","advancedForm"].forEach((id) => {
       const form = document.getElementById(id);
-      if (form) forms[id] = captureFormInputs(form);
+      if (form) forms[id] = captureCalculationSnapshot(form);
     });
     shopWorkspace.jobs.unshift({ id: makeId("job"), name: document.getElementById("jobName").value.trim(), partNumber: document.getElementById("jobPartNumber").value.trim(), notes: document.getElementById("jobNotes").value.trim(), savedAt: Date.now(), activeTool: toolCards.find((card) => card.classList.contains("active-tool"))?.dataset.tool || "thread", forms });
     shopWorkspace.jobs = shopWorkspace.jobs.slice(0, 25);
@@ -397,6 +466,14 @@ refreshWorkspaceUI();
       shopWorkspace.activeMachineId = id;
       const machine = getActiveMachineProfile();
       if (machine){
+        ["feeds", "bolt", "advanced"].forEach(tool => {
+          const context = calculationContexts.get(tool);
+          if (context) {
+            calculationContexts.set(tool, { ...context, machine });
+            renderCalculationContext(tool);
+            document.getElementById(`${tool}Form`).dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        });
         ["sfUnits", "bcUnits", "advancedUnits"].forEach(id => unitController.set(id, machine.units, { emit: true }));
       }
       saveWorkspace();
@@ -405,6 +482,12 @@ refreshWorkspaceUI();
       dialog.close();
       openTool("feeds", { scroll: true });
     } else if (library === "material" && action === "apply"){
+      const context = calculationContexts.get("feeds");
+      if (context) {
+        calculationContexts.set("feeds", { ...context, material: null });
+        refreshWorkspaceUI();
+        renderCalculationContext("feeds");
+      }
       document.getElementById("sfMaterial").value = `user:${id}`;
       document.getElementById("sfMaterial").dispatchEvent(new Event("change", { bubbles: true }));
       dialog.close();
@@ -479,6 +562,14 @@ copyButtons.forEach((button) => {
       }, 1600);
     }
   });
+});
+document.addEventListener("click", async event => {
+  const button = event.target.closest("[data-copy-value]");
+  if (!button) return;
+  try {
+    await writeClipboard(button.dataset.copyValue);
+    showToast(`${button.dataset.copyValue} copied.`);
+  } catch { showToast("Could not copy the value."); }
 });
 
 function updateStickyMetrics(){
@@ -1092,9 +1183,18 @@ function captureFormInputs(form){
       tolerance: row.querySelector("[data-stack-tolerance]")?.value || "0"
     })));
   }
+  const context = calculationContexts.get(form.closest("[data-tool]")?.dataset.tool);
+  if (context) state.__context = JSON.stringify(context);
   return state;
 }
 function restoreFormInputs(form, state){
+  const tool = form.closest("[data-tool]").dataset.tool;
+  const context = state.__context === undefined ? null : readSetupContext(state.__context);
+  if (context) calculationContexts.set(tool, context);
+  else calculationContexts.delete(tool);
+  renderCalculationContext(tool);
+  if (tool === "feeds") ensureContextMaterial();
+  if (tool === "feeds") document.getElementById("sfSavedTool").value = state.sfSavedTool || "";
   for (const el of form.elements){
     if (!el.id || el.hasAttribute("data-ephemeral") || state[el.id] === undefined) continue;
     if (el.tagName === "INPUT" && el.type === "checkbox"){
@@ -1129,6 +1229,7 @@ function restoreFormInputs(form, state){
     syncGcodeVisibility();
   }
   document.dispatchEvent(new CustomEvent("form-restored", { detail: form }));
+  if (["feeds", "bolt", "advanced"].includes(tool)) refreshWorkspaceUI();
 }
 
 // ── Toast notification ──
@@ -1801,7 +1902,7 @@ function clearGcodePreflight(){
   gcodePreflightIds.forEach((id) => { const input = document.getElementById(id); if (input) input.checked = false; });
 }
 function applyActiveMachineToGcode(force = false){
-  const machine = getActiveMachineProfile();
+  const machine = getCalculationMachine("bolt");
   if (!machine) return;
   const inputUnits = document.getElementById("bcUnits")?.value || machine.units;
   const safeZ = machine.units === inputUnits ? machine.safeZ : inputUnits === "in" ? machine.safeZ / 25.4 : machine.safeZ * 25.4;
@@ -2432,7 +2533,7 @@ feedsForm.addEventListener("submit", (event) => {
   const dInches = isIn ? dia : dia / 25.4;
   const wocVal = parseDimension(sfWoc.value, isIn ? "in" : "mm");
   const docVal = parseDimension(sfDoc.value, isIn ? "in" : "mm");
-  const activeMachine = getActiveMachineProfile();
+  const activeMachine = getCalculationMachine("feeds");
   const machineMaxFeed = machineFeedLimit(activeMachine, isIn ? "in" : "mm");
   const calculated = calculateSpeedsFeeds({
     units: isIn ? "in" : "mm",
@@ -2511,6 +2612,10 @@ feedsForm.addEventListener("submit", (event) => {
     saveHistory: true,
     formState,
     primary: `${fmt(rpm, 0)} RPM  •  ${fmt(feed, isIn ? 1 : 0)} ${feedLabel}`,
+    metrics: [{ label: "RPM", value: fmt(rpm, 0), unit: "rev/min" }, { label: "feed", value: fmt(feed, isIn ? 1 : 0), unit: feedLabel }],
+    limitSummary: activeMachine
+      ? `${activeMachine.name} · ${limitedByRpm ? "RPM limit applied" : "RPM within limit"} · ${limitedByFeed ? "Feed limit applied" : "Feed within limit"} (${fmt(activeMachine.maxRpm, 0)} RPM / ${fmt(machineMaxFeed, isIn ? 1 : 0)} ${feedLabel})`
+      : "No machine limits applied",
     stats,
     detailsHtml: renderList(detailsItems) + renderProvenance("feeds"),
     copyText
@@ -2747,7 +2852,7 @@ document.getElementById("btnSfClear").addEventListener("click", () => {
     try {
       if (selected === "tapping"){
         const requestedRpm = num(document.getElementById("advTapRpm").value);
-        const machine = getActiveMachineProfile();
+        const machine = getCalculationMachine("advanced");
         const thread = parseDimension(document.getElementById("advTapThread").value, unitsEl.value);
         if (!(requestedRpm > 0) || !(thread > 0)) throw new Error("Enter a positive RPM and TPI/pitch.");
         const lead = unitsEl.value === "in" ? 1 / thread : thread;
@@ -2762,7 +2867,7 @@ document.getElementById("btnSfClear").addEventListener("click", () => {
         const majorDiameter = readDim("advTmMajor");
         const cutterDiameter = readDim("advTmCutter");
         const requestedRpm = num(document.getElementById("advTmRpm").value);
-        const machine = getActiveMachineProfile();
+        const machine = getCalculationMachine("advanced");
         const rpm = Math.min(requestedRpm, machine?.maxRpm || Infinity);
         const flutes = num(document.getElementById("advTmFlutes").value);
         const chipLoad = readDim("advTmChip");
@@ -2969,7 +3074,67 @@ document.addEventListener("form-restored", event => {
 // ── History system ──
 const HIST_MAX = 5;
 function histLoad(tool){
-  try { return JSON.parse(localStorage.getItem("marcos_hist_" + tool)) || []; } catch { return []; }
+  return loadEntries("marcos_hist_" + tool);
+}
+function loadEntries(key){
+  try {
+    const entries = JSON.parse(localStorage.getItem(key));
+    return Array.isArray(entries) ? entries.filter(entry => entry && entry.formState && typeof entry.formState === "object") : [];
+  } catch { return []; }
+}
+function describeSetup(tool, state){
+  const units = state.sfUnits || state.bcUnits || state.chUnits || state.rtUnits || state.c3Units || state.mowUnits || state.advancedUnits || "in";
+  const dim = value => `${value || "?"} ${units}`;
+  if (tool === "feeds") {
+    let material = MATERIAL_LABELS[state.sfMaterial] || "Custom material";
+    try { material = readSetupContext(state.__context).material?.name || material; } catch {}
+    return `${dim(state.sfDiameter)} ${TOOL_LABELS[state.sfTool] || "tool"} · ${material} · ${state.sfOperation || "milling"}`;
+  }
+  if (tool === "thread") return state.threadQuickSpec || (state.threadSystem === "metric"
+    ? `M${state.mMajorMm} × ${state.mPitchMm}` : `${state.unMajorIn} in · ${state.unTPI} TPI`);
+  if (tool === "bolt") return `${state.bcHoles} holes · Ø ${dim(state.bcDia)}`;
+  if (tool === "triangle") {
+    const pair = state.rtMode === "hypAngle" ? `hypotenuse ${dim(state.rtHyp)} · ${state.rtAngle}°`
+      : state.rtMode === "runAngle" ? `run ${dim(state.rtRun)} · ${state.rtAngle}°`
+      : state.rtMode === "riseAngle" ? `rise ${dim(state.rtRise)} · ${state.rtAngle}°`
+      : `run ${dim(state.rtRun)} · rise ${dim(state.rtRise)}`;
+    return `Triangle · ${pair}`;
+  }
+  if (tool === "chamfer") return `Ø ${dim(state.chSmall)} → ${dim(state.chLarge)} · ${state.chAngle}°`;
+  if (tool === "circle3") return `Circle · (${state.c3x1}, ${state.c3y1}), (${state.c3x2}, ${state.c3y2}), (${state.c3x3}, ${state.c3y3}) ${units}`;
+  if (tool === "mow") return `Wires ${dim(state.mowWire)} · pitch ${state.mowPitchInput}`;
+  const mode = document.querySelector(`#advancedMode option[value="${CSS.escape(state.advancedMode || "")}"]`)?.textContent || "Shop math";
+  const values = Object.entries(state).filter(([key, value]) => key.startsWith("adv") && key !== "advancedMode" && key !== "advancedUnits" && value !== "");
+  // Select the inputs from the saved calculator's panel, not the currently open panel.
+  const panel = document.querySelector(`[data-advanced-panel="${CSS.escape(state.advancedMode || "")}"]`);
+  const relevant = values.filter(([key]) => panel?.querySelector(`#${CSS.escape(key)}`)).slice(0, 2);
+  return `${mode} · ${(relevant.length ? relevant : values.slice(0, 2)).map(([, value]) => value).join(" / ")} ${units}`;
+}
+function favoriteKey(tool){ return "marcos_favorites_" + tool; }
+function sameSetup(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
+function updateFavoriteButton(tool){
+  const button = results[tool].shell.querySelector("[data-favorite]");
+  if (!button) return;
+  button.hidden = !results[tool].formState;
+  const selected = loadEntries(favoriteKey(tool)).some(entry => sameSetup(entry.formState, results[tool].formState));
+  button.textContent = selected ? "★ Saved" : "☆ Favorite";
+  button.setAttribute("aria-pressed", String(selected));
+}
+function renderFavorites(tool){
+  const entries = loadEntries(favoriteKey(tool));
+  const panel = document.getElementById(`favorites-${tool}`);
+  if (!panel) return;
+  panel.hidden = !entries.length;
+  panel.querySelector("summary").textContent = `Favorites (${entries.length})`;
+  panel.querySelector(".favorite-list").innerHTML = entries.map((entry, index) => `<div class="favorite-row"><button type="button" class="history-item-btn" data-favorite-restore="${tool}" data-index="${index}"><span class="history-item-primary">${escapeHtml(entry.label || describeSetup(tool, entry.formState))}</span><span class="history-item-answer">${escapeHtml(entry.primary)}</span></button><button type="button" class="mini-btn" data-favorite-remove="${tool}" data-index="${index}" aria-label="Remove favorite ${escapeHtml(entry.label || entry.primary)}">Remove</button></div>`).join("");
+  updateFavoriteButton(tool);
+}
+function restoreCalculation(tool, state){
+  const form = document.getElementById(tool + "Form");
+  try {
+    restoreFormInputs(form, state);
+    requestFormSubmit(form);
+  } catch (error) { showToast(error.message); }
 }
 function histSave(tool, entry){
   let arr = histLoad(tool).filter(previous => JSON.stringify(previous.formState) !== JSON.stringify(entry.formState));
@@ -2988,7 +3153,7 @@ function histRender(tool){
   listEl.innerHTML = arr.map((entry, i) => {
     const ts = new Date(entry.ts);
     const timeStr = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return `<div role="listitem"><button class="history-item-btn" type="button" data-hist-tool="${escapeHtml(tool)}" data-hist-index="${i}"><span class="history-item-primary">${escapeHtml(entry.primary)}</span><span class="history-item-time">${escapeHtml(timeStr)}</span></button></div>`;
+    return `<div role="listitem"><button class="history-item-btn" type="button" data-hist-tool="${escapeHtml(tool)}" data-hist-index="${i}"><span class="history-item-copy"><span class="history-item-primary">${escapeHtml(entry.label || describeSetup(tool, entry.formState))}</span><span class="history-item-answer">${escapeHtml(entry.primary)}</span></span><span class="history-item-time">${escapeHtml(timeStr)}</span></button></div>`;
   }).join("");
 }
 
@@ -3014,13 +3179,49 @@ document.addEventListener("click", (e) => {
   if (!entry) return;
   const form = document.getElementById(tool + "Form");
   if (!form) return;
-  restoreFormInputs(form, entry.formState);
-  if (tool === "thread"){ syncPctButtons(); updateThreadFields(); updateThreadReferenceOptions(entry.formState.threadClassRef || "basic"); updateThreadPreview(); }
-  if (tool === "mow"){ syncModeButtons(); updateMowHints(); }
-  if (tool === "triangle"){ updateTriangleFields(); updateTriangleDiagram(); }
-  if (tool === "feeds"){ sfSyncUnitLabels(); }
-  if (tool === "advanced"){ document.getElementById("advancedMode")?.dispatchEvent(new Event("change")); }
-  requestFormSubmit(form);
+  restoreCalculation(tool, entry.formState);
+});
+
+Object.entries(results).forEach(([tool, target]) => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "favorite-btn";
+  button.dataset.favorite = tool;
+  button.hidden = true;
+  target.shell.querySelector(".result-actions").append(button);
+  const panel = document.createElement("details");
+  panel.id = `favorites-${tool}`;
+  panel.className = "progressive-disclosure favorites";
+  panel.innerHTML = '<summary>Favorites</summary><div class="favorite-list"></div>';
+  document.getElementById(`${tool}Form`).prepend(panel);
+  renderFavorites(tool);
+});
+document.addEventListener("click", event => {
+  const save = event.target.closest("[data-favorite]");
+  const remove = event.target.closest("[data-favorite-remove]");
+  const restore = event.target.closest("[data-favorite-restore]");
+  const tool = save?.dataset.favorite || remove?.dataset.favoriteRemove || restore?.dataset.favoriteRestore;
+  if (!tool) return;
+  let entries = loadEntries(favoriteKey(tool));
+  if (restore) {
+    const entry = entries[Number(restore.dataset.index)];
+    if (entry) restoreCalculation(tool, entry.formState);
+    return;
+  }
+  if (remove) entries.splice(Number(remove.dataset.index), 1);
+  if (save) {
+    if (!resultState.isCurrent(tool)) return;
+    const target = results[tool];
+    const index = entries.findIndex(entry => sameSetup(entry.formState, target.formState));
+    if (index >= 0) entries.splice(index, 1);
+    else {
+      if (entries.length >= 12) { showToast("Your 12 favorites are full. Remove one before saving another."); return; }
+      entries.unshift({ ts: Date.now(), label: describeSetup(tool, target.formState), primary: target.primary.textContent, formState: target.formState });
+    }
+  }
+  try { localStorage.setItem(favoriteKey(tool), JSON.stringify(entries)); }
+  catch { showToast("Could not save favorites on this device."); return; }
+  renderFavorites(tool);
 });
 
 // Initialise history panels on load
@@ -3031,7 +3232,7 @@ function buildShareUrl(toolName, formState){
   const params = new URLSearchParams();
   params.set("tool", toolName);
   for (const [k, v] of Object.entries(formState)){
-    if (v !== "" && v !== null && v !== undefined) params.set(k, v);
+    if (v !== null && v !== undefined) params.set(k, v);
   }
   return location.href.split("#")[0] + "#" + params.toString();
 }
@@ -3152,7 +3353,15 @@ function applyRoute(){
   if (!form) return;
   openTool(shared.tool, { animate: false });
   if (!shared.formState) return;
-  restoreFormInputs(form, shared.formState);
+  try {
+    // Validate before changing the recipient's current inputs.
+    if (shared.formState.__context !== undefined) readSetupContext(shared.formState.__context);
+    unitController.reset(form);
+    restoreFormInputs(form, shared.formState);
+  } catch (error) {
+    showWarn(form.querySelector(".warning"), error.message);
+    return;
+  }
   if (shared.tool === "thread"){ syncPctButtons(); updateThreadFields(); updateThreadReferenceOptions(shared.formState.threadClassRef || "basic"); updateThreadPreview(); }
   if (shared.tool === "mow"){ syncModeButtons(); updateMowHints(); }
   if (shared.tool === "triangle"){ updateTriangleFields(); updateTriangleDiagram(); }

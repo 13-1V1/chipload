@@ -1,7 +1,7 @@
-const APP_VERSION = "3.2.0";
+const APP_VERSION = "3.3.0";
 const CACHE_PREFIX = "marcos-calc-v";
 const CACHE = `${CACHE_PREFIX}${APP_VERSION}`;
-const PRECACHE = ["./index.html", "./app.css?v=3.2.0", "./app.js?v=3.2.0", "./calc-core.js?v=3.2.0", "./ui-state.js?v=3.2.0", "./units.js?v=3.2.0", "./persistence.js?v=3.2.0", "./mobile-ui.js?v=3.2.0", "./pwa.js?v=3.2.0", "./favicon.png", "./manifest.json", "./tests.html", "./assets/fonts/ibm-plex-sans-latin.woff2", "./assets/fonts/roboto-slab-700-latin.woff2", "./assets/icons/brand-96.png", "./assets/icons/brand-192.png", "./assets/icons/apple-touch-180.png", "./assets/icons/app-192.png", "./assets/icons/app-512.png", "./assets/icons/maskable-512.png"];
+const PRECACHE = ["./index.html", "./app.css?v=3.3.0", "./app.js?v=3.3.0", "./setup-context.js?v=3.3.0", "./calc-core.js?v=3.3.0", "./ui-state.js?v=3.3.0", "./units.js?v=3.3.0", "./persistence.js?v=3.3.0", "./mobile-ui.js?v=3.3.0", "./pwa.js?v=3.3.0", "./favicon.png", "./manifest.json", "./tests.html", "./assets/fonts/ibm-plex-sans-latin.woff2", "./assets/fonts/roboto-slab-700-latin.woff2", "./assets/icons/brand-96.png", "./assets/icons/brand-192.png", "./assets/icons/apple-touch-180.png", "./assets/icons/app-192.png", "./assets/icons/app-512.png", "./assets/icons/maskable-512.png"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)));
