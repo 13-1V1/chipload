@@ -1,0 +1,42 @@
+<!--
+Created by: Brennan Meyer with use of Claude Code 09/30/2026 Santa Clarita, CA
+brennanmmeyer@gmail.com
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chipload core sandbox</title>
+<style>
+  body { font: 14px/1.4 ui-monospace, monospace; background: #121416; color: #E8EAED; margin: 16px; }
+  select, textarea, button { font: inherit; background: #1B1F23; color: inherit; border: 1px solid #333; padding: 8px; }
+  textarea { width: 100%; min-height: 80px; box-sizing: border-box; }
+  button { background: #2F6FEB; border: 0; min-height: 56px; padding: 0 20px; }
+  pre { background: #1B1F23; padding: 12px; white-space: pre-wrap; color: #5CE1E6; }
+</style>
+</head>
+<body>
+<h1>Core sandbox</h1>
+<p>Calls one pure function from <code>src/core</code> with JSON args. No app shell loaded.</p>
+<select id="fn"></select>
+<textarea id="args">[0.25, 0.05, 75]</textarea>
+<button id="run">Run</button>
+<pre id="out"></pre>
+<script type="module">
+  import * as core from "../../src/core/index.js";
+  const fnSel = document.getElementById("fn");
+  Object.keys(core).filter(k => typeof core[k] === "function").sort().forEach(k => {
+    const o = document.createElement("option"); o.value = o.textContent = k; fnSel.append(o);
+  });
+  fnSel.value = "tapDrillByPercent";
+  document.getElementById("run").onclick = () => {
+    const out = document.getElementById("out");
+    try {
+      const args = JSON.parse(document.getElementById("args").value);
+      out.textContent = JSON.stringify(core[fnSel.value](...args), null, 2);
+    } catch (e) { out.textContent = "Error: " + e.message; }
+  };
+</script>
+</body>
+</html>

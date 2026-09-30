@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test core.test.mjs setup-context.test.mjs pages.test.mjs worker.test.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\" core.test.mjs setup-context.test.mjs pages.test.mjs worker.test.mjs",
     "check": "node scripts/check.mjs",
     "serve": "node serve.mjs",
     "serve:pages": "node serve.mjs --base=/Machinist_calc/",
