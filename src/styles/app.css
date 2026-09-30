@@ -253,6 +253,23 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
 .about h3 { color: var(--text); font-size: 1rem; margin: 18px 0 6px; }
 pre.lic { font: 0.75rem/1.4 var(--mono); white-space: pre-wrap; color: var(--text-3); max-height: 200px; overflow: auto; background: var(--card); padding: 10px; border-radius: 6px; }
 
+/* ── Extras: lock, code, downloads ────────────────────────────── */
+.lock { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: var(--card); border: 1px dashed var(--accent); border-radius: var(--radius); }
+.lock span { color: var(--text-2); font-size: 0.875rem; }
+.lock .btn { text-decoration: none; display: inline-flex; align-items: center; flex: none; }
+.extras { display: flex; flex-direction: column; gap: 12px; }
+.extras:empty { display: none; }
+.codeblock { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.code-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line); }
+.code-head b { flex: 1; }
+.btn.small { min-height: 40px; padding: 0 14px; font-size: 0.875rem; }
+pre.code { margin: 0; padding: 12px 14px; font-size: 0.875rem; line-height: 1.5; overflow-x: auto; color: var(--text); max-height: 50vh; }
+.dl-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.dl-row .btn { flex: 1; }
+.input.area { font-family: var(--mono); font-size: 1.0625rem; padding: 10px 14px; line-height: 1.5; resize: vertical; }
+.table-title { padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--line); }
+.extras table.chart th { top: 0; position: static; }
+
 /* ── Charts / tables ──────────────────────────────────────────── */
 .table-wrap { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 table.chart { width: 100%; border-collapse: collapse; font-family: var(--mono); font-variant-numeric: tabular-nums; }

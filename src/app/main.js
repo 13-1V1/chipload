@@ -7,6 +7,7 @@ import { applyTheme, onSettings } from "./settings.js";
 import { onRoute, startRouter, navigate, back } from "./router.js";
 import { getCalc } from "./registry.js";
 import { mountCalculator, hideAnswerBar } from "./render.js";
+import { mountChart } from "./chart.js";
 import { closeNumpad } from "./numpad.js";
 import { renderHome, renderCategory, renderSettings, renderPro, renderStatic } from "./views.js";
 import { ICONS, CATEGORIES } from "./icons.js";
@@ -44,6 +45,7 @@ onRoute(({ segments, params }) => {
   if (head === "calc") {
     const def = getCalc(id);
     if (!def) { screen("Not found"); main.innerHTML = `<div class="empty">That tool doesn't exist. <a href="#/">Go home</a>.</div>`; return; }
+    if (def.view === "chart") { screen(def.title); current = mountChart(def, main, { params }); return; }
     screen(def.title, { answer: true });
     current = mountCalculator(def, main, { params });
     return;

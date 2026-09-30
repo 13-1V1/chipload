@@ -4,7 +4,8 @@
 // Mounts one calculator definition into the page: inputs on top, pinned answer bar,
 // "How was this figured?" drawer, recent history. Live-calculates on every change.
 
-import { fmt, parseDimension, parseFraction } from "../core/format.js";
+import { fmt, parseDimension } from "../core/format.js";
+import { buildValues, optionsFor, NUMERIC_KINDS } from "./values.js";
 import { CALCULATION_SOURCES } from "../data/sources.js";
 import { getSettings, setSetting, UNIT_LABEL } from "./settings.js";
 import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, loadBlob } from "./store.js";
@@ -12,7 +13,6 @@ import { attachNumpad, closeNumpad } from "./numpad.js";
 import { ICONS } from "./icons.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const NUMERIC_KINDS = new Set(["length", "number", "int", "angle", "percent", "speed", "feed", "feedRev", "text"]);
 
 /** Which unit label an input kind carries. */
 function unitFor(input, units) {
@@ -34,15 +34,6 @@ export function activeMachine() {
   const machines = loadBlob("machines", []);
   const id = loadBlob("activeMachine", null);
   return machines.find((m) => m.id === id) || null;
-}
-
-function parseValue(input, raw, units) {
-  const text = String(raw ?? "").trim();
-  if (input.kind === "select" || input.kind === "segment" || input.kind === "text") return text;
-  if (!text) return NaN;
-  if (input.kind === "length") return parseDimension(text, units);
-  const v = parseFraction(text);
-  return input.kind === "int" ? Math.round(v) : v;
 }
 
 function convertLength(text, from, to) {
@@ -114,11 +105,12 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     if (input.kind === "select") {
       control = document.createElement("select");
       control.className = "input";
-      for (const o of input.options) {
+      for (const o of optionsFor(input, raw, ctx())) {
         const opt = document.createElement("option");
         opt.value = o.value; opt.textContent = o.label;
         control.append(opt);
       }
+      if (![...control.options].some((o) => o.value === raw[input.id])) raw[input.id] = control.options[0]?.value ?? "";
       control.value = raw[input.id];
       control.addEventListener("change", () => { raw[input.id] = control.value; recalc(); });
     } else if (input.kind === "segment") {
@@ -137,13 +129,20 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
         control.append(b);
       }
       label.htmlFor = "";
+    } else if (input.kind === "textarea") {
+      control = document.createElement("textarea");
+      control.className = "input area";
+      control.rows = input.rows || 4;
+      control.value = raw[input.id];
+      control.placeholder = input.placeholder || "";
+      control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); });
     } else {
       control = document.createElement("input");
       control.type = "text";
       control.className = "input";
       control.value = raw[input.id];
       control.dataset.numpad = "1";
-      if (input.kind === "text") { control.inputMode = "text"; control.autocapitalize = "off"; control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); }); }
+      if (input.kind === "text") { control.inputMode = "text"; control.autocapitalize = "off"; control.placeholder = input.placeholder || ""; control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); }); }
       else {
         numericInputs.push(control);
         attachNumpad(control, {
@@ -166,13 +165,22 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   }
 
   // ── Output regions ──
+  const locked = !!def.pro && !getSettings().pro;
   const warnBox = document.createElement("div");
   const stats = document.createElement("div"); stats.className = "stats";
+  const extras = document.createElement("div"); extras.className = "extras";
   const explain = document.createElement("details"); explain.className = "drawer";
   explain.innerHTML = `<summary>How was this figured?</summary><div class="body"></div>`;
   const history = document.createElement("details"); history.className = "drawer";
   history.innerHTML = `<summary>Recent</summary><div class="body"></div>`;
-  calc.append(warnBox, stats, explain, history);
+  if (locked) {
+    const lock = document.createElement("div");
+    lock.className = "lock";
+    lock.innerHTML = `<div><b>Pro tool</b><br><span>${esc(def.short || "")}</span></div><a class="btn primary" href="#/pro">Unlock Pro</a>`;
+    calc.append(warnBox, lock, history);
+  } else {
+    calc.append(warnBox, stats, extras, explain, history);
+  }
   if (def.safety) {
     const n = document.createElement("p"); n.className = "note"; n.textContent = def.safety; calc.append(n);
   }
@@ -211,44 +219,37 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
 
   let historyTimer = null;
   function recalc() {
-    const values = {};
     const c = ctx();
-    // visibility
+    const { values, invalid, hidden, placeholder } = buildValues(def, raw, c);
     for (const input of def.inputs) {
-      const show = typeof input.showIf === "function" ? !!input.showIf(raw, c) : true;
-      fieldWraps[input.id].hidden = !show;
-    }
-    let invalid = false;
-    for (const input of def.inputs) {
-      if (fieldWraps[input.id].hidden) { values[input.id] = NaN; continue; }
-      let v = parseValue(input, raw[input.id], units);
       const el = fields[input.id];
-      const isNumeric = NUMERIC_KINDS.has(input.kind) && input.kind !== "text";
-      if (isNumeric && Number.isNaN(v) && typeof input.auto === "function") {
-        v = input.auto(raw, c, values);
-        el.placeholder = Number.isFinite(v) ? `auto ${fmt(v, input.places ?? 4)}` : "";
-        values[`${input.id}Auto`] = true;
-      } else if (isNumeric && Number.isNaN(v) && input.optional) {
-        el.placeholder = input.placeholder || "optional";
-      } else if (isNumeric && !Number.isFinite(v)) {
-        invalid = true;
-        el.classList.toggle("bad", String(raw[input.id]).trim() !== "");
-        el.placeholder = input.placeholder || "";
-      } else if (isNumeric && ((input.min != null && v < input.min) || (input.max != null && v > input.max))) {
-        invalid = true; el.classList.add("bad");
-      } else {
-        el.classList?.remove("bad");
+      fieldWraps[input.id].hidden = hidden.has(input.id);
+      if (input.kind === "select" && typeof input.options === "function") syncOptions(input, el, c);
+      if (el.tagName === "INPUT") {
+        el.placeholder = placeholder[input.id] ?? (NUMERIC_KINDS.has(input.kind) ? "" : el.placeholder);
+        el.classList.toggle("bad", invalid.has(input.id) && String(raw[input.id]).trim() !== "");
       }
-      values[input.id] = v;
     }
     saveInputs(def.id, { values: raw, units });
 
-    if (invalid) { renderEmpty("Check the highlighted field"); return; }
+    if (invalid.size) { renderEmpty("Check the highlighted field"); return; }
     let out;
     try { out = def.compute(values, c); }
     catch (err) { renderEmpty(err.message || "Can't calculate with these values"); return; }
     if (!out) { renderEmpty("Enter values to begin"); return; }
     render(out, values);
+  }
+
+  /** Rebuild a dynamic select's options when they change; keep the value if still valid. */
+  function syncOptions(input, el, c) {
+    const opts = optionsFor(input, raw, c);
+    const sig = JSON.stringify(opts);
+    if (el.dataset.sig === sig) return;
+    el.dataset.sig = sig;
+    el.innerHTML = "";
+    for (const o of opts) { const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label; el.append(opt); }
+    if (!opts.some((o) => o.value === raw[input.id])) raw[input.id] = opts[0]?.value ?? "";
+    el.value = raw[input.id];
   }
 
   function renderEmpty(msg) {
@@ -261,6 +262,14 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
 
   function render(out, values) {
     const p = out.primary;
+    if (locked) {
+      answerVal.textContent = "Pro";
+      answerUnit.textContent = "";
+      answerLbl.innerHTML = `<a href="#/pro" style="color:var(--text-2)">Unlock to see ${esc((p.label || "the answer").toLowerCase())}</a>`;
+      lastPrimaryText = "";
+      warnBox.innerHTML = "";
+      return;
+    }
     const text = Number.isFinite(p.value) ? fmt(p.value, p.places ?? 4) : String(p.text ?? "—");
     answerVal.textContent = text;
     answerVal.classList.toggle("warn-c", !!p.clamped);
@@ -275,6 +284,8 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
 
     warnBox.innerHTML = (out.warnings || []).filter(Boolean).map((w) => `<div class="warn">${ICONS.warn}<div>${esc(w)}</div></div>`).join("");
 
+    renderExtras(out);
+
     const src = CALCULATION_SOURCES[out.source] || null;
     explain.querySelector(".body").innerHTML =
       (out.explain || []).map((e) => `${e.title ? `<div><b>${esc(e.title)}</b></div>` : ""}<div class="formula">${esc(e.formula)}${e.plugged ? "\n" + esc(e.plugged) : ""}</div>`).join("") +
@@ -286,6 +297,30 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
       pushHistory(def.id, { key: JSON.stringify(raw) + units, label: out.historyLabel || describe(values), primary: lastPrimaryText, raw: { ...raw }, units });
       renderHistory();
     }, 900);
+  }
+
+  /** Tables, code blocks (G-code), and download buttons. Any item with pro:true is a locked stub for free users. */
+  function renderExtras(out) {
+    const pro = getSettings().pro;
+    const lockStub = (title) => `<div class="lock"><div><b>${esc(title)}</b><br><span>Part of Chipload Pro</span></div><a class="btn primary" href="#/pro">Unlock</a></div>`;
+    let html = "";
+    for (const t of out.tables || []) {
+      if (t.pro && !pro) { html += lockStub(t.title || "Table"); continue; }
+      html += `<div class="table-wrap">${t.title ? `<div class="table-title">${esc(t.title)}</div>` : ""}<table class="chart"><thead><tr>${t.columns.map((c) => `<th${c.align === "right" ? ' class="r"' : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${t.rows.map((r) => `<tr${r._hit ? ' class="hit"' : ""}>${t.columns.map((c) => `<td${c.align === "right" ? ' class="r"' : ""}>${esc(typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : r[c.key])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    }
+    for (const b of out.code || []) {
+      if (b.pro && !pro) { html += lockStub(b.title || "Code"); continue; }
+      html += `<div class="codeblock"><div class="code-head"><b>${esc(b.title || "Code")}</b><button type="button" class="btn small" data-copy="${esc(b.text)}">Copy</button>${b.filename ? `<button type="button" class="btn small" data-dl="${esc(b.filename)}" data-mime="${esc(b.mime || "text/plain")}" data-text="${esc(b.text)}">Save</button>` : ""}</div><pre class="code num">${esc(b.text)}</pre></div>`;
+    }
+    const dls = (out.downloads || []).filter((d) => !(d.pro && !pro));
+    const lockedDls = (out.downloads || []).filter((d) => d.pro && !pro);
+    if (dls.length) html += `<div class="dl-row">${dls.map((d) => `<button type="button" class="btn" data-dl="${esc(d.filename)}" data-mime="${esc(d.mime || "text/plain")}" data-text="${esc(d.text)}">${esc(d.label)}</button>`).join("")}</div>`;
+    if (lockedDls.length) html += lockStub(lockedDls.map((d) => d.label).join(" / "));
+    extras.innerHTML = html;
+    extras.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied"); } catch { toast("Copy blocked"); }
+    }));
+    extras.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click", () => download(b.dataset.dl, b.dataset.text, b.dataset.mime)));
   }
 
   function describe(values) {
@@ -325,6 +360,18 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     destroy() { clearTimeout(historyTimer); closeNumpad(); },
     setUnits(u) { if (u !== units) calc.querySelector(`.seg [data-u="${u}"]`)?.click(); },
   };
+}
+
+/** Save text as a file. On Android (Capacitor) this is swapped for a native share sheet in Phase 6. */
+export function download(filename, text, mime = "text/plain") {
+  if (window.chiploadNative?.saveFile) return window.chiploadNative.saveFile(filename, text, mime);
+  try {
+    const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; document.body.append(a); a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 0);
+  } catch { toast("Couldn't save file"); }
 }
 
 export function toast(msg) {

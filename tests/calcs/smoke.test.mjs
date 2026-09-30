@@ -1,0 +1,85 @@
+// Created by: Brennan Meyer with use of Claude Code 09/30/2026 Santa Clarita, CA
+// brennanmmeyer@gmail.com
+
+// Every registered calculator computes with its defaults, in inch and mm, without throwing,
+// and returns a well-formed result. Charts return rows.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import "../../src/calcs/index.js";
+import { allCalcs } from "../../src/app/registry.js";
+import { buildValues, defaultRaw } from "../../src/app/values.js";
+import { fmt } from "../../src/core/format.js";
+import { UNIT_LABEL } from "../../src/app/settings.js";
+
+const ctxFor = (units, machine = null) => ({ units, L: UNIT_LABEL[units], settings: { units, pro: true }, machine, fmt });
+
+test("registry has the free-tier tools from the brief", () => {
+  const ids = new Set(allCalcs().map((d) => d.id));
+  for (const id of ["feeds-mill", "feeds-drill", "tap-drill", "drill-chart", "thread-data", "right-triangle", "bolt-circle", "fraction-converter", "unit-converter", "gcode-ref"]) {
+    assert.ok(ids.has(id), `missing ${id}`);
+  }
+});
+
+for (const def of allCalcs()) {
+  if (def.view === "chart") {
+    test(`chart ${def.id} has rows and columns`, () => {
+      const rows = def.rows(ctxFor("in"));
+      assert.ok(rows.length > 10, "rows");
+      const cols = typeof def.columns === "function" ? def.columns(ctxFor("in")) : def.columns;
+      for (const c of cols) assert.ok(c.key && c.label);
+    });
+    continue;
+  }
+  for (const units of def.units === false ? ["in"] : ["in", "mm"]) {
+    test(`${def.id} computes with defaults (${units})`, () => {
+      const raw = defaultRaw(def);
+      const ctx = ctxFor(units);
+      const { values, invalid } = buildValues(def, raw, ctx);
+      assert.equal(invalid.size, 0, `invalid defaults: ${[...invalid].join(",")}`);
+      const out = def.compute(values, ctx);
+      assert.ok(out && out.primary, "primary");
+      assert.ok(Number.isFinite(out.primary.value) || typeof out.primary.text === "string", "primary has a value or text");
+      for (const s of out.stats || []) assert.ok(s.label, "stat label");
+      assert.ok(Array.isArray(out.explain) && out.explain.length > 0, "explain drawer content");
+      assert.ok(out.source, "source key");
+    });
+  }
+}
+
+test("machine limits clamp feeds-mill and flag it", () => {
+  const def = allCalcs().find((d) => d.id === "feeds-mill");
+  const ctx = ctxFor("in", { id: "m1", name: "Bridgeport", maxRpm: 2000, maxFeed: 30, units: "in" });
+  const { values } = buildValues(def, defaultRaw(def, { diameter: "0.25", sfm: "800" }), ctx);
+  const out = def.compute(values, ctx);
+  assert.equal(out.stats[0].value, 2000);
+  assert.ok(out.warnings.length >= 1);
+  assert.match(out.warnings[0], /Bridgeport/);
+});
+
+test("tap drill 1/4-20 at 75% → #7 and M10 → 8.5 mm", () => {
+  const def = allCalcs().find((d) => d.id === "tap-drill");
+  const ctx = ctxFor("in");
+  let out = def.compute(buildValues(def, defaultRaw(def, { thread: "1/4-20" }), ctx).values, ctx);
+  assert.equal(out.primary.text, "#7");
+  out = def.compute(buildValues(def, defaultRaw(def, { thread: "M10" }), ctx).values, ctx);
+  assert.equal(out.primary.text, "8.5 mm");
+});
+
+test("bolt circle G-code is gated as Pro and inch by default", () => {
+  const def = allCalcs().find((d) => d.id === "bolt-circle");
+  const ctx = ctxFor("in");
+  const out = def.compute(buildValues(def, defaultRaw(def, { gcode: "drill" }), ctx).values, ctx);
+  assert.equal(out.code[0].pro, true);
+  assert.match(out.code[0].text, /G20/);
+  assert.match(out.code[0].text, /G81/);
+  assert.equal(out.tables[0].rows.length, 6);
+});
+
+test("unit converter dynamic options and temperature", () => {
+  const def = allCalcs().find((d) => d.id === "unit-converter");
+  const ctx = ctxFor("in");
+  const { values } = buildValues(def, defaultRaw(def, { cat: "temp", value: "212", from: "°F", to: "°C" }), ctx);
+  const out = def.compute(values, ctx);
+  assert.ok(Math.abs(out.primary.value - 100) < 1e-9);
+});
