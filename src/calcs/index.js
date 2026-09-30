@@ -7,7 +7,14 @@
 import "./feeds-mill.js";
 import "./thread-mill.js";
 import "./ball-nose.js";
+import "./chip-thinning.js";
+import "./cut-time.js";
+import "./circle-interp.js";
 // Lathe
+import "./lathe-feeds.js";
+import "./surface-finish.js";
+import "./lathe-cycle.js";
+import "./tnr-comp.js";
 import "./taper.js";
 // Drill & tap
 import "./tap-drill.js";
