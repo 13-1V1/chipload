@@ -1,0 +1,23 @@
+{
+  "name": "Chipload: Machinist Calculator",
+  "short_name": "Chipload",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121416",
+  "theme_color": "#121416",
+  "description": "Every machinist calculator in one app. No subscription. No ads. Works offline.",
+  "icons": [
+    { "src": "assets/icons/app-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icons/app-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Speeds & feeds", "url": "./#/calc/feeds-mill" },
+    { "name": "Tap drill", "url": "./#/calc/tap-drill" },
+    { "name": "Bolt circle", "url": "./#/calc/bolt-circle" },
+    { "name": "Right triangle", "url": "./#/calc/right-triangle" }
+  ]
+}

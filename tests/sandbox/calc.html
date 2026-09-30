@@ -1,0 +1,49 @@
+<!--
+Created by: Brennan Meyer with use of Claude Code 09/30/2026 Santa Clarita, CA
+brennanmmeyer@gmail.com
+-->
+<!doctype html>
+<html lang="en" data-theme="dark" data-glove="off">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calculator sandbox</title>
+<link rel="stylesheet" href="../../src/styles/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <h1 id="title">sandbox</h1>
+    <select id="pick" class="input" style="max-width:220px;min-height:44px"></select>
+    <button type="button" class="icon-btn" id="glove" aria-label="Toggle glove mode" title="Glove">🧤</button>
+    <button type="button" class="icon-btn" id="theme" aria-label="Toggle theme" title="Theme">☀</button>
+  </header>
+  <main></main>
+</div>
+<script type="module">
+  // Loads ONE calculator by ?id=… (or the picker) with the real renderer and nothing else.
+  import "../../src/calcs/index.js";
+  import { allCalcs, getCalc } from "../../src/app/registry.js";
+  import { mountCalculator } from "../../src/app/render.js";
+  import { getSettings, setSetting, applyTheme } from "../../src/app/settings.js";
+  applyTheme();
+  const main = document.querySelector("main");
+  const pick = document.querySelector("#pick");
+  const url = new URL(location.href);
+  for (const d of allCalcs()) { const o = document.createElement("option"); o.value = d.id; o.textContent = d.title; pick.append(o); }
+  let current;
+  function mount(id) {
+    current?.destroy?.();
+    const def = getCalc(id) || allCalcs()[0];
+    pick.value = def.id;
+    document.querySelector("#title").textContent = def.title;
+    url.searchParams.set("id", def.id); history.replaceState(null, "", url);
+    current = mountCalculator(def, main, { params: Object.fromEntries(url.searchParams) });
+  }
+  pick.addEventListener("change", () => mount(pick.value));
+  document.querySelector("#glove").addEventListener("click", () => setSetting("glove", !getSettings().glove));
+  document.querySelector("#theme").addEventListener("click", () => setSetting("theme", getSettings().theme === "dark" ? "light" : "dark"));
+  mount(url.searchParams.get("id"));
+</script>
+</body>
+</html>
