@@ -58,7 +58,10 @@ export default register({
       explain: [
         { title: "60° thread basics", formula: "H = 0.866 P   PD = D − 0.6495 P   minor (int) = D − 1.0825 P   minor (ext) = D − 1.2269 P", plugged: `P = ${fmt(nat.pitch, nat.p)} ${nat.u}, D = ${fmt(nat.major, nat.p)} ${nat.u}` },
       ],
-      notes: ["Class limits are calculated from ASME B1.1 formulas at 9P engagement. For acceptance work use the published tables."],
+      notes: [
+        ...(t.suppliedSeries === "UNJ" ? ["UNJ (ASME B1.15): same basic diameters as UN, but the external root must have a 0.15011P–0.18042P radius and the internal minor is held larger to clear it. Use UNJ-specific taps and gauges."] : []),
+        "Class limits are calculated from ASME B1.1 formulas at 9P engagement. For acceptance work use the published tables.",
+      ],
       historyLabel: series || t.label,
     };
   },

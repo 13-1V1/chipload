@@ -25,9 +25,9 @@ export const BASIC_EXTERNAL_MINOR_FACTOR = 1.2268693;
  */
 export function parseThreadSpec(input) {
   let normalized = String(input ?? "").trim().toLowerCase().replace(/×/g, "x");
-  const suffixMatch = normalized.match(/\s+(unc|unf|unef|un)\s*$/i);
+  const suffixMatch = normalized.match(/\s+(unc|unf|unef|unj|un)\s*$/i);
   const suppliedSeries = suffixMatch ? suffixMatch[1].toUpperCase() : null;
-  normalized = normalized.replace(/\s+(unc|unf|unef|un)\s*$/i, "").replace(/\s+/g, "");
+  normalized = normalized.replace(/\s+(unc|unf|unef|unj|un)\s*$/i, "").replace(/\s+/g, "");
   if (!normalized) return null;
 
   const machine = normalized.match(/^#?(\d{1,2})-(\d+(?:\.\d+)?)$/);
@@ -111,4 +111,76 @@ export function lookupMetricThread(majorMm, pitchMm) {
   const TOL_D = 0.08, TOL_P = 0.08;
   const match = METRIC_THREAD_TABLE.find(([d, p]) => Math.abs(d - majorMm) < TOL_D && Math.abs(p - pitchMm) < TOL_P);
   return match ? match[2] : null;
+}
+
+// ── ISO metric class limits ───────────────────────────────────────────────────
+// Source: ISO 965-1 tolerance formulas. D is taken as the geometric mean of the standard
+// diameter group (as the published tables do). Values are estimates within a few µm of the tables.
+const ISO_D_GROUPS = [0.99, 1.4, 2.8, 5.6, 11.2, 22.4, 45, 90, 180, 355];
+function isoGroupMean(major) {
+  for (let i = 1; i < ISO_D_GROUPS.length; i++) {
+    if (major <= ISO_D_GROUPS[i]) return Math.sqrt(ISO_D_GROUPS[i - 1] * ISO_D_GROUPS[i]);
+  }
+  return major;
+}
+const GRADE_MULT = { 3: 0.5, 4: 0.63, 5: 0.8, 6: 1, 7: 1.25, 8: 1.6, 9: 2 };
+
+/**
+ * @param {object} p  major & pitch in mm
+ * @param {string} [p.extPos="g"]  e | f | g | h
+ * @param {number} [p.extGrade=6]
+ * @param {string} [p.intPos="H"]  G | H
+ * @param {number} [p.intGrade=6]
+ * @returns limits in mm for the external (e.g. 6g) and internal (e.g. 6H) threads
+ */
+export function metricToleranceEnvelope({ major, pitch, extPos = "g", extGrade = 6, intPos = "H", intGrade = 6 }) {
+  const Dm = isoGroupMean(major);
+  const g = basicThreadGeometry(major, pitch);
+  const Td2_6 = 90 * Math.pow(pitch, 0.4) * Math.pow(Dm, 0.1);            // µm, external PD, grade 6
+  const TD2_6 = 1.32 * Td2_6;                                              // µm, internal PD, grade 6
+  const Td_6 = 180 * Math.cbrt(pitch * pitch) - 3.15 / Math.sqrt(pitch);   // µm, external major, grade 6
+  const TD1_6 = pitch >= 1 ? 230 * Math.pow(pitch, 0.7) : 433 * pitch - 190 * Math.pow(pitch, 1.22); // µm, internal minor
+  const esTable = { e: 50 + 11 * pitch, f: 30 + 11 * pitch, g: 15 + 11 * pitch, h: 0 };
+  const es = (esTable[extPos] ?? esTable.g) / 1000;
+  const EI = (intPos === "G" ? 15 + 11 * pitch : 0) / 1000;
+  const Td2 = Td2_6 * (GRADE_MULT[extGrade] ?? 1) / 1000;
+  const Td = Td_6 * (GRADE_MULT[extGrade] ?? 1) / 1000;
+  const TD2 = TD2_6 * (GRADE_MULT[intGrade] ?? 1) / 1000;
+  const TD1 = TD1_6 * (GRADE_MULT[intGrade] ?? 1) / 1000;
+  return {
+    external: { label: `${extGrade}${extPos}`, majorMax: major - es, majorMin: major - es - Td, pdMax: g.pitchDiameter - es, pdMin: g.pitchDiameter - es - Td2, tolPd: Td2, allowance: es },
+    internal: { label: `${intGrade}${intPos}`, minorMin: g.internalMinor + EI, minorMax: g.internalMinor + EI + TD1, pdMin: g.pitchDiameter + EI, pdMax: g.pitchDiameter + EI + TD2, tolPd: TD2 },
+  };
+}
+
+// ── ACME (general purpose) ────────────────────────────────────────────────────
+/**
+ * Source: ASME B1.5 general-purpose Acme: 29° included angle, basic depth 0.5P,
+ * root clearance 0.020 in on diameter for 10 TPI and coarser, 0.010 in for finer.
+ * PD allowance (external): 2G 0.008√D, 3G 0.006√D, 4G 0.004√D. Inch units.
+ */
+export function acmeGeometry({ major, tpi }) {
+  const pitch = 1 / tpi;
+  const clearance = tpi <= 10 ? 0.020 : 0.010;
+  return {
+    pitch,
+    depth: 0.5 * pitch,
+    pitchDiameter: major - 0.5 * pitch,
+    internalMinor: major - pitch,
+    externalMinor: major - pitch - clearance,
+    internalMajor: major + clearance,
+    crestFlat: 0.3707 * pitch,
+    rootFlat: 0.3707 * pitch - 0.259 * clearance,
+    allowance: { "2G": 0.008 * Math.sqrt(major), "3G": 0.006 * Math.sqrt(major), "4G": 0.004 * Math.sqrt(major) },
+  };
+}
+
+// ── STI (helical insert) tap drill ────────────────────────────────────────────
+/**
+ * Screw-thread-insert holes are oversize by roughly the wire section. Estimate: drill ≈ D + 0.35 P,
+ * which lands on the insert makers' listed drills for common sizes (1/4-20 → 17/64, 3/8-16 → X, 1/2-13 → 17/32).
+ * Always confirm with the insert maker's chart.
+ */
+export function stiTapDrill(major, pitch) {
+  return major + 0.35 * pitch;
 }

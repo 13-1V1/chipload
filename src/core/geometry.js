@@ -62,3 +62,71 @@ export function taperGeometry({ largeDiameter, smallDiameter, length, units = "i
   const halfAngle = radToDeg(Math.atan((diameterChange / 2) / length));
   return { diameterChange, taperPerLength, taperPerFoot, includedAngle: halfAngle * 2, halfAngle };
 }
+
+// ── Oblique (any) triangle ────────────────────────────────────────────────────
+/**
+ * Solve a general triangle. Sides a, b, c are opposite angles A, B, C (degrees).
+ * mode: "SSS" (a,b,c) | "SAS" (a, C, b) | "ASA" (A, c, B) | "AAS" (A, B, a) | "SSA" (a, b, A — may have two solutions)
+ * Returns { a, b, c, A, B, C, area, ambiguous?: second solution }.
+ */
+export function solveTriangle(mode, p) {
+  const r = (d) => d * Math.PI / 180, d = (x) => x * 180 / Math.PI;
+  const law = (x, y, ang) => Math.sqrt(x * x + y * y - 2 * x * y * Math.cos(r(ang)));
+  const angFromSides = (opp, s1, s2) => d(Math.acos((s1 * s1 + s2 * s2 - opp * opp) / (2 * s1 * s2)));
+  let a, b, c, A, B, C, ambiguous = null;
+  if (mode === "SSS") {
+    ({ a, b, c } = p);
+    if (a + b <= c || a + c <= b || b + c <= a) throw new Error("Those three sides can't form a triangle");
+    A = angFromSides(a, b, c); B = angFromSides(b, a, c); C = 180 - A - B;
+  } else if (mode === "SAS") {
+    ({ a, b, C } = p);
+    c = law(a, b, C); A = angFromSides(a, b, c); B = 180 - A - C;
+  } else if (mode === "ASA") {
+    ({ A, B, c } = p);
+    C = 180 - A - B; if (C <= 0) throw new Error("Angles must add to less than 180°");
+    a = c * Math.sin(r(A)) / Math.sin(r(C)); b = c * Math.sin(r(B)) / Math.sin(r(C));
+  } else if (mode === "AAS") {
+    ({ A, B, a } = p);
+    C = 180 - A - B; if (C <= 0) throw new Error("Angles must add to less than 180°");
+    b = a * Math.sin(r(B)) / Math.sin(r(A)); c = a * Math.sin(r(C)) / Math.sin(r(A));
+  } else if (mode === "SSA") {
+    ({ a, b, A } = p);
+    const sinB = b * Math.sin(r(A)) / a;
+    if (sinB > 1) throw new Error("No triangle: side a is too short for that angle");
+    B = d(Math.asin(sinB)); C = 180 - A - B; c = a * Math.sin(r(C)) / Math.sin(r(A));
+    const B2 = 180 - B, C2 = 180 - A - B2;
+    if (C2 > 0 && Math.abs(B2 - B) > 1e-9) ambiguous = { a, b, c: a * Math.sin(r(C2)) / Math.sin(r(A)), A, B: B2, C: C2 };
+  } else throw new Error("Unsupported triangle mode");
+  const area = 0.5 * a * b * Math.sin(r(C));
+  return { a, b, c, A, B, C, area, ambiguous };
+}
+
+// ── Arc / chord / segment ────────────────────────────────────────────────────
+/**
+ * Circular segment from any two of: radius R, chord c, height (sagitta) h, central angle θ (deg).
+ * Source: Machinery's Handbook "Segments of Circles".
+ */
+export function circularSegment({ radius, chord, height, angle }) {
+  let R = radius, c = chord, h = height, th = angle;
+  const r = (d) => d * Math.PI / 180, d = (x) => x * 180 / Math.PI;
+  if (Number.isFinite(R) && Number.isFinite(c)) { if (c > 2 * R) throw new Error("Chord can't be longer than the diameter"); th = d(2 * Math.asin(c / (2 * R))); h = R - Math.sqrt(R * R - c * c / 4); }
+  else if (Number.isFinite(R) && Number.isFinite(h)) { if (h > 2 * R) throw new Error("Height can't exceed the diameter"); c = 2 * Math.sqrt(2 * R * h - h * h); th = d(2 * Math.acos((R - h) / R)); }
+  else if (Number.isFinite(R) && Number.isFinite(th)) { c = 2 * R * Math.sin(r(th) / 2); h = R * (1 - Math.cos(r(th) / 2)); }
+  else if (Number.isFinite(c) && Number.isFinite(h)) { R = (c * c / (4 * h) + h) / 2; th = d(2 * Math.asin(c / (2 * R))); }
+  else if (Number.isFinite(c) && Number.isFinite(th)) { R = c / (2 * Math.sin(r(th) / 2)); h = R * (1 - Math.cos(r(th) / 2)); }
+  else if (Number.isFinite(h) && Number.isFinite(th)) { R = h / (1 - Math.cos(r(th) / 2)); c = 2 * R * Math.sin(r(th) / 2); }
+  else throw new Error("Give any two of radius, chord, height, angle");
+  const arcLength = R * r(th);
+  const area = (R * R / 2) * (r(th) - Math.sin(r(th)));
+  return { radius: R, chord: c, height: h, angle: th, arcLength, area };
+}
+
+// ── Fillet between two lines ─────────────────────────────────────────────────
+/**
+ * A fillet of radius r blending two lines that meet at included angle θ (deg):
+ * tangent distance from the corner along each line t = r ÷ tan(θ/2), corner-to-center d = r ÷ sin(θ/2).
+ */
+export function filletTangents({ radius, includedAngle }) {
+  const half = (includedAngle / 2) * Math.PI / 180;
+  return { tangentDistance: radius / Math.tan(half), cornerToCenter: radius / Math.sin(half), arcAngle: 180 - includedAngle, arcLength: radius * (180 - includedAngle) * Math.PI / 180 };
+}
