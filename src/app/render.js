@@ -422,3 +422,17 @@ export function hideAnswerBar() {
   const a = document.querySelector(".answer");
   if (a) a.hidden = true;
 }
+
+/** Build <option>s, grouping into <optgroup> when options carry a `group`. */
+function fillOptions(select, opts) {
+  select.innerHTML = "";
+  let groupEl = null, groupName = null;
+  for (const o of opts) {
+    const opt = document.createElement("option");
+    opt.value = o.value; opt.textContent = o.label;
+    if (o.group) {
+      if (o.group !== groupName) { groupEl = document.createElement("optgroup"); groupEl.label = o.group; groupName = o.group; select.append(groupEl); }
+      groupEl.append(opt);
+    } else select.append(opt);
+  }
+}

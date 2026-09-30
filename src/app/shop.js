@@ -158,7 +158,7 @@ function renderJobs(body) {
         <button type="button" class="row-btn" style="padding:0" data-open="${j.id}"><span class="t"><b>${esc(j.name)}</b><span class="sub">${esc(def?.title || j.calcId)} · <span class="num">${esc(j.primary)}</span> · ${new Date(j.at).toLocaleDateString()}</span></span></button>
         <button type="button" class="btn small" data-del="${j.id}" aria-label="Delete ${esc(j.name)}">✕</button></div></li>`; }).join("")}</ul>`
     : `<div class="empty">No saved jobs. On any calculator, tap ⋯ then “Save job” to keep every input for next time.</div>`;
-  body.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => { const j = list.find((x) => x.id === b.dataset.open); navigate(`/calc/${j.calcId}`, { ...j.raw, units: j.units }); }));
+  body.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => { const j = list.find((x) => x.id === b.dataset.open); navigate(`/calc/${j.calcId}`, { ...Object.fromEntries(Object.entries(j.raw).filter(([, v]) => String(v ?? "").trim() !== "")), units: j.units }); }));
   body.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => { jobs.remove(b.dataset.del); renderJobs(body); }));
 }
 
