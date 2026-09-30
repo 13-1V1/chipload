@@ -3,6 +3,9 @@
 
 // App-wide settings. Imperial and dark are the hard defaults — never inferred from locale.
 
+/** Web copy of the app (GitHub Pages) — shared links open there for people without the app. */
+export const SHARE_BASE = "https://13-1v1.github.io/chipload/";
+
 const KEY = "chipload.settings.v1";
 const DEFAULTS = Object.freeze({ units: "in", theme: "dark", glove: false, pro: false, places: 4 });
 const listeners = new Set();

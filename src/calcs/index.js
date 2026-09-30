@@ -48,3 +48,6 @@ import "./sine-bar.js";
 import "./fraction-converter.js";
 import "./unit-converter.js";
 import "./charts.js";
+import "./reference.js";
+// Shop
+import "./quote.js";

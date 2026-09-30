@@ -5,7 +5,7 @@
 
 import { register } from "../app/registry.js";
 import { rpmFromSfm, sfmFromRpm } from "../core/feeds.js";
-import { SF_DEFAULTS, MATERIAL_LABELS } from "../data/materials.js";
+import { materialOptions, materialSpeeds } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm } from "./_util.js";
 
@@ -37,12 +37,11 @@ export default register({
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
     { id: "diameter", label: "Drill diameter", kind: "length", default: "0.25", min: 0.0001 },
-    { id: "material", label: "Material", kind: "select", default: "mildSteel",
-      options: Object.keys(SF_DEFAULTS).map((k) => ({ value: k, label: MATERIAL_LABELS[k] })) },
+    { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Drill", kind: "segment", default: "hss",
       options: [{ value: "hss", label: "HSS / cobalt" }, { value: "carbide", label: "Carbide" }] },
     { id: "sfm", label: "Surface speed", kind: "speed", default: "", places: 0,
-      auto: (raw, c) => fromSfm((SF_DEFAULTS[raw.material] || SF_DEFAULTS.mildSteel)[raw.toolType === "carbide" ? "carbide" : "hss"].sfm, c.units),
+      auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType === "carbide" ? "carbide" : "hss").drillSfm, c.units),
       hint: "Leave blank to use the table value." },
     { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "", places: 4,
       auto: (raw, c, v) => fromIn(drillFeedPerRev(toIn(Number.isFinite(v.diameter) ? v.diameter : 0.25, c.units)), c.units) },
@@ -78,7 +77,7 @@ export default register({
         { title: "Feed rate", formula: "IPM = RPM × IPR", plugged: `= ${fmt(rpm, 0)} × ${fmt(iprIn, 4)} = ${fmt(feedIpm, 1)}` },
         ...(timeMin != null ? [{ title: "Time per hole", formula: "t = (depth + 0.3 D) ÷ IPM", plugged: `= (${fmt(depthIn, 3)} + ${fmt(pointLen, 3)}) ÷ ${fmt(feedIpm, 1)} = ${fmt(timeMin, 3)} min` }] : []),
       ],
-      historyLabel: `${fmt(v.diameter, c.units === "in" ? 4 : 2)} ${c.L.length} · ${MATERIAL_LABELS[v.material]}`,
+      historyLabel: `${fmt(v.diameter, c.units === "in" ? 4 : 2)} ${c.L.length} · ${materialSpeeds(v.material).material.name}`,
     };
   },
 });

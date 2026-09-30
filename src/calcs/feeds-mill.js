@@ -5,7 +5,8 @@
 
 import { register } from "../app/registry.js";
 import { rpmFromSfm, sfmFromRpm, radialChipThinningFactor } from "../core/feeds.js";
-import { SF_DEFAULTS, MATERIAL_LABELS, TOOL_LABELS } from "../data/materials.js";
+import { TOOL_LABELS } from "../data/materials.js";
+import { materialOptions, materialSpeeds } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 
 const toIn = (v, units) => (units === "in" ? v : v / 25.4);
@@ -14,8 +15,7 @@ const toSfm = (v, units) => (units === "in" ? v : v * 3.28084);
 const fromSfm = (v, units) => (units === "in" ? v : v / 3.28084);
 
 function defaults(raw) {
-  const m = SF_DEFAULTS[raw.material] || SF_DEFAULTS.aluminum;
-  return m[raw.toolType] || m.carbide;
+  return materialSpeeds(raw.material, raw.toolType);
 }
 
 export default register({
@@ -29,8 +29,7 @@ export default register({
   inputs: [
     { id: "diameter", label: "Tool diameter", kind: "length", default: "0.375", min: 0.0001 },
     { id: "flutes", label: "Flutes", kind: "int", default: "4", min: 1, max: 20 },
-    { id: "material", label: "Material", kind: "select", default: "aluminum",
-      options: Object.keys(SF_DEFAULTS).map((k) => ({ value: k, label: MATERIAL_LABELS[k] })) },
+    { id: "material", label: "Material", kind: "select", default: "al6061", options: materialOptions() },
     { id: "toolType", label: "Tool", kind: "segment", default: "carbide",
       options: Object.entries(TOOL_LABELS).map(([value, label]) => ({ value, label })) },
     { id: "sfm", label: "Surface speed", kind: "speed", default: "", places: 0,
@@ -89,7 +88,7 @@ export default register({
         { title: "Feed rate", formula: "IPM = RPM × flutes × chip load", plugged: `= ${fmt(rpm, 0)} × ${v.flutes} × ${fmt(programmedChip, 4)} = ${fmt(requestedFeedIpm, 1)}` },
       ],
       notes: v.sfmAuto || v.chipAuto ? ["Table values are conservative starting points for this material and tool type."] : [],
-      historyLabel: `${fmt(v.diameter, c.units === "in" ? 4 : 2)} ${c.L.length} · ${v.flutes}FL · ${MATERIAL_LABELS[v.material]}`,
+      historyLabel: `${fmt(v.diameter, c.units === "in" ? 4 : 2)} ${c.L.length} · ${v.flutes}FL · ${materialSpeeds(v.material).material.name}`,
     };
   },
 });

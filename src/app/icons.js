@@ -33,6 +33,7 @@ export const ICONS = Object.freeze({
   down: wrap('<path d="m6 9 6 6 6-6"/>'),
   history: wrap('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>'),
   share: wrap('<path d="M4 12v8h16v-8"/><path d="M12 3v12M8 7l4-4 4 4"/>'),
+  more: `<svg viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor;stroke:none"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>`,
   chevron: wrap('<path d="m9 5 7 7-7 7"/>'),
 });
 

@@ -199,7 +199,7 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
   padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom));
   background: var(--card);
   border-top: 1px solid var(--line);
-  display: grid; grid-template-columns: 1fr auto auto; align-items: center; column-gap: 8px;
+  display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; column-gap: 4px;
 }
 /* ruler ticks along the top edge: every 8px minor, every 40px major */
 .answer::before {
@@ -269,6 +269,25 @@ pre.code { margin: 0; padding: 12px 14px; font-size: 0.875rem; line-height: 1.5;
 .input.area { font-family: var(--mono); font-size: 1.0625rem; padding: 10px 14px; line-height: 1.5; resize: vertical; }
 .table-title { padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--line); }
 .extras table.chart th { top: 0; position: static; }
+
+.radio { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--text-3); background: transparent; flex: none; position: relative; }
+.radio[aria-checked="true"] { border-color: var(--scribe); }
+.radio[aria-checked="true"]::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--scribe); }
+.menu { position: fixed; right: var(--gutter); bottom: calc(var(--answer-h) + 8px + var(--pad-h, 0px)); z-index: 9; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.4); min-width: 200px; overflow: hidden; }
+.menu button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--tap); padding: 0 16px; border: 0; background: transparent; color: var(--text); text-align: left; }
+.menu button + button { border-top: 1px solid var(--line); }
+.menu button:active { background: var(--card-2); }
+.menu button svg { width: 22px; height: 22px; stroke: var(--text-2); fill: none; stroke-width: 1.75; }
+.sheet { position: fixed; left: 0; right: 0; bottom: calc(var(--answer-h) + var(--pad-h, 0px)); z-index: 9; background: var(--card); border-top: 1px solid var(--line); padding: 12px var(--gutter); display: flex; gap: 8px; align-items: center; }
+.sheet input { flex: 1; min-width: 0; }
+@media print {
+  .topbar, .answer, .numpad, .menu, .sheet, details.drawer:not(.print), .seg, .lock, .dl-row, .code-head .btn { display: none !important; }
+  body { background: #fff; color: #000; }
+  main { padding: 0; }
+  details.drawer { border: 0; }
+  details.drawer[open] .body, .print-block { display: block !important; }
+  .input { border: 1px solid #999; }
+}
 
 /* ── Charts / tables ──────────────────────────────────────────── */
 .table-wrap { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }

@@ -34,7 +34,7 @@ export function renderHome(root) {
 
   root.addEventListener("click", (e) => {
     const cat = e.target.closest("[data-cat]");
-    if (cat) return navigate(`/cat/${cat.dataset.cat}`);
+    if (cat) return navigate(cat.dataset.cat === "shop" ? "/shop" : `/cat/${cat.dataset.cat}`);
     const calc = e.target.closest("[data-calc]");
     if (calc) {
       const params = calc.dataset.params ? JSON.parse(calc.dataset.params) : undefined;

@@ -11,6 +11,10 @@ import { getSettings, setSetting, UNIT_LABEL } from "./settings.js";
 import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, loadBlob } from "./store.js";
 import { attachNumpad, closeNumpad } from "./numpad.js";
 import { ICONS } from "./icons.js";
+import { toast, download, share, printScreen } from "./ui.js";
+import { jobs } from "./shop.js";
+import { SHARE_BASE } from "./settings.js";
+export { toast, download } from "./ui.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -105,11 +109,7 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     if (input.kind === "select") {
       control = document.createElement("select");
       control.className = "input";
-      for (const o of optionsFor(input, raw, ctx())) {
-        const opt = document.createElement("option");
-        opt.value = o.value; opt.textContent = o.label;
-        control.append(opt);
-      }
+      fillOptions(control, optionsFor(input, raw, ctx()));
       if (![...control.options].some((o) => o.value === raw[input.id])) raw[input.id] = control.options[0]?.value ?? "";
       control.value = raw[input.id];
       control.addEventListener("change", () => { raw[input.id] = control.value; recalc(); });
@@ -192,6 +192,7 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     <div class="big"><span class="val num" id="answerVal"></span><span class="unit" id="answerUnit"></span></div>
     <button type="button" class="icon-btn" id="answerCopy" aria-label="Copy answer">${ICONS.copy}</button>
     <button type="button" class="icon-btn" id="answerFav" aria-label="Favorite" aria-pressed="${isFavorite(def.id)}">${isFavorite(def.id) ? ICONS.starFilled : ICONS.star}</button>
+    <button type="button" class="icon-btn" id="answerMore" aria-label="More actions" aria-haspopup="menu">${ICONS.more}</button>
     <div class="lbl" id="answerLbl"></div>`;
   answer.hidden = false;
   const answerVal = answer.querySelector("#answerVal");
@@ -208,6 +209,62 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     if (!lastPrimaryText) return;
     try { await navigator.clipboard.writeText(lastPrimaryText); toast("Copied"); } catch { toast("Copy blocked"); }
   });
+
+  // ── ⋯ menu: save job, share, print, reset ──
+  let menu = null, sheet = null;
+  const closeMenu = () => { menu?.remove(); menu = null; };
+  const closeSheet = () => { sheet?.remove(); sheet = null; };
+  answer.querySelector("#answerMore").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (menu) { closeMenu(); return; }
+    const pro = getSettings().pro;
+    menu = document.createElement("div");
+    menu.className = "menu"; menu.setAttribute("role", "menu");
+    menu.innerHTML = `
+      <button type="button" role="menuitem" data-act="job">${ICONS.shop}Save job${pro ? "" : ' <span class="pro-tag">PRO</span>'}</button>
+      <button type="button" role="menuitem" data-act="share">${ICONS.share}Share link</button>
+      <button type="button" role="menuitem" data-act="print">${ICONS.reference}Print / PDF</button>
+      <button type="button" role="menuitem" data-act="reset">${ICONS.history}Reset inputs</button>`;
+    document.body.append(menu);
+    menu.addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-act]"); if (!b) return;
+      closeMenu();
+      if (b.dataset.act === "job") { if (!pro) { location.hash = "#/pro"; return; } openSaveSheet(); }
+      if (b.dataset.act === "share") share({ title: `${def.title} · Chipload`, text: lastPrimaryText ? `${def.title}: ${lastPrimaryText}` : def.title, url: shareUrl() });
+      if (b.dataset.act === "print") printScreen();
+      if (b.dataset.act === "reset") resetInputs();
+    });
+    setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
+  });
+  function shareUrl() {
+    const params = new URLSearchParams();
+    for (const input of def.inputs) if (String(raw[input.id] ?? "").trim() !== "") params.set(input.id, raw[input.id]);
+    if (def.units !== false) params.set("units", units);
+    return `${SHARE_BASE}#/calc/${def.id}?${params.toString()}`;
+  }
+  function openSaveSheet() {
+    closeSheet();
+    sheet = document.createElement("div");
+    sheet.className = "sheet";
+    sheet.innerHTML = `<input class="input" type="text" id="jobName" placeholder="Job name" value="${esc(`${def.title}${lastPrimaryText ? " · " + lastPrimaryText : ""}`)}" autocapitalize="words"><button type="button" class="btn primary" id="jobSave">Save</button><button type="button" class="icon-btn" id="jobCancel" aria-label="Cancel">✕</button>`;
+    document.body.append(sheet);
+    const nameEl = sheet.querySelector("#jobName");
+    nameEl.focus(); nameEl.select();
+    sheet.querySelector("#jobCancel").addEventListener("click", closeSheet);
+    const save = () => { jobs.add({ calcId: def.id, name: nameEl.value.trim() || def.title, raw: { ...raw }, units, primary: lastPrimaryText }); closeSheet(); toast("Job saved"); };
+    sheet.querySelector("#jobSave").addEventListener("click", save);
+    nameEl.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(); });
+  }
+  function resetInputs() {
+    for (const input of def.inputs) {
+      raw[input.id] = input.default ?? "";
+      const el = fields[input.id];
+      if (input.kind === "segment") el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === raw[input.id])));
+      else el.value = raw[input.id];
+    }
+    recalc();
+    toast("Reset");
+  }
 
   function refreshUnits() {
     for (const input of def.inputs) unitLabels[input.id].textContent = unitFor(input, units);
@@ -246,8 +303,7 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     const sig = JSON.stringify(opts);
     if (el.dataset.sig === sig) return;
     el.dataset.sig = sig;
-    el.innerHTML = "";
-    for (const o of opts) { const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label; el.append(opt); }
+    fillOptions(el, opts);
     if (!opts.some((o) => o.value === raw[input.id])) raw[input.id] = opts[0]?.value ?? "";
     el.value = raw[input.id];
   }
@@ -357,29 +413,9 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   recalc();
 
   return {
-    destroy() { clearTimeout(historyTimer); closeNumpad(); },
+    destroy() { clearTimeout(historyTimer); closeNumpad(); closeMenu(); closeSheet(); },
     setUnits(u) { if (u !== units) calc.querySelector(`.seg [data-u="${u}"]`)?.click(); },
   };
-}
-
-/** Save text as a file. On Android (Capacitor) this is swapped for a native share sheet in Phase 6. */
-export function download(filename, text, mime = "text/plain") {
-  if (window.chiploadNative?.saveFile) return window.chiploadNative.saveFile(filename, text, mime);
-  try {
-    const blob = new Blob([text], { type: `${mime};charset=utf-8` });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename; document.body.append(a); a.click();
-    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 0);
-  } catch { toast("Couldn't save file"); }
-}
-
-export function toast(msg) {
-  document.querySelectorAll(".copied").forEach((t) => t.remove());
-  const t = document.createElement("div");
-  t.className = "copied"; t.textContent = msg; t.setAttribute("role", "status");
-  document.body.append(t);
-  setTimeout(() => t.remove(), 1700);
 }
 
 export function hideAnswerBar() {

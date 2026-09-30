@@ -10,6 +10,7 @@ import { mountCalculator, hideAnswerBar } from "./render.js";
 import { mountChart } from "./chart.js";
 import { closeNumpad } from "./numpad.js";
 import { renderHome, renderCategory, renderSettings, renderPro, renderStatic } from "./views.js";
+import { renderShop } from "./shop.js";
 import { ICONS, CATEGORIES } from "./icons.js";
 import "../calcs/index.js";
 
@@ -50,6 +51,7 @@ onRoute(({ segments, params }) => {
     current = mountCalculator(def, main, { params });
     return;
   }
+  if (head === "shop") { screen("Shop"); renderShop(main, id || "machines"); return; }
   if (head === "settings") { screen("Settings"); renderSettings(main); return; }
   if (head === "pro") { screen("Chipload Pro"); renderPro(main); return; }
   if (head === "privacy" || head === "licenses") { screen(""); title.textContent = renderStatic(main, head); return; }

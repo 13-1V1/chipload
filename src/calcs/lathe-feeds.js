@@ -5,7 +5,7 @@
 
 import { register } from "../app/registry.js";
 import { rpmFromSfm, sfmFromRpm } from "../core/feeds.js";
-import { SF_DEFAULTS, MATERIAL_LABELS } from "../data/materials.js";
+import { materialOptions, materialSpeeds } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
 
@@ -19,10 +19,10 @@ export default register({
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
     { id: "diameter", label: "Work diameter (at the cut)", kind: "length", default: "2", min: 0.0001 },
-    { id: "material", label: "Material", kind: "select", default: "mildSteel", options: Object.keys(SF_DEFAULTS).map((k) => ({ value: k, label: MATERIAL_LABELS[k] })) },
+    { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Insert", kind: "segment", default: "coated", options: [{ value: "hss", label: "HSS" }, { value: "carbide", label: "Carbide" }, { value: "coated", label: "Coated" }] },
     { id: "cut", label: "Cut", kind: "segment", default: "rough", options: [{ value: "rough", label: "Rough" }, { value: "finish", label: "Finish" }] },
-    { id: "sfm", label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(((SF_DEFAULTS[raw.material] || SF_DEFAULTS.mildSteel)[raw.toolType] || SF_DEFAULTS.mildSteel.coated).sfm * 1.2, c.units), hint: "Blank = milling table × 1.2 (turning runs a bit faster)." },
+    { id: "sfm", label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType).sfm * 1.2, c.units), hint: "Blank = library value × 1.2 (turning runs a bit faster)." },
     { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(raw.cut === "finish" ? 0.004 : 0.012, c.units), hint: "Blank = 0.012 rough / 0.004 finish." },
     { id: "length", label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
   ],
@@ -53,7 +53,7 @@ export default register({
         { title: "Feed", formula: "IPM = RPM × IPR", plugged: `= ${fmt(rpm, 0)} × ${fmt(iprIn, 4)} = ${fmt(ipm, 1)}` },
       ],
       notes: ["Under G96 the control changes RPM as the diameter changes. Set a G50 (Fanuc) or G96 S… with a max RPM so a facing cut doesn't run away toward center."],
-      historyLabel: `Ø${fmt(v.diameter, p)} · ${MATERIAL_LABELS[v.material]} · ${v.cut}`,
+      historyLabel: `Ø${fmt(v.diameter, p)} · ${materialSpeeds(v.material).material.name} · ${v.cut}`,
     };
   },
 });
