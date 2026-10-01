@@ -43,7 +43,7 @@ register({
     const metric = SHCS_METRIC.map((r) => ({ size: `${r.size} SHCS`, head: `${r.head} mm`, depth: `${r.height} mm`, cbore: `${r.cbore} mm`, close: `${r.fine} mm`, normal: `${r.medium} mm`, loose: `${r.coarse} mm` }));
     return [...inch, ...metric];
   },
-  note: "Counterbore depth = head height (flush). Add 0.010–0.030 in if the head must sit below the surface. Inch clearances per ASME B18.2.8; metric per ISO 273.",
+  note: "Counterbore depth = head height (flush). Add 0.010–0.030 in if the head must sit below the surface. Inch clearances per ASME B18.2.8 (the B18.3 appendix lists a looser single value, e.g. #10 → 0.221); metric per ISO 273.",
 });
 
 register({

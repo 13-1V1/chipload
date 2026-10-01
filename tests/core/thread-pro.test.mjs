@@ -37,10 +37,16 @@ test("1/2-10 Acme basic geometry", () => {
   near(g.allowance["2G"], 0.008 * Math.sqrt(0.5), 1e-12);
 });
 
-test("STI drill estimate hits the insert-maker sizes", () => {
-  near(nearestDrillInch(stiTapDrill(0.25, 1 / 20)).size, 0.2656, 0.002, "1/4-20 → 17/64 or H");
-  assert.equal(nearestDrillInch(stiTapDrill(0.375, 1 / 16)).label, "X");
-  assert.equal(nearestDrillInch(stiTapDrill(0.5, 1 / 13)).label, '17/32"');
+// ASME B18.29.1 suggested STI drills: 1/4-20 → 17/64, 3/8-16 → 25/64, 1/2-13 → 33/64, 10-32 → #7; Heli-Coil M10x1.5 → 10.4
+test("STI drills come from the B18.29.1 table, with an estimate fallback", () => {
+  assert.equal(stiTapDrill(0.25, 1 / 20, { isUn: true, tpi: 20 }).label, '17/64"');
+  assert.equal(stiTapDrill(0.375, 1 / 16, { isUn: true, tpi: 16 }).label, '25/64"');
+  assert.equal(stiTapDrill(0.5, 1 / 13, { isUn: true, tpi: 13 }).label, '33/64"');
+  assert.equal(stiTapDrill(0.19, 1 / 32, { isUn: true, tpi: 32 }).label, "#7");
+  assert.equal(stiTapDrill(10, 1.5, { isUn: false }).size, 10.4);
+  const est = stiTapDrill(1.25, 1 / 7, { isUn: true, tpi: 7 });
+  assert.equal(est.source, "estimate");
+  near(est.size, 1.25 + 0.25 / 7, 1e-12);
 });
 
 // ASME B1.20.1: 1/8-27 E1 = 0.37360, 1/2-14 E1 = 0.77843

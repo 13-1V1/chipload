@@ -6,6 +6,7 @@
 import { parseFraction } from "./format.js";
 import { MACHINE_SCREW_DIAMETERS, UN_THREAD_TABLE } from "../data/threads-un.js";
 import { METRIC_DEFAULT_PITCH, METRIC_THREAD_TABLE } from "../data/threads-metric.js";
+import { STI_DRILL_UN, STI_DRILL_METRIC } from "../data/sti.js";
 
 /**
  * Basic 60° thread factors. Source: ASME B1.1 §5 / ISO 68-1.
@@ -177,10 +178,18 @@ export function acmeGeometry({ major, tpi }) {
 
 // ── STI (helical insert) tap drill ────────────────────────────────────────────
 /**
- * Screw-thread-insert holes are oversize by roughly the wire section. Estimate: drill ≈ D + 0.35 P,
- * which lands on the insert makers' listed drills for common sizes (1/4-20 → 17/64, 3/8-16 → X, 1/2-13 → 17/32).
- * Always confirm with the insert maker's chart.
+ * Screw-thread-insert hole. Published rows come from ASME B18.29.1 (src/data/sti.js); anything else
+ * falls back to the estimate drill ≈ D + 0.25 P, which tracks the table within one drill size.
+ * Returns { size, label, source: "table" | "estimate" } in the thread's native unit.
  */
-export function stiTapDrill(major, pitch) {
-  return major + 0.35 * pitch;
+export function stiTapDrill(major, pitch, { isUn = true, tpi = null } = {}) {
+  if (isUn && tpi != null) {
+    const row = STI_DRILL_UN[`${major.toFixed(4)}|${Math.round(tpi)}`];
+    if (row) return { size: row[0], label: row[1], source: "table" };
+  }
+  if (!isUn) {
+    const mm = STI_DRILL_METRIC[`${major.toFixed(1)}|${pitch.toFixed(2)}`];
+    if (mm) return { size: mm, label: `${mm} mm`, source: "table" };
+  }
+  return { size: major + 0.25 * pitch, label: null, source: "estimate" };
 }
