@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Chipload</string>
+    <string name="title_activity_main">Chipload</string>
+    <string name="package_name">com.brennanmeyer.chipload</string>
+    <string name="custom_url_scheme">chipload</string>
+    <string name="sc_feeds">Speeds &amp; feeds</string>
+    <string name="sc_feeds_long">Speeds &amp; feeds — mill</string>
+    <string name="sc_tap">Tap drill</string>
+    <string name="sc_tap_long">Tap drill size</string>
+    <string name="sc_bolt">Bolt circle</string>
+    <string name="sc_bolt_long">Bolt circle coordinates</string>
+    <string name="sc_tri">Triangle</string>
+    <string name="sc_tri_long">Right triangle solver</string>
+</resources>

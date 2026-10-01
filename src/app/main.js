@@ -12,6 +12,8 @@ import { closeNumpad } from "./numpad.js";
 import { renderHome, renderCategory, renderSettings, renderPro, renderStatic } from "./views.js";
 import { renderShop } from "./shop.js";
 import { ICONS, CATEGORIES } from "./icons.js";
+import { initNative, isNative } from "./native.js";
+import { initBilling } from "./billing.js";
 import "../calcs/index.js";
 
 applyTheme();
@@ -59,3 +61,10 @@ onRoute(({ segments, params }) => {
 });
 
 startRouter();
+initNative();
+initBilling();
+
+// Web version only: cache the shell so it works offline as a PWA. The Android app ships its files.
+if (!isNative() && "serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}

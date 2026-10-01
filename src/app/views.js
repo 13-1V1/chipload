@@ -9,6 +9,7 @@ import { searchCalcs } from "./search.js";
 import { navigate } from "./router.js";
 import { getSettings, setSetting } from "./settings.js";
 import { loadFavorites, loadRecents } from "./store.js";
+import { getBillingState, onBilling } from "./billing.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -115,6 +116,9 @@ export function renderSettings(root) {
 
 export function renderPro(root) {
   const s = getSettings();
+  const b = getBillingState();
+  const price = b.price ? ` — ${b.price}` : " — $9.99";
+  const noStore = b.error === "no-store";
   const groups = [
     ["Mill", "Chip thinning, HSM, ball-nose, MRR, cut time, circle comp"],
     ["Lathe", "RPM/IPR, surface finish, cycle time, nose-radius comp"],
@@ -133,12 +137,13 @@ export function renderPro(root) {
     <div style="height:14px"></div>
     ${s.pro
       ? `<button type="button" class="btn block" disabled>Pro unlocked</button>`
-      : `<button type="button" class="btn primary block" id="buy">Unlock Pro</button>
+      : `<button type="button" class="btn primary block" id="buy">Unlock Pro${price}</button>
          <div style="height:10px"></div>
          <button type="button" class="btn block" id="restore">Restore purchase</button>`}
-    <p class="hint" style="margin-top:14px">Purchases go through Google Play. Reinstalling? Tap Restore once while online and Pro comes back.</p>`;
+    <p class="hint" style="margin-top:14px">${noStore ? "Pro is sold through Google Play. Install Chipload from the Play Store to unlock." : "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back."}</p>`;
   root.querySelector("#buy")?.addEventListener("click", () => window.chiploadBilling?.buy?.());
   root.querySelector("#restore")?.addEventListener("click", () => window.chiploadBilling?.restore?.());
+  const off = onBilling(() => { if (document.body.contains(root) && location.hash.startsWith("#/pro")) { off(); renderPro(root); } });
 }
 
 export function renderStatic(root, kind) {

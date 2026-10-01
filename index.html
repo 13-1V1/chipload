@@ -13,6 +13,17 @@ brennanmmeyer@gmail.com
 <link rel="icon" href="assets/icons/app-192.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="src/styles/app.css">
+<script type="importmap">
+{ "imports": {
+  "@capacitor/core": "./vendor/capacitor-core.js",
+  "@capacitor/synapse": "./vendor/capacitor-synapse.js",
+  "@capacitor/app": "./vendor/app/index.js",
+  "@capacitor/share": "./vendor/share/index.js",
+  "@capacitor/filesystem": "./vendor/filesystem/index.js",
+  "@capacitor/status-bar": "./vendor/status-bar/index.js",
+  "@capacitor/splash-screen": "./vendor/splash-screen/index.js"
+} }
+</script>
 <script>
   // Apply saved theme before first paint so there's no flash.
   try { var s = JSON.parse(localStorage.getItem("chipload.settings.v1") || "{}"); if (s.theme) document.documentElement.dataset.theme = s.theme; if (s.glove) document.documentElement.dataset.glove = "on"; } catch (e) {}

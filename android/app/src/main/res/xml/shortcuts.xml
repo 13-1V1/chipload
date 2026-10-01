@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon: jump straight into the four most-used tools. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="feeds" android:enabled="true" android:icon="@drawable/ic_shortcut" android:shortcutShortLabel="@string/sc_feeds" android:shortcutLongLabel="@string/sc_feeds_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.brennanmeyer.chipload" android:targetClass="com.brennanmeyer.chipload.MainActivity" android:data="chipload://calc/feeds-mill" />
+    </shortcut>
+    <shortcut android:shortcutId="tap" android:enabled="true" android:icon="@drawable/ic_shortcut" android:shortcutShortLabel="@string/sc_tap" android:shortcutLongLabel="@string/sc_tap_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.brennanmeyer.chipload" android:targetClass="com.brennanmeyer.chipload.MainActivity" android:data="chipload://calc/tap-drill" />
+    </shortcut>
+    <shortcut android:shortcutId="bolt" android:enabled="true" android:icon="@drawable/ic_shortcut" android:shortcutShortLabel="@string/sc_bolt" android:shortcutLongLabel="@string/sc_bolt_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.brennanmeyer.chipload" android:targetClass="com.brennanmeyer.chipload.MainActivity" android:data="chipload://calc/bolt-circle" />
+    </shortcut>
+    <shortcut android:shortcutId="triangle" android:enabled="true" android:icon="@drawable/ic_shortcut" android:shortcutShortLabel="@string/sc_tri" android:shortcutLongLabel="@string/sc_tri_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.brennanmeyer.chipload" android:targetClass="com.brennanmeyer.chipload.MainActivity" android:data="chipload://calc/right-triangle" />
+    </shortcut>
+</shortcuts>
