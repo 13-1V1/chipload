@@ -22,7 +22,7 @@ test("letter and number drills match ANSI B94.11M", () => {
   const around = nearestDrillsInch(0.201);
   assert.equal(around.nearest.label, "#7");
   assert.equal(around.prev.label, "#8");
-  assert.equal(around.next.label, "#6");
+  assert.equal(around.next.label, '13/64"', "13/64 (0.2031) sits between #7 and #6");
 });
 
 test("metric nearest and chart rows", () => {
@@ -30,4 +30,17 @@ test("metric nearest and chart rows", () => {
   const rows = drillChartRows();
   assert.ok(rows.length > 150);
   assert.ok(Math.abs(rows.find(r => r.label === '1/2"').mm - 12.7) < 1e-9);
+});
+
+test("fractional drills: every 64th is there, chart runs to 3-1/2 in and 60 mm", () => {
+  for (let n = 1; n <= 112; n++) assert.ok(DRILL_CHART_INCH.some((d) => Math.abs(d[0] - n / 64) < 1e-9), `${n}/64 missing`);
+  assert.equal(nearestDrillInch(3 / 64).label, '3/64"');
+  assert.equal(nearestDrillInch(0.203125).label, '13/64"');
+  assert.equal(nearestDrillInch(1.1094).label, '1-7/64"');
+  assert.equal(nearestDrillInch(1.3438).label, '1-11/32"');
+  assert.equal(nearestDrillInch(0.25).label, '1/4" (E)');
+  assert.equal(DRILL_CHART_INCH[DRILL_CHART_INCH.length - 1][1], '3-1/2"');
+  assert.equal(nearestDrillMm(26.5).label, "26.5 mm");
+  assert.equal(nearestDrillMm(20.5).label, "20.5 mm");
+  assert.equal(nearestDrillMm(58).label, "58 mm");
 });

@@ -5,9 +5,10 @@
 
 import { register } from "../app/registry.js";
 import { basicThreadGeometry, unToleranceEnvelope, lookupUnThread, lookupMetricThread } from "../core/thread.js";
-import { lookupTapDrillUN, lookupTapDrillMetric } from "../core/tapdrill.js";
+import { lookupTapDrillUN, lookupTapDrillMetric, tapDrillByPercent } from "../core/tapdrill.js";
+import { nearestDrillInch, nearestDrillMm } from "../core/drills.js";
 import { fmt } from "../core/format.js";
-import { threadFromSpec, threadPrefill } from "./_util.js";
+import { threadFromSpec, threadPrefill, COMMON_THREADS } from "./_util.js";
 
 export default register({
   id: "thread-data",
@@ -21,7 +22,7 @@ export default register({
   prefillRank: 2,
   prefill: (q) => threadPrefill(q),
   inputs: [
-    { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20 UNC, 3/8-24, M8x1.25" },
+    { id: "thread", suggest: COMMON_THREADS, label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20 UNC, 3/8-24, M8x1.25" },
   ],
   compute(v) {
     const t = threadFromSpec(v.thread);
@@ -33,7 +34,7 @@ export default register({
     if (t.isUn) {
       const env = unToleranceEnvelope({ major: nat.major, pitch: nat.pitch });
       tables.push({
-        title: "Class limits (ASME B1.1 estimate)", pro: true,
+        title: "Class limits (ASME B1.1)", pro: true,
         columns: [{ key: "cls", label: "Class" }, { key: "pdMax", label: "PD max", align: "right", places: 4 }, { key: "pdMin", label: "PD min", align: "right", places: 4 }, { key: "other", label: "Major / minor", align: "right" }],
         rows: [
           { cls: "2A ext", pdMax: env["2A"].pdMax, pdMin: env["2A"].pdMin, other: `${fmt(env["2A"].majorMax, 4)} / ${fmt(env["2A"].majorMin, 4)}` },
@@ -52,7 +53,7 @@ export default register({
         { label: "Minor dia (external)", value: g.externalMinor, unit: nat.u, places: nat.p },
         { label: "Thread depth (ext)", value: g.threadDepthExternal, unit: nat.u, places: nat.p },
         { label: t.isUn ? "Pitch" : "TPI equivalent", value: t.isUn ? nat.pitch : t.tpi, unit: t.isUn ? "in" : "TPI", places: t.isUn ? 4 : 2 },
-        { label: "Tap drill (75%)", text: tap ? `${tap.label} · ${tap.percent}%` : "not in chart" },
+        { label: "Tap drill (75%)", text: tap ? `${t.isUn ? tap.label : `${tap.size} mm`} · ${tap.percent}%` : `${(t.isUn ? nearestDrillInch(tapDrillByPercent(nat.major, nat.pitch, 75)) : nearestDrillMm(tapDrillByPercent(nat.major, nat.pitch, 75))).label} · figured` },
         { label: "Series", text: series || "non-standard" },
       ],
       tables,
@@ -62,7 +63,7 @@ export default register({
       ],
       notes: [
         ...(t.suppliedSeries === "UNJ" ? ["UNJ (ASME B1.15): same basic diameters as UN, but the external root must have a 0.15011P–0.18042P radius and the internal minor is held larger to clear it. Use UNJ-specific taps and gauges."] : []),
-        "Class limits are calculated from ASME B1.1 formulas at 9P engagement. For acceptance work use the published tables.",
+        "Class limits come from the ASME B1.1 tolerance formulas, rounded the way the published tables are. Standard-series threads match the tables; for a special, check the standard before you accept parts on it.",
       ],
       historyLabel: series || t.label,
     };

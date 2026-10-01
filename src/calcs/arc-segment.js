@@ -17,6 +17,8 @@ const PAIRS = {
   "height,angle": ["Height (sagitta)", "Angle"],
 };
 
+const slot = (i) => ({ label: (r) => PAIRS[r.pair]?.[i] ?? "Value", as: (r) => (PAIRS[r.pair]?.[i] === "Angle" ? "angle" : "length") });
+
 export default register({
   id: "arc-segment",
   title: "Arc, chord & segment",
@@ -27,13 +29,15 @@ export default register({
   pro: true,
   inputs: [
     { id: "pair", label: "I know", kind: "select", default: "chord,height", options: Object.entries(PAIRS).map(([value, l]) => ({ value, label: `${l[0]} + ${l[1]}` })) },
-    { id: "a", label: "First value", kind: "number", default: "2", min: 0 },
-    { id: "b", label: "Second value", kind: "number", default: "0.25", min: 0 },
+    { id: "a", positive: true, kind: "number", default: "2", defaultMm: "50", ...slot(0) },
+    { id: "b", positive: true, kind: "number", default: "0.25", defaultMm: "6", ...slot(1) },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
     const [k1, k2] = v.pair.split(",");
+    if ((k1 === "angle" && v.a >= 360) || (k2 === "angle" && v.b >= 360)) throw new Error("Angle has to be less than 360°");
     const s = circularSegment({ [k1]: v.a, [k2]: v.b });
+    if (![s.radius, s.chord, s.height, s.angle, s.arcLength, s.area].every(Number.isFinite)) throw new Error("Those two values don't describe an arc");
     return {
       primary: { label: k1 === "radius" || k2 === "radius" ? "Chord" : "Radius", value: k1 === "radius" || k2 === "radius" ? s.chord : s.radius, unit: c.L.length, places: p },
       stats: [

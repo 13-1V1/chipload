@@ -7,7 +7,7 @@ import { register } from "../app/registry.js";
 import { metricToleranceEnvelope, basicThreadGeometry } from "../core/thread.js";
 import { lookupTapDrillMetric } from "../core/tapdrill.js";
 import { fmt } from "../core/format.js";
-import { threadFromSpec } from "./_util.js";
+import { threadFromSpec, COMMON_METRIC_THREADS } from "./_util.js";
 import { parseThreadSpec } from "../core/thread.js";
 
 export default register({
@@ -22,7 +22,7 @@ export default register({
   prefillRank: 10,
   prefill: (q) => { const t = parseThreadSpec(q); return t?.system === "metric" ? { params: { thread: q.trim() }, label: t.label } : null; },
   inputs: [
-    { id: "thread", label: "Thread", kind: "text", default: "M10", placeholder: "M10, M8x1.25, M12x1" },
+    { id: "thread", suggest: COMMON_METRIC_THREADS, label: "Thread", kind: "text", default: "M10", placeholder: "M10, M8x1.25, M12x1" },
     { id: "extPos", label: "External position", kind: "segment", default: "g", options: ["e", "f", "g", "h"].map((v) => ({ value: v, label: v })) },
     { id: "extGrade", label: "External grade", kind: "segment", default: "6", options: ["4", "6", "8"].map((v) => ({ value: v, label: v })) },
     { id: "intPos", label: "Internal position", kind: "segment", default: "H", options: ["G", "H"].map((v) => ({ value: v, label: v })) },

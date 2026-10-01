@@ -8,8 +8,12 @@ Everything below is a step only you can do (your phone, your Google account, you
 
 ## 1. Try it on your phone (10 minutes)
 - `dist/chipload-1.0.0-debug.apk` → copy to the phone (USB, Drive, email to yourself) → open it → allow "install unknown apps" for that source.
-- Things to check with gloves on: search → tap drill, type 1/4-20; number pad and the ± / fraction keys; long-press the app icon (four shortcuts); rotate the phone mid-calculation; airplane mode (everything should still work); Settings → Glove mode and Light theme.
-- Pro is locked in this build (billing is Play-only). To see Pro screens on the web copy, open <https://13-1v1.github.io/chipload/>, Settings isn't enough — paste this in the browser console: `localStorage.setItem("chipload.settings.v1", JSON.stringify({units:"in",theme:"dark",glove:false,pro:true,places:4}))` and reload.
+- Things to check with gloves on: search → tap drill, type 1/4-20; number pad and the ± / fraction keys; long-press the app icon (four shortcuts); rotate the phone mid-calculation with the number pad open; airplane mode (everything should still work); Settings → Glove mode and Light theme.
+- Three things only a real phone can prove (I could only compile or simulate them):
+  1. **Print / PDF** — any tool → ⋯ → Print / PDF. Android's print screen should open with a one-page sheet: tool name, the answer, every input. Try "Save as PDF".
+  2. **Save CSV / DXF** — Bolt circle (needs Pro, so do this one after step 4) → the share sheet should offer to save the file.
+  3. **Shortcuts from cold** — swipe the app away, long-press the icon, pick "Tap drill": it should open straight on that tool.
+- Pro is locked in this build (billing is Play-only). To look at the Pro tools before the Play listing exists, run the app on your PC: `npm run serve`, open <http://127.0.0.1:4173/>, paste this in the browser console and reload: `localStorage.setItem("chipload.settings.v1", JSON.stringify({units:"in",theme:"dark",glove:false,pro:true}))`. The public web copy ignores that flag on purpose — Pro there would be free for anyone who knows the trick.
 - Anything broken: tell me the tool name and what you typed. `adb logcat | grep -i chipload` catches crashes if the phone is plugged in with USB debugging.
 
 ## 2. Google Play developer account ($25 one time)
@@ -26,7 +30,7 @@ Everything below is a step only you can do (your phone, your Google account, you
 ## 4. The Pro product (so billing works)
 - Console → Monetize → Products → In-app products → Create: product ID **`pro_unlock`** (must match exactly), name "Chipload Pro", description "Every tool, forever. No subscription.", price $9.99 (set a price template; Google converts other currencies). Activate it.
 - Console → Setup → License testing → add your own Gmail and a couple of testers' → they can buy `pro_unlock` for free (test card) to check the flow. Install from the Play testing link, not the sideloaded APK, for purchases to work.
-- Then in the app: Settings → Unlock → price shows → buy → "Pro unlocked". Uninstall, reinstall, Settings → Restore purchase → Pro comes back.
+- Then in the app: Settings → Unlock → price shows → buy → "Pro unlocked" within a second or two, without restarting the app, and the screen stays responsive. (Both of those were bugs I fixed against a stand-in for the Play store — this is the first time the real one gets a say. If it hangs or stays locked, tell me.) Uninstall, reinstall, open the app → Pro should come back on its own; if not, Settings → Restore purchase.
 
 ## 5. Closed testing (the 14-day clock)
 - Recruit ~15 people so a dropout doesn't reset you: classmates, shop contacts, r/Machinists, a Facebook machining group. Give them the opt-in link from the closed-test track.

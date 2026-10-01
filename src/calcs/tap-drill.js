@@ -7,7 +7,7 @@ import { register } from "../app/registry.js";
 import { tapDrillByPercent, formTapDrillByPercent, percentThreadForDrill, lookupTapDrillUN, lookupTapDrillMetric } from "../core/tapdrill.js";
 import { nearestDrillsInch, nearestDrillsMm } from "../core/drills.js";
 import { fmt } from "../core/format.js";
-import { threadFromSpec, threadPrefill, dual } from "./_util.js";
+import { threadFromSpec, threadPrefill, dual, COMMON_THREADS } from "./_util.js";
 
 export default register({
   id: "tap-drill",
@@ -21,7 +21,7 @@ export default register({
   prefillRank: 1,
   prefill: (q) => threadPrefill(q),
   inputs: [
-    { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, #10-32, M10x1.5" },
+    { id: "thread", suggest: COMMON_THREADS, label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, #10-32, M10x1.5" },
     { id: "tapType", label: "Tap", kind: "segment", default: "cut", options: [{ value: "cut", label: "Cutting tap" }, { value: "form", label: "Roll-form tap" }] },
     { id: "percent", label: "Thread engagement", kind: "segment", default: "75",
       options: [{ value: "60", label: "60%" }, { value: "65", label: "65%" }, { value: "70", label: "70%" }, { value: "75", label: "75%" }, { value: "80", label: "80%" }] },
@@ -31,17 +31,22 @@ export default register({
     const pct = Number(v.percent);
     const form = v.tapType === "form";
     const calcIn = form ? formTapDrillByPercent(t.majorIn, t.pitchIn, pct) : tapDrillByPercent(t.majorIn, t.pitchIn, pct);
-    const near = t.isUn ? nearestDrillsInch(calcIn) : nearestDrillsMm(calcIn * 25.4);
+    const table = !form ? (t.isUn ? lookupTapDrillUN(t.majorIn, t.tpi) : lookupTapDrillMetric(t.majorMm, t.pitchMm)) : null;
+    // At the shop-standard 75% a machinist expects the chart drill; any other % (or a form tap) is figured.
+    const useChart = !!table && pct === 75;
+    const byFormula = t.isUn ? nearestDrillsInch(calcIn) : nearestDrillsMm(calcIn * 25.4);
+    const near = useChart ? (t.isUn ? nearestDrillsInch(table.size) : nearestDrillsMm(table.size)) : byFormula;
     const chosenIn = t.isUn ? near.nearest.size : near.nearest.size / 25.4;
     const actualPct = form ? (t.majorIn - chosenIn) / (0.0068 * t.pitchIn) : percentThreadForDrill(t.majorIn, t.pitchIn, chosenIn);
-    const table = !form ? (t.isUn ? lookupTapDrillUN(t.majorIn, t.tpi) : lookupTapDrillMetric(t.majorMm, t.pitchMm)) : null;
     const altIn = t.isUn ? nearestDrillsMm(calcIn * 25.4).nearest : nearestDrillsInch(calcIn).nearest;
 
     const stats = [
       { label: "Calculated diameter", text: dual(calcIn, t.nativeUnits) },
       { label: `Drill gives`, value: actualPct, unit: "% thread", places: 0 },
     ];
-    if (table) stats.push({ label: "ANSI/ISO chart drill", text: `${table.label} (${table.percent}%)` });
+    if (table && !useChart) stats.push({ label: "Chart drill (75%)", text: `${t.isUn ? table.label : `${table.size} mm`} (${table.percent}%)` });
+    if (useChart && byFormula.nearest.label !== near.nearest.label) stats.push({ label: "Nearest to 75% by formula", text: byFormula.nearest.label });
+    stats.push({ label: "From", text: useChart ? (t.isUn ? "ANSI B94.11M tap drill chart" : "ISO 2306 tap drill chart") : "% thread formula, nearest stock drill" });
     if (near.prev) stats.push({ label: "One size smaller", text: `${near.prev.label} · ${t.isUn ? fmt(near.prev.size, 4) : fmt(near.prev.size, 2)}` });
     if (near.next) stats.push({ label: "One size larger", text: `${near.next.label} · ${t.isUn ? fmt(near.next.size, 4) : fmt(near.next.size, 2)}` });
     stats.push({ label: t.isUn ? "Nearest metric drill" : "Nearest inch drill", text: altIn.label });

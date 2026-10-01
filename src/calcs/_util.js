@@ -36,6 +36,10 @@ export function dual(valueIn, units) {
   return units === "in" ? `${fmt(valueIn, 4)} in (${fmt(valueIn * 25.4, 3)} mm)` : `${fmt(valueIn * 25.4, 3)} mm (${fmt(valueIn, 4)} in)`;
 }
 
+/** The threads people reach for most — shown as one-tap chips under every thread field. */
+export const COMMON_THREADS = Object.freeze(["#6-32", "#8-32", "#10-24", "#10-32", "1/4-20", "5/16-18", "3/8-16", "1/2-13", "M4", "M5", "M6", "M8", "M10"]);
+export const COMMON_METRIC_THREADS = Object.freeze(["M3", "M4", "M5", "M6", "M8", "M10", "M12", "M16"]);
+
 /** Common thread-spec prefill for search: returns { params, label } or null. */
 export function threadPrefill(q, key = "thread") {
   const t = parseThreadSpec(q);

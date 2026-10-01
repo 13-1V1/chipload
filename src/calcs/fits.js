@@ -22,14 +22,14 @@ export default register({
   keywords: ["fit", "fits", "limits", "h7", "g6", "p6", "press fit", "clearance", "interference", "iso 286", "tolerance grade", "it7"],
   pro: true,
   inputs: [
-    { id: "nominal", label: "Nominal size", kind: "length", default: "1", min: 0.0001 },
+    { id: "nominal", label: "Nominal size", kind: "length", default: "1", defaultMm: "25", min: 0.0001 },
     { id: "fit", label: "Fit", kind: "select", default: "H7/g6", options: COMMON.map(([value, label]) => ({ value, label: value === "custom" ? label : `${value} — ${label}` })) },
     { id: "hole", label: "Hole", kind: "text", default: "H7", placeholder: "H7", showIf: (r) => r.fit === "custom" },
     { id: "shaft", label: "Shaft", kind: "text", default: "g6", placeholder: "g6", showIf: (r) => r.fit === "custom" },
   ],
   compute(v, c) {
     const mm = c.units === "mm" ? v.nominal : v.nominal * 25.4;
-    if (mm < 1 || mm > 500) throw new Error("ISO 286 covers 1–500 mm (0.04–19.7 in)");
+    if (mm > 500) throw new Error("ISO 286 here covers sizes up to 500 mm (19.7 in)");
     const [h, s] = v.fit === "custom" ? [v.hole, v.shaft] : v.fit.split("/");
     const f = isoFit(mm, h, s);
     const L = (x) => (c.units === "mm" ? x : x / 25.4);
@@ -38,6 +38,7 @@ export default register({
       { what: `Hole ${f.hole.spec}`, min: L(f.hole.min), max: L(f.hole.max), tol: L(f.hole.tolerance) },
       { what: `Shaft ${f.shaft.spec}`, min: L(f.shaft.min), max: L(f.shaft.max), tol: L(f.shaft.tolerance) },
     ];
+    const um = (x) => { const n = Math.round(x * 1e4) / 10; return `${n > 0 ? "+" : ""}${fmt(n, 1)}`; };
     const kindLabel = { clearance: "Clearance", interference: "Interference", transition: "Transition" }[f.kind];
     return {
       primary: { label: `${h}/${s} · ${kindLabel} fit`, text: f.kind === "interference" ? `${fmt(L(-f.maxClearance), p)} – ${fmt(L(-f.minClearance), p)} tight` : `${fmt(L(f.minClearance), p)} – ${fmt(L(f.maxClearance), p)}`, unit: c.L.length },
@@ -51,8 +52,12 @@ export default register({
       ],
       tables: [{ title: "Limits", columns: [{ key: "what", label: "" }, { key: "min", label: "Min", align: "right", places: p }, { key: "max", label: "Max", align: "right", places: p }, { key: "tol", label: "Tol", align: "right", places: p }], rows }],
       source: "geometry",
-      explain: [{ title: "ISO 286-1", formula: "i = 0.45 ∛D + 0.001 D (µm);  IT6 = 10i, IT7 = 16i, IT8 = 25i, IT9 = 40i;  deviations g = −2.5 D^0.34, f = −5.5 D^0.41, p = IT7 + 1…", plugged: `D = ${fmt(mm, 3)} mm` }],
-      notes: ["Computed from the ISO 286 formulas; published tables can differ by a micron or two from rounding. Inch sizes are converted to mm, then back."],
+      explain: [{
+        title: "ISO 286-1 tables",
+        formula: "limit = nominal + deviation.   A hole letter sets its lower deviation, a shaft letter a–h its upper, k–z its lower; the grade number (IT) sets the width.",
+        plugged: `D = ${fmt(mm, 3)} mm: ${f.hole.spec} = ${um(f.hole.upper)} / ${um(f.hole.lower)} µm, ${f.shaft.spec} = ${um(f.shaft.upper)} / ${um(f.shaft.lower)} µm`,
+      }],
+      notes: ["Looked up from the ISO 286 tables. Inch sizes are converted to mm for the lookup, then back."],
       historyLabel: `${fmt(v.nominal, p)} ${c.L.length} ${h}/${s}`,
     };
   },

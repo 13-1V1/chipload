@@ -3,7 +3,7 @@
 
 // Bolt circle coordinates plus G-code / CSV / DXF text builders (pure — no DOM).
 
-import { fmt } from "./format.js";
+import { fmt, gcodeNumber } from "./format.js";
 
 /** Evenly spaced holes. Angles in degrees, CCW positive from +X unless direction "cw". */
 export function boltCircleCoordinates(diameter, holes, startDegrees = 0, direction = "ccw", centerX = 0, centerY = 0) {
@@ -29,45 +29,83 @@ export function partialBoltCircleCoordinates(diameter, holes, startDegrees, swee
   });
 }
 
+/** Controls whose own dialect is not Fanuc-style: G54, G43 H and G81 mean something else there, or nothing. */
+const OTHER_DIALECT = Object.freeze({ siemens: "Siemens", heidenhain: "Heidenhain", okuma: "Okuma" });
+export const usesOtherDialect = (controller) => OTHER_DIALECT[String(controller).toLowerCase()] || null;
+
 /**
- * Drill-cycle program. Source: Fanuc-style G81/G83 canned cycles; header G20 (inch) by default.
- * All lengths in `units`. Feed in units/min.
+ * Things that would make the drill cycle wrong or unsafe. Empty array = OK to post.
+ * Z must be below the R plane (a positive "depth" drills air), and Safe Z must not be below R:
+ * G98 lifts the tool back to Safe Z between holes.
+ */
+export function boltGcodeProblems({ mode = "positions", z, r, safeZ, feed, peck, spindle }) {
+  const out = [];
+  if (mode === "drill" || mode === "peck") {
+    if (!(z < r)) out.push(`Hole depth Z (${fmt(z, 4)}) has to be below the R plane (${fmt(r, 4)}). Depth is a negative number, like -0.5.`);
+    if (!(feed > 0)) out.push("Feed has to be more than zero.");
+    if (!(spindle > 0)) out.push("Spindle speed has to be more than zero.");
+    if (mode === "peck" && !(peck > 0)) out.push("Peck depth (Q) has to be more than zero.");
+    if (!(safeZ >= r)) out.push(`Safe Z (${fmt(safeZ, 4)}) has to be at or above the R plane (${fmt(r, 4)}). The tool lifts to Safe Z between holes.`);
+  }
+  return out;
+}
+
+/**
+ * Fanuc-style program text (Fanuc, Haas, Mazak EIA, LinuxCNC and most hobby controls). Lengths in `units`, feed in units/min.
+ *   positions: X/Y moves only, a program stop (M0) at each hole. Z never moves — for spotting or quill drilling.
+ *   drill / peck: tool change, G43 length offset to Safe Z, then G81 / G83 with G98, so the tool
+ *     lifts back to Safe Z (the level it started the cycle from) between holes.
+ * The safety line comes before the tool call, so its G49 can never cancel the G43 below it.
+ * Comments use only capitals, digits, spaces and . - / because some controls reject anything else,
+ * and stay under 36 characters so they read on a phone and on an old control's screen without scrolling.
  */
 export function buildBoltGcode(coords, {
   units = "in", mode = "positions", z = -0.5, r = 0.1, feed = 5, peck = 0.1,
-  safeZ = 1, spindle = 1000, controller = "fanuc", workOffset = "G54", coolant = "flood",
+  safeZ = 1, spindle = 1000, tool = 1, controller = "fanuc", workOffset = "G54", coolant = "flood",
 } = {}) {
   const dp = units === "in" ? 4 : 3;
-  const unitHeader = units === "in" ? "G20" : "G21";
+  const n = (v) => gcodeNumber(v, dp);
+  const xy = (c) => `X${n(c.x)} Y${n(c.y)}`;
+  const holes = `${coords.length} HOLE${coords.length === 1 ? "" : "S"}`;
+  const unitCode = units === "in" ? "G20" : "G21";
   const out = ["%"];
-  out.push(`(Bolt circle: ${coords.length} hole${coords.length === 1 ? "" : "s"}; ${String(controller).toUpperCase()} profile)`);
-  out.push("(STARTING POINT - SIMULATE, SINGLE-BLOCK, AND DRY-RUN ABOVE THE PART)");
-  out.push("(ADD YOUR TOOL CALL AND G43 H__ LENGTH OFFSET BEFORE RUNNING)");
-  out.push(`${unitHeader} G90 G17 G40 G49 G80`);
-  out.push(workOffset);
-  out.push(`G0 Z${fmt(safeZ, dp)}`);
   if (mode === "positions") {
-    coords.forEach((c, i) => {
-      out.push(`(Hole ${i + 1})`);
-      out.push(`G0 X${fmt(c.x, dp)} Y${fmt(c.y, dp)}`);
-    });
+    out.push(`(BOLT CIRCLE - ${holes} - XY ONLY)`);
+    out.push("(Z NEVER MOVES IN THIS PROGRAM)");
+    out.push("(RAISE THE TOOL CLEAR FIRST)");
+    out.push("(STOPS AT EACH HOLE)");
+    out.push("(CYCLE START GOES TO THE NEXT)");
+    out.push(`${unitCode} G17 G40 G80 G90`);
+    out.push(workOffset);
+    coords.forEach((c, i) => out.push(`(HOLE ${i + 1})`, `G0 ${xy(c)}`, "M0"));
   } else {
-    const cycle = mode === "peck" ? "G83" : "G81";
-    const first = coords[0];
-    out.push(`S${fmt(spindle, 0)} M3`);
+    const t = Math.round(tool);
+    out.push(`(BOLT CIRCLE - ${holes} - ${mode === "peck" ? "G83 PECK" : "G81"})`);
+    out.push(`(CHECK TOOL ${t} AND OFFSET ${workOffset})`);
+    out.push("(CHECK THE DEPTHS BEFORE YOU RUN)");
+    out.push("(SINGLE-BLOCK THE FIRST HOLE)");
+    out.push(`${unitCode} G17 G40 G49 G80 G90`);
+    out.push(`T${t} M6`);
+    out.push(`${workOffset} G0 ${xy(coords[0])}`);
+    out.push(`S${Math.round(spindle)} M3`);
+    out.push(`G43 H${t} Z${n(safeZ)}`);
     if (coolant === "flood") out.push("M8");
-    out.push(`G0 X${fmt(first.x, dp)} Y${fmt(first.y, dp)}`);
-    out.push(`G0 Z${fmt(r, dp)}`);
-    const peckPart = mode === "peck" && Number.isFinite(peck) ? ` Q${fmt(peck, dp)}` : "";
-    out.push(`${cycle} G98 X${fmt(first.x, dp)} Y${fmt(first.y, dp)} Z${fmt(z, dp)} R${fmt(r, dp)}${peckPart} F${fmt(feed, 2)}`);
-    for (let i = 1; i < coords.length; i += 1) out.push(`X${fmt(coords[i].x, dp)} Y${fmt(coords[i].y, dp)}`);
+    const peckWord = mode === "peck" ? ` Q${n(peck)}` : "";
+    out.push(`${mode === "peck" ? "G83" : "G81"} G98 ${xy(coords[0])} Z${n(z)} R${n(r)}${peckWord} F${gcodeNumber(feed, 2)}`);
+    for (let i = 1; i < coords.length; i += 1) out.push(xy(coords[i]));
     out.push("G80");
-    out.push(`G0 Z${fmt(safeZ, dp)}`);
+    out.push(`G0 Z${n(safeZ)}`);
     if (coolant === "flood") out.push("M9");
     out.push("M5");
   }
   out.push("M30", "%");
   return out.join("\n");
+}
+
+/** Bare X Y lines for controls that don't speak Fanuc: paste them under your own cycle. */
+export function buildBoltPositions(coords, units = "in") {
+  const dp = units === "in" ? 4 : 3;
+  return coords.map((c) => `X${gcodeNumber(c.x, dp)} Y${gcodeNumber(c.y, dp)}`).join("\n");
 }
 
 export function buildBoltCsv(coords, units = "in") {

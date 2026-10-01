@@ -6,7 +6,7 @@
 import { register } from "../app/registry.js";
 import { threadMilling } from "../core/milling.js";
 import { fmt } from "../core/format.js";
-import { threadFromSpec, threadPrefill, fromIn, toIn } from "./_util.js";
+import { threadFromSpec, threadPrefill, fromIn, toIn, COMMON_THREADS } from "./_util.js";
 
 export default register({
   id: "thread-mill",
@@ -19,12 +19,12 @@ export default register({
   prefillRank: 14,
   prefill: (q) => threadPrefill(q),
   inputs: [
-    { id: "thread", label: "Thread", kind: "text", default: "1/2-13", placeholder: "1/2-13, M12x1.75" },
+    { id: "thread", suggest: COMMON_THREADS, label: "Thread", kind: "text", default: "1/2-13", placeholder: "1/2-13, M12x1.75" },
     { id: "side", label: "Thread is", kind: "segment", default: "internal", options: [{ value: "internal", label: "Internal" }, { value: "external", label: "External" }] },
-    { id: "cutter", label: "Thread mill diameter", kind: "length", default: "0.375", min: 0.0001 },
+    { id: "cutter", label: "Thread mill diameter", kind: "length", default: "0.375", defaultMm: "10", min: 0.0001 },
     { id: "flutes", label: "Flutes", kind: "int", default: "3", min: 1 },
     { id: "rpm", label: "Spindle", kind: "int", default: "3000", unit: "RPM", min: 1 },
-    { id: "chip", label: "Chip load per tooth", kind: "length", default: "0.001", min: 0 },
+    { id: "chip", positive: true, label: "Chip load per tooth", kind: "length", default: "0.001", defaultMm: "0.025", min: 0 },
   ],
   compute(v, c) {
     const t = threadFromSpec(v.thread);

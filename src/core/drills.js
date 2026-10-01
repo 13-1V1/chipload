@@ -14,11 +14,13 @@ function nearestIndex(values, target) {
   return bestIdx;
 }
 
+const INCH_SIZES = DRILL_CHART_INCH.map((entry) => entry[0]);
+
 const inchEntry = (i) => (i >= 0 && i < DRILL_CHART_INCH.length) ? { size: DRILL_CHART_INCH[i][0], label: DRILL_CHART_INCH[i][1] } : null;
 const mmEntry = (i) => (i >= 0 && i < DRILL_CHART_MM.length) ? { size: DRILL_CHART_MM[i], label: `${DRILL_CHART_MM[i]} mm` } : null;
 
 export function nearestDrillInch(sizeIn) {
-  return inchEntry(nearestIndex(DRILL_CHART_INCH.map(e => e[0]), sizeIn));
+  return inchEntry(nearestIndex(INCH_SIZES, sizeIn));
 }
 
 export function nearestDrillMm(sizeMm) {
@@ -27,7 +29,7 @@ export function nearestDrillMm(sizeMm) {
 
 /** { prev, nearest, next } around the closest inch drill. */
 export function nearestDrillsInch(sizeIn) {
-  const i = nearestIndex(DRILL_CHART_INCH.map(e => e[0]), sizeIn);
+  const i = nearestIndex(INCH_SIZES, sizeIn);
   return { prev: inchEntry(i - 1), nearest: inchEntry(i), next: inchEntry(i + 1) };
 }
 

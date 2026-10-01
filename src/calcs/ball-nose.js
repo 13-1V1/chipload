@@ -25,11 +25,11 @@ export default register({
   keywords: ["ball nose", "ball end mill", "scallop", "cusp", "stepover", "effective diameter", "3d finish", "surface finish"],
   pro: true,
   inputs: [
-    { id: "diameter", label: "Ball diameter", kind: "length", default: "0.5", min: 0.0001 },
+    { id: "diameter", label: "Ball diameter", kind: "length", default: "0.5", defaultMm: "12", min: 0.0001 },
     { id: "mode", label: "Find", kind: "segment", default: "stepover", options: [{ value: "stepover", label: "Stepover" }, { value: "scallop", label: "Scallop" }] },
-    { id: "scallop", label: "Scallop height wanted", kind: "length", default: "0.0005", min: 0, showIf: (r) => r.mode === "stepover" },
-    { id: "stepover", label: "Stepover", kind: "length", default: "0.05", min: 0, showIf: (r) => r.mode === "scallop" },
-    { id: "depth", advanced: true, label: "Axial depth of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives effective diameter" },
+    { id: "scallop", label: "Scallop height wanted", kind: "length", default: "0.0005", defaultMm: "0.01", min: 0, showIf: (r) => r.mode === "stepover" },
+    { id: "stepover", label: "Stepover", kind: "length", default: "0.05", defaultMm: "1", min: 0, showIf: (r) => r.mode === "scallop" },
+    { id: "depth", positive: true, advanced: true, label: "Axial depth of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives effective diameter" },
     { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", optional: true, placeholder: "optional — RPM at effective dia" },
   ],
   compute(v, c) {
@@ -45,11 +45,11 @@ export default register({
     const explain = [
       { title: "Scallop (cusp)", formula: "h = R − √(R² − (s/2)²)     s = 2 √(2Rh − h²)", plugged: `R = ${fmt(R, p)}, s = ${fmt(stepover, p)}, h = ${fmt(scallop, 5)}` },
     ];
-    if (Number.isFinite(v.depth)) {
+    if (Number.isFinite(v.depth) && v.depth > 0) {
       const deff = ballEffectiveDiameter(v.diameter, v.depth);
       stats.push({ label: "Effective cutting diameter", value: deff, unit: c.L.length, places: p });
       explain.push({ title: "Effective diameter", formula: "Deff = 2 √(D·ap − ap²)", plugged: `= 2 √(${fmt(v.diameter, p)} × ${fmt(v.depth, p)} − ${fmt(v.depth, p)}²) = ${fmt(deff, p)}` });
-      if (Number.isFinite(v.sfm)) {
+      if (Number.isFinite(v.sfm) && Number.isFinite(deff) && deff > 0) {
         const rpmEff = rpmFromSfm(toSfm(v.sfm, c.units), toIn(deff, c.units));
         const rpmFull = rpmFromSfm(toSfm(v.sfm, c.units), toIn(v.diameter, c.units));
         stats.push({ label: "RPM at effective dia", value: rpmEff, unit: "RPM", places: 0 }, { label: "RPM at full dia (too slow)", value: rpmFull, unit: "RPM", places: 0 });

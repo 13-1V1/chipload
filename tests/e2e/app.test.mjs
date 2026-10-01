@@ -230,3 +230,264 @@ test("favorites & recent chips wrap instead of running off the edge", async () =
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+// ── Found by the critic pass and the code review: each of these was broken once ──
+
+const answer = (page) => page.evaluate(() => ({ val: document.querySelector("#answerVal").textContent, lbl: document.querySelector("#answerLbl").textContent }));
+const typeInto = async (page, selector, text) => { await page.locator(selector).fill(text); await page.waitForTimeout(60); };
+
+/**
+ * A stand-in for the Play Billing plugin that behaves like the real one with no receipt server:
+ * the verified receipt's collection is empty, and ownership is only visible through store.owned().
+ */
+const FAKE_PLAY_STORE = () => {
+  const cb = { productUpdated: [], approved: [], verified: [], finished: [], error: [] };
+  let bought = false;
+  const later = (fn) => setTimeout(fn, 15);
+  const receipt = { collection: [], finish() { later(() => cb.finished.forEach((f) => f(tx))); } };
+  const tx = { verify() { later(() => cb.verified.forEach((f) => f(receipt))); } };
+  const product = { id: "pro_unlock", pricing: { price: "$9.99" }, get owned() { return bought; }, getOffer: () => ({ order: async () => { bought = true; later(() => cb.approved.forEach((f) => f(tx))); } }) };
+  const chain = {};
+  for (const name of ["productUpdated", "approved", "verified", "finished"]) chain[name] = (f) => { cb[name].push(f); return chain; };
+  window.__billingEvents = cb;
+  window.CdvPurchase = {
+    store: { verbosity: 0, register() {}, when: () => chain, error: (f) => cb.error.push(f), initialize: async () => { later(() => cb.productUpdated.forEach((f) => f(product))); }, owned: () => bought, get: () => product, restorePurchases: async () => undefined },
+    ProductType: { NON_CONSUMABLE: "non consumable" }, Platform: { GOOGLE_PLAY: "android-playstore" }, LogLevel: { WARNING: 2 }, ErrorCode: { PAYMENT_CANCELLED: 6777006 },
+  };
+};
+
+test("Pro screen opened directly loads, and says where Pro is sold when there is no store", async () => {
+  const { page, ctx, errors } = await open("/pro");
+  assert.equal(await page.locator("#title").textContent(), "Chipload Pro");
+  assert.ok(await page.locator("#buy").isVisible());
+  assert.match(await page.locator("main .hint").textContent(), /sold through Google Play/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("buying Pro unlocks it right away, and the Pro screen keeps working through every store event", async () => {
+  const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+  await ctx.addInitScript(FAKE_PLAY_STORE);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await page.goto(`${BASE}?e2e=buy#/pro`, { waitUntil: "load", timeout: 10000 });
+  await page.waitForFunction(() => /\$9\.99/.test(document.querySelector("#buy")?.textContent || ""));
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("chipload.settings.v1") || "{}").pro === true), false, "not Pro before buying");
+  await page.locator("#buy").click();
+  await page.waitForFunction(() => document.querySelector("main button[disabled]")?.textContent === "Pro unlocked", null, { timeout: 5000 });
+  assert.equal(await page.locator("#buy").count(), 0, "buy button is gone");
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("chipload.settings.v1")).pro), true, "the unlock is saved for offline use");
+  // a burst of late store events must not hang or break the screen
+  await page.evaluate(() => { for (let i = 0; i < 25; i++) window.__billingEvents.finished.forEach((f) => f({})); });
+  assert.equal(await page.locator("main button[disabled]").textContent(), "Pro unlocked");
+  // and a Pro tool is open for business
+  await page.evaluate(() => { location.hash = "#/calc/chamfer"; });
+  await page.waitForFunction(() => document.querySelector("#answerVal")?.textContent === "0.25");
+  assert.equal(await page.locator(".lock").count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("a saved job reopens with its own numbers, not whatever was typed since", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill", { pro: true });
+  const saved = (await answer(page)).val;
+  await page.locator("#answerMore").click();
+  await page.locator('.menu [data-act="job"]').click();
+  await page.locator("#jobName").fill("Bracket slot");
+  await page.locator("#jobSave").click();
+  // now leave a surface-speed override behind in the same tool
+  await page.locator("details.more > summary").click();
+  await typeInto(page, "#f-feeds-mill-sfm", "50");
+  assert.notEqual((await answer(page)).val, saved);
+  await page.evaluate(() => { location.hash = "#/shop/jobs"; });
+  await page.locator("[data-open]").first().click();
+  await page.waitForFunction(() => location.hash.startsWith("#/calc/feeds-mill"));
+  await page.waitForTimeout(150);
+  assert.equal(await page.locator("#f-feeds-mill-sfm").inputValue(), "", "the blank field came back blank");
+  assert.equal((await answer(page)).val, saved, "same answer as when it was saved");
+  // deleting a job is one tap, and one tap to take back
+  await page.evaluate(() => { location.hash = "#/shop/jobs"; });
+  await page.locator("[data-del]").first().click();
+  assert.equal(await page.locator("[data-open]").count(), 0);
+  await page.locator(".copied button").click();
+  assert.equal(await page.locator("[data-open]").count(), 1, "Undo brought it back");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("a shared link carries blank fields as blank", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill");
+  await page.evaluate(() => { navigator.share = (data) => { window.__shared = data; return Promise.resolve(); }; });
+  await page.locator("#answerMore").click();
+  await page.locator('.menu [data-act="share"]').click();
+  const url = await page.evaluate(() => window.__shared.url);
+  const query = new URLSearchParams(url.split("?")[1]);
+  assert.equal(query.get("diameter"), "0.375");
+  assert.equal(query.get("sfm"), "", "sfm is in the link, and blank");
+  assert.equal(query.get("units"), "in");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("number pad: gives way to a text field, and Next walks a Shop form", async () => {
+  const { page, ctx, errors } = await open("/calc/tapping-feed", { pro: true });
+  const padOpen = () => page.evaluate(() => !!document.querySelector(".numpad")?.classList.contains("open"));
+  await page.locator("#f-tapping-feed-rpm").click();
+  assert.equal(await padOpen(), true);
+  await page.locator("#f-tapping-feed-thread").click();
+  assert.equal(await padOpen(), false, "tapping the thread field closes the number pad");
+  await page.evaluate(() => { location.hash = "#/shop/machines"; });
+  await page.locator("#add").click();
+  await page.locator("#mRpm").click();
+  assert.equal(await padOpen(), true);
+  await page.locator('.numpad [data-key="8"]').dispatchEvent("pointerdown");
+  await page.locator('.numpad [data-key="next"]').dispatchEvent("pointerdown");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "mFeed", "Next moves to the next number field");
+  await page.locator('.numpad [data-key="next"]').dispatchEvent("pointerdown");
+  assert.equal(await padOpen(), false, "Next on the last field closes the pad");
+  assert.equal(await page.locator("#mRpm").inputValue(), "8");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("when a field can't be used, the answer bar names it", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill");
+  await typeInto(page, "#f-feeds-mill-diameter", "");
+  assert.equal((await answer(page)).lbl, "Enter Tool diameter");
+  await typeInto(page, "#f-feeds-mill-diameter", "0.5");
+  await typeInto(page, "#f-feeds-mill-flutes", "0");
+  assert.equal((await answer(page)).lbl, "Flutes can't be less than 1");
+  await typeInto(page, "#f-feeds-mill-flutes", "4");
+  // a bad value folded away under More options: the drawer opens so the highlight can be seen
+  assert.equal(await page.evaluate(() => document.querySelector("details.more").open), false);
+  await page.evaluate(() => { const el = document.querySelector("#f-feeds-mill-sfm"); el.value = "1/"; el.dispatchEvent(new Event("input")); });
+  assert.equal((await answer(page)).lbl, 'Check Surface speed — "1/" isn\'t a number');
+  assert.equal(await page.evaluate(() => document.querySelector("details.more").open), true);
+  assert.equal(await page.locator(".input.bad").count(), 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+
+  const three = await open("/calc/mow", { pro: true });
+  await typeInto(three.page, "#f-mow-thread", "garbage");
+  assert.match((await answer(three.page)).lbl, /^Type a thread like/, "the tool's own reason, not a generic one");
+  assert.deepEqual(three.errors, []);
+  await three.ctx.close();
+});
+
+test("metric setting: tools open on a real metric cut, and the unit switch keeps it the same cut", async () => {
+  const { page, ctx, errors } = await open("/");
+  await page.evaluate(() => localStorage.setItem("chipload.settings.v1", JSON.stringify({ units: "mm", theme: "dark", glove: false, pro: true })));
+  await page.goto(`${BASE}?e2e=mm#/calc/feeds-mill`);
+  await page.waitForLoadState("networkidle");
+  assert.equal(await page.locator("#f-feeds-mill-diameter").inputValue(), "10");
+  assert.equal(await page.locator('label[for="f-feeds-mill-diameter"] .u').textContent(), "mm");
+  const rpm = Number(await page.locator(".stat .v").first().evaluate((el) => el.firstChild.textContent));
+  assert.ok(rpm > 500 && rpm < 30000, `plausible RPM, got ${rpm}`);
+  assert.equal(await page.locator(".warn").count(), 0);
+  const metric = await answer(page);
+  await page.locator('.calc > .seg [data-u="in"]').click();
+  assert.equal(await page.locator("#f-feeds-mill-diameter").inputValue(), "0.3937");
+  const inch = await answer(page);
+  assert.ok(Math.abs(Number(metric.val) / 25.4 - Number(inch.val)) < 0.2, `${metric.val} mm/min is ${inch.val} IPM`);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("right triangle: the fields are named for the pair, and an angle is never converted like a length", async () => {
+  const { page, ctx, errors } = await open("/calc/right-triangle");
+  const label = (id) => page.evaluate((id) => document.querySelector(`label[for="f-right-triangle-${id}"]`).textContent, id);
+  assert.equal(await label("a"), "Run (adjacent)in");
+  assert.equal(await label("b"), "Rise (opposite)in");
+  await page.locator("#f-right-triangle-mode").selectOption("hypAngle");
+  assert.equal(await label("a"), "Hypotenusein");
+  assert.equal(await label("b"), "Angle°");
+  await typeInto(page, "#f-right-triangle-a", "5");
+  await typeInto(page, "#f-right-triangle-b", "30");
+  await page.locator('.calc > .seg [data-u="mm"]').click();
+  assert.equal(await page.locator("#f-right-triangle-a").inputValue(), "127");
+  assert.equal(await page.locator("#f-right-triangle-b").inputValue(), "30", "30° is still 30°");
+  assert.equal(await label("b"), "Angle°");
+  assert.equal((await answer(page)).val, "127");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("print sheet has the tool name, the answer, and every input in words", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill", { pro: true });
+  await page.evaluate(() => { window.print = () => { window.__printed = (window.__printed || 0) + 1; window.dispatchEvent(new Event("afterprint")); }; });
+  const shown = (await answer(page)).val;
+  await page.locator("#answerMore").click();
+  await page.locator('.menu [data-act="print"]').click();
+  assert.equal(await page.evaluate(() => window.__printed), 1);
+  await page.emulateMedia({ media: "print" });
+  const sheet = await page.evaluate(() => {
+    const visible = (sel) => { const el = document.querySelector(sel); return !!el && getComputedStyle(el).display !== "none" && el.getBoundingClientRect().height > 0; };
+    return { block: visible(".print-block"), answerBar: visible(".answer"), fields: visible(".field"), stats: visible(".stats"), text: document.querySelector(".print-block").innerText };
+  });
+  assert.equal(sheet.block, true);
+  assert.equal(sheet.answerBar, false, "the on-screen bar is replaced by the printed line");
+  assert.equal(sheet.fields, false);
+  assert.equal(sheet.stats, true);
+  assert.match(sheet.text, /Speeds & feeds — mill/);
+  assert.ok(sheet.text.includes(`Feed rate: ${shown} IPM`), sheet.text);
+  assert.match(sheet.text, /Tool diameter\s+0\.375 in/);
+  assert.match(sheet.text, /Material\s+6061-T6 aluminum/);
+  assert.match(sheet.text, /Tool\s+Carbide/);
+  assert.match(sheet.text, /Surface speed\s+auto \d+/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("web copy works with no signal after one visit", async () => {
+  const { page, ctx, errors } = await open("/");
+  // the worker fetches its own copy of everything the page loaded, then says so
+  await page.waitForFunction(() => document.documentElement.dataset.offline === "ready", null, { timeout: 20000 });
+  const cached = await page.evaluate(async () => { let n = 0; for (const k of await caches.keys()) n += (await (await caches.open(k)).keys()).length; return n; });
+  assert.ok(cached > 100, `the whole app is cached, not just the shell (${cached} files)`);
+  await ctx.setOffline(true);
+  errors.length = 0;
+  await page.reload({ waitUntil: "load", timeout: 10000 });
+  assert.equal(await page.locator(".cat").count(), 8, "home opens offline");
+  await page.goto(`${BASE}?e2e=1#/calc/tap-drill`, { waitUntil: "load", timeout: 10000 });
+  await page.waitForFunction(() => document.querySelector("#answerVal")?.textContent === "#7");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.body).fontFamily.includes("IBM Plex Sans")), true);
+  assert.deepEqual(errors, [], "nothing failed to load offline");
+  await ctx.setOffline(false);
+  await ctx.close();
+});
+
+test("rotating the phone with the pad open keeps the field in view and the answer bar on the pad", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill");
+  await page.locator("#f-feeds-mill-flutes").click();
+  await page.waitForSelector(".numpad.open");
+  await page.setViewportSize({ width: 812, height: 375 });
+  await page.waitForTimeout(700);
+  const box = await page.evaluate(() => {
+    const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+    const pad = r(".numpad"), bar = r(".answer"), field = r('[data-active="true"]');
+    return { gap: Math.round(pad.top - bar.bottom), barTop: Math.round(bar.top), fieldTop: Math.round(field.top), fieldBottom: Math.round(field.bottom), padBottom: Math.round(pad.bottom), vh: innerHeight };
+  });
+  assert.ok(Math.abs(box.gap) <= 1, `answer bar sits on the pad (gap ${box.gap})`);
+  assert.ok(box.fieldTop >= 0 && box.fieldBottom <= box.barTop + 1, `field ${box.fieldTop}–${box.fieldBottom} is above the answer bar at ${box.barTop}`);
+  // an invalid entry still gets its message in the short landscape bar
+  await page.locator('.numpad [data-key="bksp"]').dispatchEvent("pointerdown");
+  await page.waitForTimeout(60);
+  const msg = await page.evaluate(() => { const el = document.querySelector("#answerLbl"); return { text: el.textContent, shown: getComputedStyle(el).display !== "none" && el.getBoundingClientRect().height > 0 }; });
+  assert.equal(msg.text, "Enter Flutes");
+  assert.equal(msg.shown, true);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("bolt circle: no -0 in the table, and the drill program calls the tool before the length offset", async () => {
+  const { page, ctx, errors } = await open("/calc/bolt-circle?holes=4&diameter=2&gcode=drill&tool=4", { pro: true });
+  const cells = await page.locator(".extras table.chart tbody td").allTextContents();
+  assert.equal(cells.filter((c) => c === "-0").length, 0);
+  const code = await page.locator("pre.code").textContent();
+  assert.ok(code.indexOf("G49") < code.indexOf("T4 M6") && code.indexOf("T4 M6") < code.indexOf("G43 H4 Z1.0"), code);
+  assert.ok(!code.includes("G0 Z0.1"), "no drop to the R plane before the cycle");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

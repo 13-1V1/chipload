@@ -19,7 +19,10 @@ import "../calcs/index.js";
 applyTheme();
 onSettings(applyTheme);
 
-const main = document.querySelector("main");
+const mainEl = document.querySelector("main");
+// Each screen gets a brand-new container. Views attach listeners to it; replacing the node drops them,
+// so handlers from the last screen can never fire on this one.
+let main = mainEl;
 const title = document.querySelector("#title");
 const backBtn = document.querySelector("#back");
 const settingsBtn = document.querySelector("#settingsBtn");
@@ -40,8 +43,10 @@ function screen(name, { showBack = true, answer = false, tool = false } = {}) {
   current?.destroy?.();
   current = null;
   closeNumpad();
-  main.innerHTML = "";
-  main.classList.toggle("no-answer", !answer);
+  main = document.createElement("div");
+  main.className = "view";
+  mainEl.replaceChildren(main);
+  mainEl.classList.toggle("no-answer", !answer);
   if (!answer) hideAnswerBar();
   title.textContent = name;
   document.title = name === "Chipload" ? "Chipload" : `${name} · Chipload`;
@@ -66,8 +71,8 @@ onRoute(({ segments, params }) => {
   }
   if (head === "shop") { screen("Shop"); renderShop(main, id || "machines"); return; }
   if (head === "settings") { screen("Settings"); renderSettings(main); return; }
-  if (head === "pro") { screen("Chipload Pro"); renderPro(main); return; }
-  if (head === "privacy" || head === "licenses") { screen(""); title.textContent = renderStatic(main, head); return; }
+  if (head === "pro") { screen("Chipload Pro"); current = renderPro(main); return; }
+  if (head === "privacy" || head === "licenses") { screen(head === "privacy" ? "Privacy" : "Licenses"); renderStatic(main, head); return; }
   navigate("/");
 });
 
@@ -75,7 +80,19 @@ startRouter();
 initNative();
 initBilling();
 
-// Web version only: cache the shell so it works offline as a PWA. The Android app ships its files.
+// Web version only: keep a copy of the app so it opens with no signal. The Android app ships its files.
+// The worker starts after this page has already loaded its ~100 modules, so the page tells it what it
+// loaded and the worker fetches its own copies — one online visit is enough to work offline.
 if (!isNative() && "serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // the worker answers when its copy is complete
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type === "precached" && event.data.complete) document.documentElement.dataset.offline = "ready";
+  });
+  navigator.serviceWorker.register("sw.js")
+    .then(() => navigator.serviceWorker.ready)
+    .then((registration) => {
+      const urls = performance.getEntriesByType("resource").map((entry) => entry.name).filter((url) => url.startsWith(location.origin));
+      registration.active?.postMessage({ type: "precache", urls });
+    })
+    .catch(() => { /* no offline copy; the app still works online */ });
 }

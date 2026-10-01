@@ -17,9 +17,9 @@ export default register({
   keywords: ["circular", "interpolation", "helical", "bore", "feed comp", "id", "od", "g02", "g03", "arc feed"],
   pro: true,
   inputs: [
-    { id: "feed", label: "Linear feed (from speeds & feeds)", kind: "feed", default: "40", min: 0.0001 },
-    { id: "tool", label: "Tool diameter", kind: "length", default: "0.5", min: 0.0001 },
-    { id: "feature", label: "Feature diameter", kind: "length", default: "1", min: 0.0001 },
+    { id: "feed", label: "Linear feed (from speeds & feeds)", kind: "feed", default: "40", defaultMm: "1000", min: 0.0001 },
+    { id: "tool", label: "Tool diameter", kind: "length", default: "0.5", defaultMm: "12", min: 0.0001 },
+    { id: "feature", label: "Feature diameter", kind: "length", default: "1", defaultMm: "25", min: 0.0001 },
     { id: "side", label: "Cutting", kind: "segment", default: "internal", options: [{ value: "internal", label: "Inside (bore)" }, { value: "external", label: "Outside (boss)" }] },
   ],
   compute(v, c) {

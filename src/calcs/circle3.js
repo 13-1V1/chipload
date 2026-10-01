@@ -17,9 +17,9 @@ export default register({
   keywords: ["circle", "3 points", "three point", "center", "radius", "bore", "probe", "indicate"],
   pro: true,
   inputs: [
-    { id: "x1", label: "Point 1 X", kind: "length", default: "1" }, { id: "y1", label: "Point 1 Y", kind: "length", default: "0" },
-    { id: "x2", label: "Point 2 X", kind: "length", default: "0" }, { id: "y2", label: "Point 2 Y", kind: "length", default: "1" },
-    { id: "x3", label: "Point 3 X", kind: "length", default: "-1" }, { id: "y3", label: "Point 3 Y", kind: "length", default: "0" },
+    { id: "x1", label: "Point 1 X", kind: "length", default: "1", defaultMm: "25" }, { id: "y1", label: "Point 1 Y", kind: "length", default: "0" },
+    { id: "x2", label: "Point 2 X", kind: "length", default: "0" }, { id: "y2", label: "Point 2 Y", kind: "length", default: "1", defaultMm: "25" },
+    { id: "x3", label: "Point 3 X", kind: "length", default: "-1", defaultMm: "-25" }, { id: "y3", label: "Point 3 Y", kind: "length", default: "0" },
   ],
   compute(v, c) {
     const r = circleThrough3Points([v.x1, v.y1], [v.x2, v.y2], [v.x3, v.y3]);

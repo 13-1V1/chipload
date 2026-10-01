@@ -6,6 +6,14 @@
 // IPM = RPM × flutes × chip load. Radial chip thinning per Sandvik / Harvey Tool
 // application notes: factor = D / (2 √(ae (D − ae))) when ae < D/2.
 
+/**
+ * Library chip loads are listed for a 3/8 in tool. Smaller tools take less, bigger ones more:
+ * scale by diameter ÷ 0.375, held between 0.25× and 1.5×.
+ */
+export function chipLoadScale(diameterIn) {
+  return Math.max(0.25, Math.min(1.5, diameterIn / 0.375));
+}
+
 /** Dimensionless chip-thinning multiplier; 1 when at or beyond half-diameter engagement. */
 export function radialChipThinningFactor(diameter, radialEngagement, maxFactor = 2.5) {
   if (!(diameter > 0) || !(radialEngagement > 0) || radialEngagement >= diameter / 2) return 1;
@@ -31,7 +39,7 @@ export function calculateSpeedsFeeds({
   widthOfCut = NaN, depthOfCut = NaN, maxRpm = Infinity, maxFeed = Infinity,
 }) {
   const diameterIn = units === "in" ? diameter : diameter / 25.4;
-  const chipScale = Math.max(0.25, Math.min(1.5, diameterIn / 0.375));
+  const chipScale = chipLoadScale(diameterIn);
   const thinningFactor = radialChipThinningFactor(diameter, widthOfCut);
   const programmedChipIn = chipLoadIn * chipScale * thinningFactor;
   const requestedRpm = (sfm * 12) / (Math.PI * diameterIn);

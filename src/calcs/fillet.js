@@ -17,7 +17,7 @@ export default register({
   keywords: ["fillet", "tangent", "corner radius", "blend", "arc start", "g02", "g03", "included angle"],
   pro: true,
   inputs: [
-    { id: "radius", label: "Fillet radius", kind: "length", default: "0.25", min: 0.0001 },
+    { id: "radius", label: "Fillet radius", kind: "length", default: "0.25", defaultMm: "6", min: 0.0001 },
     { id: "angle", label: "Included angle between the lines", kind: "angle", default: "90", min: 0.1, max: 179.9 },
   ],
   compute(v, c) {

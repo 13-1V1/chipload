@@ -4,25 +4,27 @@
 // Mounts one calculator definition into the page: inputs on top, pinned answer bar,
 // "How was this figured?" drawer, recent history. Live-calculates on every change.
 
-import { fmt, parseDimension } from "../core/format.js";
-import { buildValues, optionsFor, NUMERIC_KINDS } from "./values.js";
+import { fmt } from "../core/format.js";
+import { buildValues, optionsFor, sanitizeChoices, convertInput, defaultFor, defaultRaw, measureOf, labelOf, invalidReason, NUMERIC_KINDS } from "./values.js";
 import { CALCULATION_SOURCES } from "../data/sources.js";
-import { getSettings, setSetting, UNIT_LABEL } from "./settings.js";
-import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, loadBlob, saveBlob } from "./store.js";
+import { getSettings, UNIT_LABEL, SHARE_BASE } from "./settings.js";
+import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, saveBlob, loadStrings } from "./store.js";
 import { attachNumpad, closeNumpad } from "./numpad.js";
 import { ICONS } from "./icons.js";
 import { toast, download, share, printScreen } from "./ui.js";
-import { jobs } from "./shop.js";
-import { SHARE_BASE } from "./settings.js";
-export { toast, download } from "./ui.js";
+import { jobs, machines } from "./shop.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const isChoice = (input) => input.kind === "select" || input.kind === "segment";
+const validUnits = (u) => (u === "in" || u === "mm" ? u : null);
 
-/** Which unit label an input kind carries. */
-function unitFor(input, units) {
+/** Which unit label a field carries right now. */
+function unitFor(input, units, raw) {
   if (input.unit === false) return "";
+  if (typeof input.unit === "function") return input.unit(units);
   const L = UNIT_LABEL[units];
-  switch (input.kind) {
+  switch (measureOf(input, raw)) {
+    case "temp": return L.temp;
     case "length": return L.length;
     case "speed": return L.speed;
     case "feed": return L.feed;
@@ -35,33 +37,42 @@ function unitFor(input, units) {
 
 /** Active machine profile (Shop → Machines), or null. */
 export function activeMachine() {
-  const machines = loadBlob("machines", []);
-  const id = loadBlob("activeMachine", null);
-  return machines.find((m) => m.id === id) || null;
+  const id = machines.activeId();
+  return machines.all().find((m) => m.id === id) || null;
 }
 
-function convertLength(text, from, to) {
-  const v = parseDimension(text, from);
-  if (!Number.isFinite(v)) return text;
-  return fmt(to === "mm" ? v * 25.4 : v / 25.4, to === "mm" ? 3 : 4);
-}
-
-export function mountCalculator(def, root, { params = {}, onBack } = {}) {
+export function mountCalculator(def, root, { params = {} } = {}) {
   const settings = getSettings();
-  let units = def.units === false ? "in" : (params.units || settings.units);
   const saved = loadInputs(def.id) || {};
+  let units = def.units === false ? "in" : (validUnits(params.units) || saved.units || settings.units);
+
+  // Where each field starts: the link that opened the tool, then what was typed last time, then the default.
   const raw = {};
-  for (const input of def.inputs) {
-    raw[input.id] = params[input.id] ?? saved.values?.[input.id] ?? input.default ?? "";
-  }
-  if (saved.units && !params.units && def.units !== false) units = saved.units;
+  const startText = (input) => {
+    if (params[input.id] != null) return String(params[input.id]);
+    if (saved.values && input.id in saved.values) {
+      // Saved numbers are in the units they were saved in; a link asking for the other system gets them converted.
+      const text = saved.values[input.id];
+      return saved.units && saved.units !== units ? convertInput(input, text, saved.units, units, raw) : text;
+    }
+    return defaultFor(input, units, raw);
+  };
+  // Choices first: what a field measures, and so its default, can depend on a mode.
+  for (const input of def.inputs) if (isChoice(input)) raw[input.id] = startText(input);
+  // A stale link or old saved state can carry a choice that no longer exists — fall back to the default.
+  Object.assign(raw, sanitizeChoices(def, raw, { units, L: UNIT_LABEL[units], settings, machine: null, fmt }));
+  for (const input of def.inputs) if (!isChoice(input)) raw[input.id] = startText(input);
   pushRecent(def.id);
 
   root.innerHTML = "";
-  root.className = "";
   const calc = document.createElement("div");
   calc.className = "calc";
   root.append(calc);
+
+  // Paper copy: title, answer, and every input as text. Filled in only when printing.
+  const printBlock = document.createElement("div");
+  printBlock.className = "print-block";
+  calc.append(printBlock);
 
   // ── "What is this?" help card: shows once per tool while tips are on, and on demand from the ? button ──
   let helpCard = null;
@@ -77,7 +88,7 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     helpCard.querySelector("[data-gotit]").addEventListener("click", () => { markHelpSeen(def.id); toggleHelp(false); });
     calc.prepend(helpCard);
   }
-  if (getSettings().tips !== false && !helpSeen(def.id) && helpText) toggleHelp(true);
+  if (settings.tips !== false && !helpSeen(def.id) && helpText) toggleHelp(true);
 
   // ── Unit toggle ──
   if (def.units !== false) {
@@ -91,11 +102,11 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
       if (!b || b.dataset.u === units) return;
       const from = units; units = b.dataset.u;
       seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      // Every typed number is re-expressed in the new system so it still means the same cut.
       for (const input of def.inputs) {
-        if (input.kind === "length" && fields[input.id]) {
-          fields[input.id].value = convertLength(fields[input.id].value, from, units);
-          raw[input.id] = fields[input.id].value;
-        }
+        const el = fields[input.id];
+        if (isChoice(input) || !el) continue;
+        el.value = raw[input.id] = convertInput(input, el.value, from, units, raw);
       }
       refreshUnits();
       recalc();
@@ -107,15 +118,16 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   const fields = {};
   const fieldWraps = {};
   const unitLabels = {};
+  const labelTexts = {};
   const numericInputs = [];
   const advancedInputs = def.inputs.filter((i) => i.advanced);
   let more = null, moreBody = null;
   if (advancedInputs.length) {
     more = document.createElement("details");
     more.className = "drawer more";
-    const changed = advancedInputs.some((i) => String(raw[i.id] ?? "").trim() !== "" && String(raw[i.id]) !== String(i.default ?? ""));
+    const changed = advancedInputs.some((i) => String(raw[i.id] ?? "").trim() !== "" && String(raw[i.id]) !== String(defaultFor(i, units, raw)));
     more.open = saved.more === true || changed;
-    more.innerHTML = `<summary>More options<span class="sub">${esc(advancedInputs.slice(0, 3).map((i) => i.label.replace(/\s*\(.*?\)/g, "").toLowerCase()).join(", "))}${advancedInputs.length > 3 ? "…" : ""}</span></summary><div class="body"></div>`;
+    more.innerHTML = `<summary>More options<span class="sub">${esc(advancedInputs.slice(0, 3).map((i) => labelOf(i, raw).replace(/\s*\(.*?\)/g, "").toLowerCase()).join(", "))}${advancedInputs.length > 3 ? "…" : ""}</span></summary><div class="body"></div>`;
     moreBody = more.querySelector(".body");
     more.addEventListener("toggle", () => saveInputs(def.id, { ...(loadInputs(def.id) || {}), more: more.open }));
   }
@@ -129,7 +141,8 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     const u = document.createElement("span");
     u.className = "u";
     unitLabels[input.id] = u;
-    label.append(document.createTextNode(input.label), u);
+    labelTexts[input.id] = document.createTextNode(labelOf(input, raw));
+    label.append(labelTexts[input.id], u);
     wrap.append(label);
 
     let control;
@@ -137,7 +150,6 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
       control = document.createElement("select");
       control.className = "input";
       fillOptions(control, optionsFor(input, raw, ctx()));
-      if (![...control.options].some((o) => o.value === raw[input.id])) raw[input.id] = control.options[0]?.value ?? "";
       control.value = raw[input.id];
       control.addEventListener("change", () => { raw[input.id] = control.value; recalc(); });
     } else if (input.kind === "segment") {
@@ -168,9 +180,10 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
       control.type = "text";
       control.className = "input";
       control.value = raw[input.id];
-      control.dataset.numpad = "1";
       if (input.kind === "text") { control.inputMode = "text"; control.autocapitalize = "off"; control.placeholder = input.placeholder || ""; control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); }); }
       else {
+        // Only number fields belong to the custom pad; a text field gets the phone's own keyboard.
+        control.dataset.numpad = "1";
         numericInputs.push(control);
         attachNumpad(control, {
           change: (el) => { raw[input.id] = el.value; recalc(); },
@@ -187,17 +200,31 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     control.id = `f-${def.id}-${input.id}`;
     fields[input.id] = control;
     wrap.append(control);
+    if (Array.isArray(input.suggest) && input.suggest.length) {
+      // one-tap common values, so the phone keyboard isn't needed with gloves on
+      const row = document.createElement("div");
+      row.className = "sugg";
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", `Common ${labelOf(input, raw).toLowerCase()} values`);
+      for (const value of input.suggest) {
+        const b = document.createElement("button");
+        b.type = "button"; b.textContent = value;
+        b.addEventListener("click", () => { control.value = value; raw[input.id] = value; recalc(); });
+        row.append(b);
+      }
+      wrap.append(row);
+    }
     if (input.hint) { const h = document.createElement("div"); h.className = "hint"; h.textContent = input.hint; wrap.append(h); }
     (input.advanced ? moreBody : calc).append(wrap);
   }
   if (more) calc.append(more);
 
   // ── Output regions ──
-  const locked = !!def.pro && !getSettings().pro;
+  const locked = !!def.pro && !settings.pro;
   const warnBox = document.createElement("div");
   const stats = document.createElement("div"); stats.className = "stats";
   const extras = document.createElement("div"); extras.className = "extras";
-  const explain = document.createElement("details"); explain.className = "drawer";
+  const explain = document.createElement("details"); explain.className = "drawer print";
   explain.innerHTML = `<summary>How was this figured?</summary><div class="body"></div>`;
   const history = document.createElement("details"); history.className = "drawer";
   history.innerHTML = `<summary>Recent</summary><div class="body"></div>`;
@@ -215,7 +242,8 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
 
   // ── Answer bar ──
   let answer = document.querySelector(".answer");
-  if (!answer) { answer = document.createElement("div"); answer.className = "answer"; document.body.append(answer); }
+  if (!answer) { answer = document.createElement("div"); document.body.append(answer); }
+  answer.className = "answer";
   answer.innerHTML = `
     <div class="big"><span class="val num" id="answerVal"></span><span class="unit" id="answerUnit"></span></div>
     <button type="button" class="icon-btn" id="answerCopy" aria-label="Copy answer">${ICONS.copy}</button>
@@ -233,6 +261,7 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     favBtn.innerHTML = on ? ICONS.starFilled : ICONS.star;
   });
   let lastPrimaryText = "";
+  let lastPrimaryLabel = "";
   answer.querySelector("#answerCopy").addEventListener("click", async () => {
     if (!lastPrimaryText) return;
     try { await navigator.clipboard.writeText(lastPrimaryText); toast("Copied"); } catch { toast("Copy blocked"); }
@@ -244,7 +273,8 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   const closeSheet = () => { sheet?.remove(); sheet = null; };
   answer.querySelector("#answerMore").addEventListener("click", (e) => {
     e.stopPropagation();
-    if (menu) { closeMenu(); return; }
+    // isConnected: the Android back button removes an open menu from outside this closure
+    if (menu?.isConnected) { closeMenu(); return; }
     const pro = getSettings().pro;
     menu = document.createElement("div");
     menu.className = "menu"; menu.setAttribute("role", "menu");
@@ -259,16 +289,17 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
       closeMenu();
       if (b.dataset.act === "job") { if (!pro) { location.hash = "#/pro"; return; } openSaveSheet(); }
       if (b.dataset.act === "share") share({ title: `${def.title} · Chipload`, text: lastPrimaryText ? `${def.title}: ${lastPrimaryText}` : def.title, url: shareUrl() });
-      if (b.dataset.act === "print") printScreen();
+      if (b.dataset.act === "print") { fillPrintBlock(); printScreen(def.title); }
       if (b.dataset.act === "reset") resetInputs();
     });
     setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
   });
+  /** A link that reopens this exact state. Blank fields are sent as blank so they can't pick up the reader's own leftovers. */
   function shareUrl() {
-    const params = new URLSearchParams();
-    for (const input of def.inputs) if (String(raw[input.id] ?? "").trim() !== "") params.set(input.id, raw[input.id]);
-    if (def.units !== false) params.set("units", units);
-    return `${SHARE_BASE}#/calc/${def.id}?${params.toString()}`;
+    const query = new URLSearchParams();
+    for (const input of def.inputs) query.set(input.id, String(raw[input.id] ?? ""));
+    if (def.units !== false) query.set("units", units);
+    return `${SHARE_BASE}#/calc/${def.id}?${query.toString()}`;
   }
   function openSaveSheet() {
     closeSheet();
@@ -283,19 +314,23 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     sheet.querySelector("#jobSave").addEventListener("click", save);
     nameEl.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(); });
   }
-  function resetInputs() {
+  /** Put a whole set of raw values on screen (Reset, or a history row). */
+  function showValues(next) {
     for (const input of def.inputs) {
-      raw[input.id] = input.default ?? "";
+      raw[input.id] = String(next[input.id] ?? "");
       const el = fields[input.id];
       if (input.kind === "segment") el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === raw[input.id])));
       else el.value = raw[input.id];
     }
     recalc();
+  }
+  function resetInputs() {
+    showValues(defaultRaw(def, {}, units));
     toast("Reset");
   }
 
   function refreshUnits() {
-    for (const input of def.inputs) unitLabels[input.id].textContent = unitFor(input, units);
+    for (const input of def.inputs) unitLabels[input.id].textContent = unitFor(input, units, raw);
   }
 
   function ctx() {
@@ -304,11 +339,14 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
 
   let historyTimer = null;
   function recalc() {
+    clearTimeout(historyTimer); // a half-typed value must never be filed under the last good answer
     const c = ctx();
     const { values, invalid, hidden, placeholder } = buildValues(def, raw, c);
     for (const input of def.inputs) {
       const el = fields[input.id];
       fieldWraps[input.id].hidden = hidden.has(input.id);
+      if (typeof input.label === "function") labelTexts[input.id].nodeValue = labelOf(input, raw);
+      if (typeof input.as === "function") unitLabels[input.id].textContent = unitFor(input, units, raw);
       if (input.kind === "select" && typeof input.options === "function") syncOptions(input, el, c);
       if (el.tagName === "INPUT") {
         el.placeholder = placeholder[input.id] ?? (NUMERIC_KINDS.has(input.kind) ? "" : el.placeholder);
@@ -317,7 +355,17 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     }
     saveInputs(def.id, { values: raw, units, more: more ? more.open : undefined });
 
-    if (invalid.size) { renderEmpty("Check the highlighted field"); return; }
+    if (invalid.size) {
+      // Say which field, in words: the typed one first, otherwise the first one still empty.
+      const typed = def.inputs.find((i) => invalid.has(i.id) && String(raw[i.id] ?? "").trim() !== "");
+      const first = typed || def.inputs.find((i) => invalid.has(i.id));
+      let msg = invalidReason(first, values[first.id], raw[first.id], raw);
+      // A blank "auto" field that couldn't be worked out means another field is the real problem — the tool knows which.
+      if (!typed && typeof first.auto === "function") { try { def.compute(values, c); } catch (err) { if (err?.message) msg = err.message; } }
+      if (typed && more?.contains(fields[typed.id])) more.open = true;
+      renderEmpty(msg);
+      return;
+    }
     let out;
     try { out = def.compute(values, c); }
     catch (err) { renderEmpty(err.message || "Can't calculate with these values"); return; }
@@ -339,18 +387,21 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   function renderEmpty(msg) {
     answerVal.textContent = ""; answerUnit.textContent = "";
     answerLbl.innerHTML = `<span class="empty-msg">${esc(msg)}</span>`;
-    lastPrimaryText = "";
-    stats.innerHTML = ""; warnBox.innerHTML = "";
+    answer.classList.add("msg");
+    lastPrimaryText = ""; lastPrimaryLabel = "";
+    stats.innerHTML = ""; warnBox.innerHTML = ""; extras.innerHTML = "";
     explain.querySelector(".body").innerHTML = "";
   }
 
   function render(out, values) {
     const p = out.primary;
+    if (!p || (!Number.isFinite(p.value) && typeof p.text !== "string")) { renderEmpty("Those numbers don't work together — check them"); return; }
+    answer.classList.remove("msg");
     if (locked) {
       answerVal.textContent = "Pro";
       answerUnit.textContent = "";
       answerLbl.innerHTML = `<a href="#/pro" style="color:var(--text-2)">Unlock to see ${esc((p.label || "the answer").toLowerCase())}</a>`;
-      lastPrimaryText = "";
+      lastPrimaryText = ""; lastPrimaryLabel = "";
       warnBox.innerHTML = "";
       return;
     }
@@ -360,6 +411,7 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     answerUnit.textContent = p.unit || "";
     answerLbl.textContent = p.label || def.title;
     lastPrimaryText = `${text}${p.unit ? " " + p.unit : ""}`;
+    lastPrimaryLabel = p.label || def.title;
 
     stats.innerHTML = (out.stats || []).map((s) => {
       const v = Number.isFinite(s.value) ? fmt(s.value, s.places ?? 4) : esc(s.text ?? "—");
@@ -380,7 +432,6 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
       (out.notes || []).map((n) => `<div>${esc(n)}</div>`).join("") +
       (src ? `<div class="src"><b>Source:</b> ${esc(src.source)}<br><b>Confidence:</b> ${esc(src.confidence)}</div>` : "");
 
-    clearTimeout(historyTimer);
     historyTimer = setTimeout(() => {
       pushHistory(def.id, { key: JSON.stringify(raw) + units, label: out.historyLabel || describe(values), primary: lastPrimaryText, raw: { ...raw }, units });
       renderHistory();
@@ -427,9 +478,24 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     extras.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click", () => download(b.dataset.dl, b.dataset.text, b.dataset.mime)));
   }
 
+  /** The print sheet's header: tool name, the answer, and each input as plain text (choices by their label). */
+  function fillPrintBlock() {
+    const c = ctx();
+    const rows = def.inputs.filter((i) => !fieldWraps[i.id].hidden && labelOf(i, raw)).map((i) => {
+      const typed = String(raw[i.id] ?? "").trim();
+      let shown = typed, unit = "";
+      if (isChoice(i)) shown = (optionsFor(i, raw, c) || []).find((o) => o.value === raw[i.id])?.label ?? typed;
+      else if (!typed) shown = fields[i.id].placeholder || "—";
+      else unit = unitFor(i, units, raw);
+      return `<tr><th>${esc(labelOf(i, raw))}</th><td>${esc(shown)}${unit ? ` ${esc(unit)}` : ""}</td></tr>`;
+    }).join("");
+    printBlock.innerHTML = `<h1>${esc(def.title)}</h1>${lastPrimaryText ? `<p class="print-answer">${esc(lastPrimaryLabel)}: <b>${esc(lastPrimaryText)}</b></p>` : ""}<table>${rows}</table><p class="print-foot">Chipload · ${esc(new Date().toLocaleDateString("en-US"))} · A starting point. Verify before you cut.</p>`;
+  }
+  window.addEventListener("beforeprint", fillPrintBlock);
+
   function describe(values) {
     return def.inputs.filter((i) => !fieldWraps[i.id].hidden && i.kind !== "segment" && Number.isFinite(values[i.id]))
-      .slice(0, 3).map((i) => `${i.label.split(" ")[0]} ${fmt(values[i.id], 4)}`).join(" · ");
+      .slice(0, 3).map((i) => `${labelOf(i, raw).split(" ")[0]} ${fmt(values[i.id], 4)}`).join(" · ");
   }
 
   function renderHistory() {
@@ -439,18 +505,12 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     body.innerHTML = `<ul class="list">${list.map((h, i) => `<li><button type="button" class="row-btn" data-h="${i}"><span class="t">${esc(h.label)}<span class="sub num">${esc(h.primary)}</span></span>${ICONS.chevron}</button></li>`).join("")}</ul>`;
     body.querySelectorAll("button[data-h]").forEach((b) => b.addEventListener("click", () => {
       const h = list[Number(b.dataset.h)];
-      if (h.units && h.units !== units && def.units !== false) {
+      if (validUnits(h.units) && h.units !== units && def.units !== false) {
         units = h.units;
         calc.querySelectorAll(".seg [data-u]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.u === units)));
-        refreshUnits();
       }
-      for (const input of def.inputs) {
-        raw[input.id] = h.raw[input.id] ?? "";
-        const el = fields[input.id];
-        if (input.kind === "segment") el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === raw[input.id])));
-        else el.value = raw[input.id];
-      }
-      recalc();
+      showValues(h.raw);
+      refreshUnits();
       history.open = false;
       window.scrollTo({ top: 0, behavior: "smooth" });
     }));
@@ -461,16 +521,15 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   recalc();
 
   return {
-    destroy() { clearTimeout(historyTimer); closeNumpad(); closeMenu(); closeSheet(); },
-    setUnits(u) { if (u !== units) calc.querySelector(`.seg [data-u="${u}"]`)?.click(); },
+    destroy() { clearTimeout(historyTimer); window.removeEventListener("beforeprint", fillPrintBlock); closeNumpad(); closeMenu(); closeSheet(); },
     toggleHelp,
     hasHelp: !!helpText,
   };
 }
 
 /** Per-tool "Got it" memory for the help card. */
-export function helpSeen(id) { return (loadBlob("helpSeen", []) || []).includes(id); }
-export function markHelpSeen(id) { const list = loadBlob("helpSeen", []) || []; if (!list.includes(id)) saveBlob("helpSeen", [...list, id]); }
+export function helpSeen(id) { return loadStrings("helpSeen").includes(id); }
+export function markHelpSeen(id) { const list = loadStrings("helpSeen"); if (!list.includes(id)) saveBlob("helpSeen", [...list, id]); }
 
 export function hideAnswerBar() {
   const a = document.querySelector(".answer");

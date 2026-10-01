@@ -15,7 +15,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 export function mountChart(def, root, { params = {} } = {}) {
   pushRecent(def.id);
   const settings = getSettings();
-  const units = params.units || settings.units;
+  const units = params.units === "mm" || params.units === "in" ? params.units : settings.units;
   const ctx = { units, L: UNIT_LABEL[units], settings };
   const locked = !!def.pro && !settings.pro;
   const rows = locked ? [] : def.rows(ctx);

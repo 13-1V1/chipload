@@ -21,8 +21,8 @@ export default register({
   inputs: [
     { id: "mode", label: "Find", kind: "segment", default: "finish", options: [{ value: "finish", label: "Finish" }, { value: "feed", label: "Feed for Ra" }] },
     { id: "nose", label: "Nose radius", kind: "segment", default: "0.0312", options: NOSE.map(([value, label]) => ({ value, label })) },
-    { id: "noseCustom", label: "Nose radius", kind: "length", default: "0.5", min: 0.0001, showIf: (r) => r.nose === "custom" },
-    { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "0.005", min: 0, showIf: (r) => r.mode === "finish" },
+    { id: "noseCustom", label: "Nose radius", kind: "length", default: "0.0312", defaultMm: "0.8", min: 0.0001, showIf: (r) => r.nose === "custom" },
+    { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "0.005", defaultMm: "0.12", min: 0, showIf: (r) => r.mode === "finish" },
     { id: "ra", label: "Target Ra", kind: "number", default: "32", unit: "µin", min: 0.1, showIf: (r) => r.mode === "feed" },
   ],
   compute(v, c) {

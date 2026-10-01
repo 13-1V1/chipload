@@ -6,7 +6,7 @@
 import { register } from "../app/registry.js";
 import { tappingFeed } from "../core/tapping.js";
 import { fmt } from "../core/format.js";
-import { threadFromSpec, threadPrefill, toIn, fromIn } from "./_util.js";
+import { threadFromSpec, threadPrefill, toIn, fromIn, COMMON_THREADS } from "./_util.js";
 
 export default register({
   id: "tapping-feed",
@@ -20,7 +20,7 @@ export default register({
   prefillRank: 12,
   prefill: (q) => threadPrefill(q),
   inputs: [
-    { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, M6" },
+    { id: "thread", suggest: COMMON_THREADS, label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, M6" },
     { id: "rpm", label: "Spindle", kind: "int", default: "500", unit: "RPM", min: 1 },
   ],
   compute(v, c) {
@@ -34,6 +34,7 @@ export default register({
       rpm = Math.floor(maxFeedIpm / leadIn);
       warnings.push(`${c.machine.name} max feed is ${fmt(fromIn(maxFeedIpm, c.units), 1)} ${c.L.feed}. Tapping at ${v.rpm} RPM needs ${fmt(fromIn(feedIpm, c.units), 1)}. Drop to ${rpm} RPM.`);
     }
+    if (rpm < 1) throw new Error(`${c.machine.name} can't feed fast enough to tap this thread at any speed — check its max feed in Shop`);
     const feedOut = rpm * leadIn;
     return {
       primary: { label: `Feed at ${rpm} RPM`, value: fromIn(feedOut, c.units), unit: c.L.feed, places: 2, clamped: rpm !== v.rpm },

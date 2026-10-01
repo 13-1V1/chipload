@@ -1,4 +1,4 @@
-// Created by: Brennan Meyer with use of Claude Code 10/01/2026 Santa Clarita, CA
+// Created by: Brennan Meyer with use of Claude Code 09/30/2026 Santa Clarita, CA
 // brennanmmeyer@gmail.com
 
 // Band saw blade speed and tooth pitch. Free tier — the hobbyist's first question.
@@ -20,9 +20,9 @@ export default register({
   safety: "Starting point. A dull blade or a thin wall wants the low number.",
   inputs: [
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
-    { id: "thickness", label: "Stock thickness (the part the blade goes through)", kind: "length", default: "1", min: 0.001, hint: "For round bar use the diameter; for tube use the wall thickness." },
-    { id: "wheel", label: "Saw wheel diameter", kind: "length", default: "", optional: true, placeholder: "optional — gives the wheel RPM to aim for", advanced: true },
-    { id: "rpm", label: "Wheel RPM you have", kind: "int", default: "", unit: "RPM", optional: true, placeholder: "optional — checks your saw's speed", advanced: true },
+    { id: "thickness", label: "Stock thickness (the part the blade goes through)", kind: "length", default: "1", defaultMm: "25", min: 0.001, hint: "For round bar use the diameter; for tube use the wall thickness." },
+    { id: "wheel", positive: true, label: "Saw wheel diameter", kind: "length", default: "", optional: true, placeholder: "optional — gives the wheel RPM to aim for", advanced: true },
+    { id: "rpm", min: 1, label: "Wheel RPM you have", kind: "int", default: "", unit: "RPM", optional: true, placeholder: "optional — checks your saw's speed", advanced: true },
   ],
   compute(v, c) {
     const m = materialById(v.material);

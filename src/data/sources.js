@@ -11,7 +11,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   threadGeometry: {
     title: "60 degree thread geometry",
-    source: "Basic 60 degree Unified and ISO metric geometry. Class limits remain estimates unless verified against the published standard.",
+    source: "Basic 60 degree Unified and ISO metric geometry. Unified class limits follow the ASME B1.1 formulas; metric limits follow the ISO 965 formulas, within a few microns of the tables.",
     confidence: "Reference geometry",
   },
   feeds: {
@@ -31,7 +31,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   gcode: {
     title: "G-code template",
-    source: "Controller-aware template only. Work offset, tool length, clearances, units, spindle, and cycle behavior require operator verification.",
+    source: "Fanuc-style template (Fanuc, Haas, Mazak EIA, LinuxCNC). Tool number, work offset, tool length, clearances, units, spindle, and cycle behavior are yours to verify.",
     confidence: "Review before machine use",
   },
 });

@@ -33,7 +33,7 @@ for (const def of allCalcs()) {
   }
   for (const units of def.units === false ? ["in"] : ["in", "mm"]) {
     test(`${def.id} computes with defaults (${units})`, () => {
-      const raw = defaultRaw(def);
+      const raw = defaultRaw(def, {}, units);
       const ctx = ctxFor(units);
       const { values, invalid } = buildValues(def, raw, ctx);
       assert.equal(invalid.size, 0, `invalid defaults: ${[...invalid].join(",")}`);

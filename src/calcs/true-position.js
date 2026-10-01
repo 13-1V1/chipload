@@ -17,13 +17,13 @@ export default register({
   keywords: ["true position", "position", "gd&t", "mmc", "bonus", "tolerance zone", "cmm", "deviation", "y14.5"],
   pro: true,
   inputs: [
-    { id: "dx", label: "X deviation (actual − nominal)", kind: "length", default: "0.003" },
-    { id: "dy", label: "Y deviation (actual − nominal)", kind: "length", default: "0.004" },
-    { id: "tol", label: "Position tolerance (diameter)", kind: "length", default: "0.010", min: 0 },
+    { id: "dx", label: "X deviation (actual − nominal)", kind: "length", default: "0.003", defaultMm: "0.08" },
+    { id: "dy", label: "Y deviation (actual − nominal)", kind: "length", default: "0.004", defaultMm: "0.10" },
+    { id: "tol", positive: true, label: "Position tolerance (diameter)", kind: "length", default: "0.010", defaultMm: "0.25", min: 0 },
     { id: "mmc", label: "Material condition", kind: "segment", default: "rfs", options: [{ value: "rfs", label: "RFS" }, { value: "mmc", label: "MMC (bonus)" }] },
     { id: "feature", label: "Feature", kind: "segment", default: "hole", options: [{ value: "hole", label: "Hole" }, { value: "pin", label: "Pin" }], showIf: (r) => r.mmc === "mmc" },
-    { id: "mmcSize", label: "MMC size (hole min / pin max)", kind: "length", default: "0.250", min: 0, showIf: (r) => r.mmc === "mmc" },
-    { id: "actual", label: "Actual measured size", kind: "length", default: "0.253", min: 0, showIf: (r) => r.mmc === "mmc" },
+    { id: "mmcSize", positive: true, label: "MMC size (hole min / pin max)", kind: "length", default: "0.250", defaultMm: "6.00", min: 0, showIf: (r) => r.mmc === "mmc" },
+    { id: "actual", positive: true, label: "Actual measured size", kind: "length", default: "0.253", defaultMm: "6.08", min: 0, showIf: (r) => r.mmc === "mmc" },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);

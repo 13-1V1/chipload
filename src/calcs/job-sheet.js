@@ -1,11 +1,11 @@
-// Created by: Brennan Meyer with use of Claude Code 10/01/2026 Santa Clarita, CA
+// Created by: Brennan Meyer with use of Claude Code 09/30/2026 Santa Clarita, CA
 // brennanmmeyer@gmail.com
 
 // Job sheet. Free. Plug in what you know — tool, material, machine, cut — and it figures everything
 // it can, then tells you what one more number would unlock. Price per part is the Pro line.
 
 import { register } from "../app/registry.js";
-import { rpmFromSfm, sfmFromRpm, radialChipThinningFactor } from "../core/feeds.js";
+import { rpmFromSfm, sfmFromRpm, radialChipThinningFactor, chipLoadScale } from "../core/feeds.js";
 import { cutTime, metalRemovalRate } from "../core/milling.js";
 import { turningTime } from "../core/lathe.js";
 import { materialOptions, materialSpeeds } from "../data/materials-library.js";
@@ -13,6 +13,7 @@ import { TOOL_LABELS } from "../data/materials.js";
 import { drillFeedPerRev } from "./feeds-drill.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
+import { drillFeedFactor, millAdvice, drillAdvice } from "./_advice.js";
 
 const isMill = (r) => r.op === "mill";
 const isDrill = (r) => r.op === "drill";
@@ -33,24 +34,25 @@ export default register({
     { id: "op", label: "What are you doing?", kind: "segment", default: "mill", options: [{ value: "mill", label: "End mill" }, { value: "drill", label: "Drill" }, { value: "lathe", label: "Lathe" }] },
     { id: "material", label: "Material", kind: "select", default: "al6061", options: materialOptions() },
     { id: "toolType", label: "Tool", kind: "segment", default: "carbide", options: Object.entries(TOOL_LABELS).map(([value, label]) => ({ value, label })) },
-    { id: "diameter", label: "Diameter (tool — or the part, on a lathe)", kind: "length", default: "0.5", min: 0.0001 },
+    { id: "diameter", label: "Diameter (tool — or the part, on a lathe)", kind: "length", default: "0.5", defaultMm: "12", min: 0.0001 },
     { id: "flutes", label: "Flutes", kind: "int", default: "4", min: 1, max: 20, showIf: isMill },
-    { id: "woc", label: "Width of cut (sideways)", kind: "length", default: "", optional: true, placeholder: "add for chip thinning & removal rate", showIf: (r) => isMill(r) && want(r, "woc") },
-    { id: "doc", label: "Depth of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for removal rate & passes", showIf: (r) => !isDrill(r) && want(r, "doc") },
-    { id: "length", label: "Length of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for cut time", showIf: (r) => !isDrill(r) && want(r, "length") },
-    { id: "depth", label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "add for time per hole", showIf: (r) => isDrill(r) && want(r, "depth") },
+    { id: "woc", positive: true, label: "Width of cut (sideways)", kind: "length", default: "", optional: true, placeholder: "add for chip thinning & removal rate", showIf: (r) => isMill(r) && want(r, "woc") },
+    { id: "doc", positive: true, label: "Depth of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for removal rate & passes", showIf: (r) => !isDrill(r) && want(r, "doc") },
+    { id: "length", positive: true, label: "Length of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for cut time", showIf: (r) => !isDrill(r) && want(r, "length") },
+    { id: "depth", positive: true, label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "add for time per hole", showIf: (r) => isDrill(r) && want(r, "depth") },
     { id: "holes", label: "Holes per part", kind: "int", default: "", optional: true, placeholder: "add for drilling time per part", min: 1, showIf: (r) => isDrill(r) && want(r, "holes") },
-    { id: "stock", label: "Total depth to remove", kind: "length", default: "", optional: true, placeholder: "add for number of passes", showIf: (r) => !isDrill(r) && want(r, "stock") },
+    { id: "stock", positive: true, label: "Total depth to remove", kind: "length", default: "", optional: true, placeholder: "add for number of passes", showIf: (r) => !isDrill(r) && want(r, "stock") },
     { id: "qty", label: "Parts to make", kind: "int", default: "", optional: true, placeholder: "add for job time", min: 1, showIf: (r) => want(r, "qty") },
     { id: "rate", label: "Shop rate", kind: "number", default: "", unit: "$/hr", optional: true, placeholder: "add for price (Pro)", min: 0, showIf: (r) => want(r, "rate") },
     { id: "setup", label: "Setup time", kind: "number", default: "", unit: "min", optional: true, placeholder: "optional, spread over the parts", min: 0, showIf: (r) => want(r, "setup") || want(r, "rate") },
     { id: "shown", label: "", kind: "text", default: "", showIf: () => false },
     { id: "sfm", label: "Surface speed override", kind: "speed", default: "", optional: true, placeholder: "blank = library value", advanced: true },
-    { id: "chip", label: "Chip load / feed-per-rev override", kind: "length", default: "", optional: true, placeholder: "blank = library value", advanced: true },
+    { id: "chip", positive: true, label: "Chip load / feed-per-rev override", kind: "length", default: "", optional: true, placeholder: "blank = library value", advanced: true },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
     const dIn = toIn(v.diameter, c.units);
+    const wocIn = Number.isFinite(v.woc) ? toIn(v.woc, c.units) : NaN, docIn = Number.isFinite(v.doc) ? toIn(v.doc, c.units) : NaN;
     const sp = materialSpeeds(v.material, v.toolType);
     const lathe = v.op === "lathe", drill = v.op === "drill", mill = v.op === "mill";
     const baseSfm = Number.isFinite(v.sfm) ? toSfm(v.sfm, c.units) : (drill ? sp.drillSfm : lathe ? sp.sfm * 1.2 : sp.sfm);
@@ -62,14 +64,12 @@ export default register({
     // feed per rev (drill/lathe) or chip load per tooth (mill), in inches
     let perRevIn, feedIpm, thin = 1, chipIn = NaN;
     if (mill) {
-      const scale = Math.max(0.25, Math.min(1.5, dIn / 0.375));
-      chipIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : sp.chipIn * scale;
-      const wocIn = Number.isFinite(v.woc) ? toIn(v.woc, c.units) : NaN;
+      chipIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : sp.chipIn * chipLoadScale(dIn);
       thin = radialChipThinningFactor(dIn, wocIn);
       feedIpm = rpm * v.flutes * chipIn * thin;
       perRevIn = feedIpm / rpm;
     } else if (drill) {
-      perRevIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : drillFeedPerRev(dIn);
+      perRevIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : drillFeedPerRev(dIn) * drillFeedFactor(sp.material.rating);
       feedIpm = rpm * perRevIn;
     } else {
       perRevIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : 0.010;
@@ -86,12 +86,13 @@ export default register({
     ];
     if (mill && thin > 1) stats.push({ label: "Chip thinning", value: thin, unit: "×", places: 2 });
     const next = [];
-    const warnings = [];
-    if (mill && Number.isFinite(v.chip) && chipIn > Math.max(sp.chipIn * Math.max(0.25, Math.min(1.5, dIn / 0.375)) * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is a very heavy chip for this tool. Expect it to break.`);
+    if (mill && wocIn > dIn * 1.0001) throw new Error("Width of cut can't be more than the tool diameter");
+    const warnings = mill ? millAdvice({ dIn, wocIn, docIn, requestedRpm, machine: c.machine })
+      : drill ? drillAdvice({ dIn, depthIn: Number.isFinite(v.depth) ? toIn(v.depth, c.units) : NaN }) : [];
+    if (mill && Number.isFinite(v.chip) && chipIn > Math.max(sp.chipIn * chipLoadScale(dIn) * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is a very heavy chip for this tool. Expect it to break.`);
     if (clamped) warnings.push(`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)}. Feed is figured at ${fmt(rpm, 0)} RPM.`);
 
     // ── what the cut adds ──
-    const wocIn = Number.isFinite(v.woc) ? toIn(v.woc, c.units) : NaN, docIn = Number.isFinite(v.doc) ? toIn(v.doc, c.units) : NaN;
     let perPassMin = null, passes = 1, timePerPart = null;
     if (mill) {
       if (wocIn > 0 && docIn > 0) { const mrr = metalRemovalRate({ widthOfCut: wocIn, depthOfCut: docIn, feed: feedOut }); stats.push({ label: "Metal removal rate", value: c.units === "in" ? mrr : mrr * 16.387064, unit: c.L.volume, places: 2 }); }

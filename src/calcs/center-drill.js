@@ -18,14 +18,14 @@ export default register({
   pro: true,
   inputs: [
     { id: "size", label: "Center drill", kind: "select", default: "#3", options: CENTER_DRILLS.map((d) => ({ value: d.size, label: `${d.size} · body ${fmt(d.body, 4)} · pilot ${fmt(d.pilot, 4)}` })) },
-    { id: "csk", label: "Countersink diameter wanted", kind: "length", default: "", auto: (raw, c) => { const d = CENTER_DRILLS.find((x) => x.size === raw.size); return d ? fromIn(d.body * 0.75, c.units) : NaN; }, hint: "Blank = 75% of the body (a good lathe center)." },
+    { id: "csk", positive: true, label: "Countersink diameter wanted", kind: "length", default: "", auto: (raw, c) => { const d = CENTER_DRILLS.find((x) => x.size === raw.size); return d ? fromIn(d.body * 0.75, c.units) : NaN; }, hint: "Blank = 75% of the body (a good lathe center)." },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
     const d = CENTER_DRILLS.find((x) => x.size === v.size);
     const cskIn = toIn(v.csk, c.units);
     if (cskIn <= d.pilot) throw new Error("Countersink must be bigger than the pilot");
-    if (cskIn > d.body) throw new Error(`Countersink can't exceed the body (${fmt(d.body, 4)} in)`);
+    if (cskIn > d.body) throw new Error(`Countersink can't exceed the body (${fmt(fromIn(d.body, c.units), p)} ${c.L.length})`);
     const cone = (cskIn - d.pilot) / (2 * Math.tan(30 * Math.PI / 180));
     const total = d.pilotLen + cone;
     return {

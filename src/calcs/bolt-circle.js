@@ -4,8 +4,10 @@
 // Bolt circle. Free: coordinates. Pro: G81/G83 program, CSV, DXF, partial circles.
 
 import { register } from "../app/registry.js";
-import { boltCircleCoordinates, partialBoltCircleCoordinates, buildBoltGcode, buildBoltCsv, buildBoltDxf } from "../core/boltcircle.js";
+import { boltCircleCoordinates, partialBoltCircleCoordinates, buildBoltGcode, buildBoltPositions, buildBoltCsv, buildBoltDxf, boltGcodeProblems, usesOtherDialect } from "../core/boltcircle.js";
 import { fmt } from "../core/format.js";
+
+const isCycle = (r) => r.gcode === "drill" || r.gcode === "peck";
 
 export default register({
   id: "bolt-circle",
@@ -17,7 +19,7 @@ export default register({
   pro: false,
   safety: "G-code is a starting point. Simulate, single-block, and dry run above the part.",
   inputs: [
-    { id: "diameter", label: "Bolt circle diameter", kind: "length", default: "4", min: 0.0001 },
+    { id: "diameter", label: "Bolt circle diameter", kind: "length", default: "4", defaultMm: "100", min: 0.0001 },
     { id: "holes", label: "Number of holes", kind: "int", default: "6", min: 1, max: 360 },
     { id: "start", advanced: true, label: "First hole angle", kind: "angle", default: "0", hint: "0° is +X (3 o'clock). Counter-clockwise is positive." },
     { id: "direction", advanced: true, label: "Direction", kind: "segment", default: "ccw", options: [{ value: "ccw", label: "CCW" }, { value: "cw", label: "CW" }] },
@@ -25,13 +27,15 @@ export default register({
     { id: "cy", advanced: true, label: "Center Y", kind: "length", default: "0" },
     { id: "sweep", advanced: true, label: "Partial circle sweep", kind: "angle", default: "", optional: true, placeholder: "optional — e.g. 180 for a half circle (Pro)" },
     { id: "gcode", advanced: true, label: "G-code", kind: "segment", default: "none",
-      options: [{ value: "none", label: "None" }, { value: "positions", label: "Positions" }, { value: "drill", label: "G81" }, { value: "peck", label: "G83" }] },
-    { id: "z", advanced: true, label: "Hole depth (Z, negative)", kind: "length", default: "-0.5", showIf: (r) => r.gcode === "drill" || r.gcode === "peck" },
-    { id: "r", advanced: true, label: "R plane", kind: "length", default: "0.1", showIf: (r) => r.gcode === "drill" || r.gcode === "peck" },
-    { id: "feed", advanced: true, label: "Feed", kind: "feed", default: "5", showIf: (r) => r.gcode === "drill" || r.gcode === "peck" },
-    { id: "peck", advanced: true, label: "Peck depth (Q)", kind: "length", default: "0.1", showIf: (r) => r.gcode === "peck" },
-    { id: "spindle", advanced: true, label: "Spindle", kind: "int", default: "1000", unit: "RPM", showIf: (r) => r.gcode === "drill" || r.gcode === "peck" },
-    { id: "safeZ", advanced: true, label: "Safe Z", kind: "length", default: "1", showIf: (r) => r.gcode !== "none" },
+      options: [{ value: "none", label: "None" }, { value: "positions", label: "Positions" }, { value: "drill", label: "G81" }, { value: "peck", label: "G83" }],
+      hint: "Positions stops at each hole and never moves Z. G81 drills, G83 peck drills." },
+    { id: "z", advanced: true, label: "Hole depth (Z, negative)", kind: "length", default: "-0.5", defaultMm: "-12", showIf: isCycle },
+    { id: "r", advanced: true, label: "R plane", kind: "length", default: "0.1", defaultMm: "2", showIf: isCycle, hint: "Where the feed starts — a little above the part." },
+    { id: "feed", advanced: true, label: "Feed", kind: "feed", default: "5", defaultMm: "120", showIf: isCycle },
+    { id: "peck", positive: true, advanced: true, label: "Peck depth (Q)", kind: "length", default: "0.1", defaultMm: "2.5", showIf: (r) => r.gcode === "peck" },
+    { id: "spindle", min: 1, advanced: true, label: "Spindle", kind: "int", default: "1000", unit: "RPM", showIf: isCycle },
+    { id: "safeZ", advanced: true, label: "Safe Z", kind: "length", default: "1", defaultMm: "25", showIf: isCycle, hint: "High enough to clear clamps. The tool lifts here between holes." },
+    { id: "tool", advanced: true, label: "Tool number (T and H)", kind: "int", default: "1", min: 1, max: 999, showIf: isCycle },
     { id: "workOffset", advanced: true, label: "Work offset", kind: "select", default: "G54", showIf: (r) => r.gcode !== "none",
       options: ["G54", "G55", "G56", "G57", "G58", "G59"].map((g) => ({ value: g, label: g })) },
   ],
@@ -50,12 +54,21 @@ export default register({
       rows: coords,
     }];
     const code = [];
-    if (v.gcode !== "none") {
+    const warnings = [];
+    const other = v.gcode === "none" ? null : usesOtherDialect(c.machine?.controller);
+    const gcodeProblems = v.gcode === "none" || other ? [] : boltGcodeProblems({ mode: v.gcode, z: v.z, r: v.r, safeZ: v.safeZ, feed: v.feed, peck: v.peck, spindle: v.spindle });
+    warnings.push(...gcodeProblems.map((problem) => `G-code not written: ${problem}`));
+    if (other) {
+      // G54, G43 H and G81 are different words (or different things) on these controls — hand over the numbers only.
+      code.push({ title: "Hole positions (X Y)", pro: true, filename: `bolt-circle-${v.holes}x${fmt(v.diameter, 3)}.txt`, mime: "text/plain", text: buildBoltPositions(coords, c.units) });
+      warnings.push(`${c.machine.name} is set to ${other}, which doesn't use Fanuc-style cycles and offsets. Here are the positions — write the cycle in your control's own format.`);
+    } else if (v.gcode !== "none" && !gcodeProblems.length) {
       code.push({
-        title: v.gcode === "positions" ? "Positions (G0)" : v.gcode === "peck" ? "G83 peck drill" : "G81 drill", pro: true,
+        title: v.gcode === "positions" ? "Positions, stop at each hole" : v.gcode === "peck" ? "G83 peck drill" : "G81 drill", pro: true,
         filename: `bolt-circle-${v.holes}x${fmt(v.diameter, 3)}.nc`, mime: "text/plain",
-        text: buildBoltGcode(coords, { units: c.units, mode: v.gcode, z: v.z, r: v.r, feed: v.feed, peck: v.peck, safeZ: v.safeZ, spindle: v.spindle, workOffset: v.workOffset, controller: c.machine?.controller || "fanuc" }),
+        text: buildBoltGcode(coords, { units: c.units, mode: v.gcode, z: v.z, r: v.r, feed: v.feed, peck: v.peck, safeZ: v.safeZ, spindle: v.spindle, tool: v.tool, workOffset: v.workOffset, controller: c.machine?.controller || "fanuc" }),
       });
+      if (isCycle(v) && v.r <= 0) warnings.push("R plane is at or below Z0. If Z0 is the top of the part, the tool will rapid into it — R is normally a little above the surface.");
     }
     const downloads = [
       { label: "Save CSV", pro: true, filename: `bolt-circle-${v.holes}.csv`, mime: "text/csv", text: buildBoltCsv(coords, c.units) },
@@ -70,11 +83,13 @@ export default register({
         { label: "Circumference", value: Math.PI * v.diameter, unit: c.L.length, places: p },
       ],
       tables, code, downloads,
+      warnings,
       source: v.gcode === "none" ? "geometry" : "gcode",
       explain: [
         { title: "Hole position", formula: "X = Cx + (D/2) cos θ   Y = Cy + (D/2) sin θ   θ = start ± n × step", plugged: `D/2 = ${fmt(v.diameter / 2, p)}, step = ${fmt(step, 3)}°` },
         { title: "Chord", formula: "chord = D × sin(step ÷ 2)", plugged: `= ${fmt(v.diameter, p)} × sin(${fmt(step / 2, 3)}°) = ${fmt(chord, p)}` },
       ],
+      notes: v.gcode === "drill" || v.gcode === "peck" ? ["The tool lifts to Safe Z between holes (G98). With nothing in the way, change G98 to G99 and it stays at the R plane — faster."] : [],
       historyLabel: `${v.holes} holes on ${fmt(v.diameter, p)} ${c.L.length}${partial ? ` · ${fmt(v.sweep, 0)}°` : ""}`,
     };
   },

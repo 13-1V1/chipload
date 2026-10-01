@@ -9,7 +9,7 @@ import { SHCS_INCH, SHCS_METRIC } from "../data/shcs.js";
 import { MATERIALS, materialOptions, materialById } from "../data/materials-library.js";
 import { convertHardness } from "../data/hardness.js";
 import { GLOSSARY } from "../data/glossary.js";
-import { fmt } from "../core/format.js";
+import { fmt, parseFraction } from "../core/format.js";
 import { lenPlaces } from "./_util.js";
 
 register({
@@ -110,15 +110,17 @@ register({
   inputs: [
     { id: "shape", label: "Shape", kind: "select", default: "round", options: [{ value: "round", label: "Round bar" }, { value: "plate", label: "Plate / flat / square" }, { value: "tube", label: "Round tube" }, { value: "hex", label: "Hex bar" }, { value: "rectTube", label: "Rectangular tube" }] },
     { id: "material", label: "Material", kind: "select", default: "al6061", options: materialOptions() },
-    { id: "d", label: "Diameter", kind: "length", default: "2", min: 0, showIf: (r) => r.shape === "round" || r.shape === "tube" },
-    { id: "af", label: "Across flats", kind: "length", default: "1", min: 0, showIf: (r) => r.shape === "hex" },
-    { id: "wall", label: "Wall thickness", kind: "length", default: "0.125", min: 0, showIf: (r) => r.shape === "tube" || r.shape === "rectTube" },
-    { id: "t", label: "Thickness", kind: "length", default: "0.5", min: 0, showIf: (r) => r.shape === "plate" },
-    { id: "w", label: "Width", kind: "length", default: "6", min: 0, showIf: (r) => r.shape === "plate" || r.shape === "rectTube" },
-    { id: "h", label: "Height", kind: "length", default: "2", min: 0, showIf: (r) => r.shape === "rectTube" },
-    { id: "len", label: "Length", kind: "length", default: "12", min: 0 },
+    { id: "d", positive: true, label: "Diameter", kind: "length", default: "2", defaultMm: "50", min: 0, showIf: (r) => r.shape === "round" || r.shape === "tube" },
+    { id: "af", positive: true, label: "Across flats", kind: "length", default: "1", defaultMm: "25", min: 0, showIf: (r) => r.shape === "hex" },
+    { id: "wall", positive: true, label: "Wall thickness", kind: "length", default: "0.125", defaultMm: "3", min: 0, showIf: (r) => r.shape === "tube" || r.shape === "rectTube" },
+    { id: "t", positive: true, label: "Thickness", kind: "length", default: "0.5", defaultMm: "12", min: 0, showIf: (r) => r.shape === "plate" },
+    { id: "w", positive: true, label: "Width", kind: "length", default: "6", defaultMm: "150", min: 0, showIf: (r) => r.shape === "plate" || r.shape === "rectTube" },
+    { id: "h", positive: true, label: "Height", kind: "length", default: "2", defaultMm: "50", min: 0, showIf: (r) => r.shape === "rectTube" },
+    { id: "len", positive: true, label: "Length", kind: "length", default: "12", defaultMm: "300", min: 0 },
     { id: "qty", label: "Quantity", kind: "int", default: "1", min: 1 },
-    { id: "price", label: "Price per lb", kind: "number", default: "", unit: "$", optional: true, placeholder: "optional" },
+    { id: "price", label: "Material price", kind: "number", default: "", unit: (u) => (u === "in" ? "$/lb" : "$/kg"), optional: true, placeholder: "optional", min: 0,
+      // $/lb ⇄ $/kg when the unit system flips, so the job costs the same
+      convert: (text, from, to) => { const v = parseFraction(text); return Number.isFinite(v) && from !== to ? fmt(to === "mm" ? v * 2.20462 : v / 2.20462, 2) : text; } },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
@@ -133,7 +135,7 @@ register({
     const m = materialById(v.material);
     const lb = volIn3 * m.density;
     const total = lb * v.qty;
-    const cost = Number.isFinite(v.price) ? total * v.price : null;
+    const cost = Number.isFinite(v.price) ? (c.units === "in" ? total : total * 0.453592) * v.price : null;
     return {
       primary: { label: `Weight${v.qty > 1 ? ` · ${v.qty} pcs` : ""} · ${m.name}`, value: c.units === "in" ? total : total * 0.453592, unit: c.L.weight, places: 2 },
       stats: [
@@ -141,12 +143,14 @@ register({
         { label: "Volume each", value: c.units === "in" ? volIn3 : volIn3 * 16.387064, unit: c.units === "in" ? "in³" : "cm³", places: 2 },
         { label: "Cross-section", value: area, unit: c.L.area, places: p },
         { label: "Density", value: c.units === "in" ? m.density : m.density * 27.68, unit: c.units === "in" ? "lb/in³" : "g/cm³", places: 3 },
-        { label: "Per foot", value: c.units === "in" ? lb / v.len * 12 : lb * 0.453592 / v.len * 1000, unit: c.units === "in" ? "lb/ft" : "kg/m", places: 3 },
+        { label: c.units === "in" ? "Per foot" : "Per meter", value: c.units === "in" ? lb / v.len * 12 : lb * 0.453592 / v.len * 1000, unit: c.units === "in" ? "lb/ft" : "kg/m", places: 3 },
         ...(cost != null ? [{ label: "Material cost", text: `$${fmt(cost, 2)}` }] : []),
       ],
       source: "geometry",
-      explain: [{ title: "Weight", formula: "W = area × length × density", plugged: `= ${fmt(area, p)} × ${fmt(v.len, p)} × ${fmt(m.density, 3)} lb/in³ = ${fmt(lb, 3)} lb` }],
-      historyLabel: `${v.shape} ${m.name.split(" ")[0]} · ${fmt(total, 2)} lb`,
+      explain: [{ title: "Weight", formula: "W = area × length × density", plugged: c.units === "in"
+        ? `= ${fmt(area, p)} in² × ${fmt(v.len, p)} in × ${fmt(m.density, 3)} lb/in³ = ${fmt(lb, 3)} lb`
+        : `= ${fmt(area, p)} mm² × ${fmt(v.len, p)} mm × ${fmt(m.density * 27.68, 3)} g/cm³ ÷ 1,000,000 = ${fmt(lb * 0.453592, 3)} kg` }],
+      historyLabel: `${v.shape} ${m.name.split(" ")[0]} · ${fmt(c.units === "in" ? total : total * 0.453592, 2)} ${c.L.weight}`,
     };
   },
 });

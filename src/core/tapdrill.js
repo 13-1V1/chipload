@@ -30,7 +30,8 @@ export function formTapDrillByPercent(major, pitch, percent) {
 
 /** Published stock drill for a UN size (~75%), or null. */
 export function lookupTapDrillUN(majorIn, tpi) {
-  const key = `${majorIn.toFixed(4)}|${tpi | 0}`;
+  if (!Number.isInteger(tpi)) return null; // the chart only lists whole-number pitches
+  const key = `${majorIn.toFixed(4)}|${tpi}`;
   const row = TAP_DRILL_UN_TABLE[key];
   return row ? { size: row[0], label: row[1], percent: row[2] } : null;
 }

@@ -4,12 +4,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { radialChipThinningFactor, calculateSpeedsFeeds, rpmFromSfm, sfmFromRpm } from "../../src/core/feeds.js";
+import { radialChipThinningFactor, calculateSpeedsFeeds, chipLoadScale, rpmFromSfm, sfmFromRpm } from "../../src/core/feeds.js";
 
 // Machinery's Handbook: 1/2" tool at 100 SFM → 764 RPM
 test("RPM from SFM matches handbook", () => {
   near(rpmFromSfm(100, 0.5), 763.94, 0.01);
   near(sfmFromRpm(rpmFromSfm(100, 0.5), 0.5), 100, 1e-9);
+});
+
+// Library chip loads are for a 3/8 in tool: a 1/8 tool takes a third, nothing under 0.25× or over 1.5×.
+test("chip load scales with tool diameter, inside limits", () => {
+  near(chipLoadScale(0.375), 1);
+  near(chipLoadScale(0.125), 1 / 3, 1e-12);
+  near(chipLoadScale(0.03), 0.25);
+  near(chipLoadScale(2), 1.5);
+  near(calculateSpeedsFeeds({ units: "in", diameter: 0.125, flutes: 2, sfm: 300, chipLoadIn: 0.003 }).chipScale, chipLoadScale(0.125));
 });
 
 test("radial chip thinning factor", () => {

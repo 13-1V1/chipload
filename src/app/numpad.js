@@ -32,9 +32,16 @@ function build() {
     if (k === "bksp" || k === "sp" || k === "pm" || k === "/") b.className = "fn";
     if (k === "next") b.className = "go";
     if (k === "sp") b.setAttribute("aria-label", "space for mixed numbers like 1 1/4");
-    if (k === "bksp") b.setAttribute("aria-label", "backspace");
     if (k === "pm") b.setAttribute("aria-label", "change sign");
     b.addEventListener("pointerdown", (e) => { e.preventDefault(); press(k); });
+    if (k === "bksp") {
+      // hold backspace to clear the whole field — one gesture instead of ten taps with a glove on
+      let timer = null;
+      const cancel = () => { clearTimeout(timer); timer = null; };
+      b.addEventListener("pointerdown", () => { cancel(); timer = setTimeout(() => { if (active) { active.value = ""; onChange?.(active); } }, 550); });
+      for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, cancel);
+      b.setAttribute("aria-label", "backspace (hold to clear)");
+    }
     el.append(b);
   }
   document.body.append(el);
@@ -54,11 +61,27 @@ function press(k) {
   onChange?.(active);
 }
 
+/** Tell the page how tall the pad is right now: the answer bar rides on top of it and the content gets room to scroll. */
 function setPadHeight() {
   const h = el.classList.contains("open") ? el.offsetHeight : 0;
   document.documentElement.style.setProperty("--pad-h", `${h}px`);
   document.querySelector(".answer")?.classList.toggle("up", h > 0);
-  document.querySelector("main")?.style.setProperty("padding-bottom", `calc(var(--answer-h) + var(--gutter) + ${h}px)`);
+  const main = document.querySelector("main");
+  if (h > 0) main?.style.setProperty("padding-bottom", `calc(var(--answer-h) + var(--gutter) + ${h}px)`);
+  else main?.style.removeProperty("padding-bottom"); // back to the stylesheet, which knows whether this screen has an answer bar
+}
+
+/** Keep the field being typed in inside the strip between the top bar and the answer bar + pad. */
+function keepVisible() {
+  if (!active) return;
+  const answer = document.querySelector(".answer");
+  const covered = el.offsetHeight + (answer && !answer.hidden ? answer.offsetHeight : 0);
+  const visibleBottom = window.innerHeight - covered;
+  const r = active.getBoundingClientRect();
+  const bar = document.querySelector(".topbar");
+  const top = bar && getComputedStyle(bar).position === "sticky" ? bar.offsetHeight : 0;
+  if (r.bottom > visibleBottom - 12) window.scrollBy({ top: r.bottom - visibleBottom + 12, behavior: "smooth" });
+  else if (r.top < top + 12) window.scrollBy({ top: r.top - top - 12, behavior: "smooth" });
 }
 
 export function openNumpad(input, { change, next } = {}) {
@@ -69,17 +92,7 @@ export function openNumpad(input, { change, next } = {}) {
   onNext = next;
   input.dataset.active = "true";
   el.classList.add("open");
-  requestAnimationFrame(() => {
-    setPadHeight();
-    // Keep the field visible in the strip above the pad and answer bar, not under them.
-    const answer = document.querySelector(".answer");
-    const covered = el.offsetHeight + (answer && !answer.hidden ? answer.offsetHeight : 0);
-    const visibleBottom = window.innerHeight - covered;
-    const r = input.getBoundingClientRect();
-    const top = document.querySelector(".topbar")?.offsetHeight || 0;
-    if (r.bottom > visibleBottom - 12) window.scrollBy({ top: r.bottom - visibleBottom + 12, behavior: "smooth" });
-    else if (r.top < top + 12) window.scrollBy({ top: r.top - top - 12, behavior: "smooth" });
-  });
+  requestAnimationFrame(() => { setPadHeight(); keepVisible(); });
 }
 
 export function closeNumpad() {
@@ -92,23 +105,43 @@ export function closeNumpad() {
 
 export function isNumpadOpen() { return !!el?.classList.contains("open"); }
 
-/** Wire a numeric input to the pad. */
-export function attachNumpad(input, handlers) {
+/** Wire a numeric input to the pad. With no `next` handler, Next steps to the following pad field in `scope`, or closes the pad. */
+export function attachNumpad(input, handlers = {}, scope = null) {
   input.inputMode = "none";
   input.autocomplete = "off";
-  input.addEventListener("focus", () => openNumpad(input, handlers));
+  const next = handlers.next || ((field) => {
+    const list = scope ? [...scope.querySelectorAll("[data-numpad]")] : [];
+    const following = list[list.indexOf(field) + 1];
+    if (following) following.focus();
+    else { field.blur(); closeNumpad(); }
+  });
+  const wired = { change: handlers.change, next };
+  input.addEventListener("focus", () => openNumpad(input, wired));
   // A field that already has focus (pad was dismissed) must reopen on the next tap.
-  input.addEventListener("click", () => openNumpad(input, handlers));
+  input.addEventListener("click", () => openNumpad(input, wired));
   // Hardware keyboards still work.
-  input.addEventListener("input", () => handlers?.change?.(input));
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); handlers?.next?.(input); } });
+  input.addEventListener("input", () => wired.change?.(input));
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); next(input); } });
 }
 
-// Tap outside any field or the pad → close. Listens on click (not pointerdown) so the
-// tap's target is settled before the layout shifts.
+// Tap outside any pad field or the pad → close. Acts on click (not pointerdown) so the layout doesn't
+// shift mid-tap, but judges the tap by where the press began: with a mouse, the pad slides up under
+// the pointer and the click itself lands on whatever is there by then.
+// A label only counts if it belongs to a pad field: tapping a text field, or its label, hands over
+// to the phone's keyboard.
+let pressedOn = null;
+document.addEventListener("pointerdown", (e) => { pressedOn = e.target; }, true);
 document.addEventListener("click", (e) => {
+  const target = pressedOn?.isConnected ? pressedOn : e.target;
+  pressedOn = null; // a keyboard "click" has no press before it
   if (!el || !el.classList.contains("open")) return;
-  if (el.contains(e.target)) return;
-  if (e.target.closest("[data-numpad], label[for]")) return;
+  if (el.contains(target) || target.closest("[data-numpad]")) return;
+  const label = target.closest("label[for]");
+  if (label && document.getElementById(label.htmlFor)?.dataset.numpad) return;
   closeNumpad();
+});
+
+// Rotating the phone changes the pad's height: re-measure, and bring the field back into view.
+window.addEventListener("resize", () => {
+  if (isNumpadOpen()) requestAnimationFrame(() => { setPadHeight(); keepVisible(); });
 });

@@ -30,7 +30,7 @@ export default register({
   prefillRank: 16,
   prefill: (q) => { try { const t = parseAcme(q); return /acme/i.test(q) ? { params: { thread: q.trim() }, label: t.label } : null; } catch { return null; } },
   inputs: [
-    { id: "thread", label: "Thread (inch)", kind: "text", default: "1/2-10", placeholder: "1/2-10, 3/4-6, 1-5" },
+    { id: "thread", suggest: ["1/4-16", "3/8-12", "1/2-10", "5/8-8", "3/4-6", "1-5"], label: "Thread (inch)", kind: "text", default: "1/2-10", placeholder: "1/2-10, 3/4-6, 1-5" },
     { id: "cls", label: "Class", kind: "segment", default: "2G", options: ["2G", "3G", "4G"].map((v) => ({ value: v, label: v })) },
     { id: "starts", label: "Starts", kind: "int", default: "1", min: 1, max: 8 },
   ],

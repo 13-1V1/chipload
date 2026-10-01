@@ -42,7 +42,8 @@ export default register({
     { id: "cat", label: "What", kind: "select", default: "length", options: Object.entries(CATS).map(([value, c]) => ({ value, label: c.label })) },
     { id: "value", label: "Value", kind: "number", default: "1" },
     { id: "from", label: "From", kind: "select", default: "in", options: (raw) => opts(raw.cat) },
-    { id: "to", label: "To", kind: "select", default: "mm", options: (raw) => opts(raw.cat) },
+    // never offers the unit you're converting from, so a new category starts on a real conversion
+    { id: "to", label: "To", kind: "select", default: "mm", options: (raw) => opts(raw.cat).filter((o) => o.value !== raw.from) },
   ],
   compute(v) {
     const out = convertUnits(v.value, v.cat, v.from, v.to);

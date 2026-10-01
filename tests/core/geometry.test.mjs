@@ -41,4 +41,9 @@ test("taper per foot and angle", () => {
   const t = taperGeometry({ largeDiameter: 2, smallDiameter: 1, length: 12 });
   near(t.taperPerFoot, 1);
   near(t.includedAngle, 4.7719, 0.0001);
+  near(t.taperRatio, 12, 1e-12, "1 : 12 on diameter");
+  // Metric call-out: 5 mm of diameter over 100 mm is 1 : 20, half angle 1.4321°
+  const m = taperGeometry({ largeDiameter: 25, smallDiameter: 20, length: 100 });
+  near(m.taperRatio, 20, 1e-12);
+  near(m.halfAngle, 1.4321, 0.0001);
 });

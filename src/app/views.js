@@ -106,7 +106,7 @@ export function renderSettings(root) {
     <div class="about">
       <p><b>Chipload</b> keeps everything on this phone. No account, no server, no analytics. Results are starting points — verify with your tooling maker and dry run.</p>
       <p>Built on <a href="https://github.com/ianarsenault-tn/Machinist_calc" rel="noopener" target="_blank">Marcos's Calculator</a> (MIT License). Fonts: IBM Plex Sans and IBM Plex Mono (SIL Open Font License).</p>
-      <p><a href="#/licenses">Licenses</a> · <a href="#/privacy">Privacy</a></p>
+      <div class="linkrow"><a class="btn" href="#/licenses">Licenses</a><a class="btn" href="#/privacy">Privacy</a><a class="btn" href="#/calc/glossary">Shop terms</a></div>
     </div>`;
   root.addEventListener("click", (e) => {
     const u = e.target.closest("[data-units]");
@@ -126,10 +126,6 @@ export function renderSettings(root) {
 }
 
 export function renderPro(root) {
-  const s = getSettings();
-  const b = getBillingState();
-  const price = b.price ? ` — ${b.price}` : " — $9.99";
-  const noStore = b.error === "no-store";
   const groups = [
     ["Mill", "Chip thinning, HSM, ball-nose, MRR, cut time, circle comp"],
     ["Lathe", "RPM/IPR, surface finish, cycle time, nose-radius comp"],
@@ -140,7 +136,12 @@ export function renderPro(root) {
     ["Reference", "GD&T, hardness, material weight, machinability, counterbores"],
     ["Shop", "Machines, tools, saved jobs, quotes, print"],
   ];
-  root.innerHTML = `
+  const draw = () => {
+    const s = getSettings();
+    const b = getBillingState();
+    const price = b.price ? ` — ${esc(b.price)}` : " — $9.99";
+    const noStore = b.error === "no-store";
+    root.innerHTML = `
     <div class="about">
       <p style="font-size:1.125rem;color:var(--text)"><b>Every tool, one price, forever.</b> No subscription. No ads. Works offline.</p>
     </div>
@@ -152,17 +153,20 @@ export function renderPro(root) {
          <div style="height:10px"></div>
          <button type="button" class="btn block" id="restore">Restore purchase</button>`}
     <p class="hint" style="margin-top:14px">${noStore ? "Pro is sold through Google Play. Install Chipload from the Play Store to unlock." : "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back."}</p>`;
-  root.querySelector("#buy")?.addEventListener("click", () => window.chiploadBilling?.buy?.());
-  root.querySelector("#restore")?.addEventListener("click", () => window.chiploadBilling?.restore?.());
-  const off = onBilling(() => { if (document.body.contains(root) && location.hash.startsWith("#/pro")) { off(); renderPro(root); } });
+    root.querySelector("#buy")?.addEventListener("click", () => window.chiploadBilling?.buy?.());
+    root.querySelector("#restore")?.addEventListener("click", () => window.chiploadBilling?.restore?.());
+  };
+  draw();
+  // The price and the purchase arrive from Play after the screen is up: redraw in place.
+  // One subscription for the life of the screen; main.js calls destroy() when you leave.
+  return { destroy: onBilling(draw) };
 }
 
 export function renderStatic(root, kind) {
   if (kind === "privacy") {
-    root.innerHTML = `<div class="about"><h3>Privacy</h3><p>Chipload does not collect, store, or share any personal data. Everything you enter stays on your device. There are no accounts, no analytics, and no network requests except the one Google Play makes to confirm a purchase.</p></div>`;
-    return "Privacy";
+    root.innerHTML = `<div class="about"><h3>Privacy</h3><p>Chipload does not collect, store, or share any personal data. Everything you enter stays on your device. There are no accounts, no analytics, and no network requests except the one Google Play makes to confirm a purchase.</p><p>If Android backup is turned on for your Google account, Android keeps a private copy of the app's data (your machines, tools, and saved jobs) with your other phone backups, so they come back on a new phone. Chipload never sees it.</p></div>`;
+    return;
   }
   root.innerHTML = `<div class="about"><h3>Chipload</h3><p>MIT License. Copyright © 2026 Brennan Meyer.</p><h3>Marcos's Calculator</h3><p>MIT License. Copyright © ianarsenault-tn. Chipload started as a fork of this project.</p><h3>IBM Plex Sans &amp; IBM Plex Mono</h3><p>Copyright © 2017 IBM Corp. Licensed under the SIL Open Font License 1.1.</p><pre class="lic" id="ofl">Loading…</pre></div>`;
   fetch("assets/fonts/LICENSE-IBM-Plex-Mono.txt").then((r) => r.text()).then((t) => { root.querySelector("#ofl").textContent = t; }).catch(() => { root.querySelector("#ofl").textContent = "See assets/fonts/LICENSE-IBM-Plex-Mono.txt"; });
-  return "Licenses";
 }

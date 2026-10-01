@@ -15,7 +15,8 @@ const MODES = {
   AAS: ["Angle A", "Angle B", "Side a (opposite A)"],
   SSA: ["Side a", "Side b", "Angle A (opposite a)"],
 };
-const isAngle = (label) => label.startsWith("Angle");
+const isAngle = (label) => String(label).startsWith("Angle");
+const slot = (i) => ({ label: (r) => MODES[r.mode]?.[i] ?? "Value", as: (r) => (isAngle(MODES[r.mode]?.[i]) ? "angle" : "length") });
 
 export default register({
   id: "oblique-triangle",
@@ -27,15 +28,19 @@ export default register({
   pro: true,
   inputs: [
     { id: "mode", label: "I know", kind: "select", default: "SSS", options: Object.entries(MODES).map(([value, l]) => ({ value, label: `${value} — ${l.join(", ")}` })) },
-    { id: "p1", label: "First", kind: "number", default: "3", min: 0 },
-    { id: "p2", label: "Second", kind: "number", default: "4", min: 0 },
-    { id: "p3", label: "Third", kind: "number", default: "5", min: 0 },
+    { id: "p1", positive: true, kind: "number", default: "3", defaultMm: "30", ...slot(0) },
+    { id: "p2", positive: true, kind: "number", default: "4", defaultMm: "40", ...slot(1) },
+    { id: "p3", positive: true, kind: "number", default: "5", defaultMm: "50", ...slot(2) },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
     const labels = MODES[v.mode];
     const args = { SSS: { a: v.p1, b: v.p2, c: v.p3 }, SAS: { a: v.p1, b: v.p2, C: v.p3 }, ASA: { A: v.p1, B: v.p2, c: v.p3 }, AAS: { A: v.p1, B: v.p2, a: v.p3 }, SSA: { a: v.p1, b: v.p2, A: v.p3 } }[v.mode];
+    for (const [label, val] of labels.map((l, i) => [l, [v.p1, v.p2, v.p3][i]])) {
+      if (isAngle(label) && !(val > 0 && val < 180)) throw new Error("Angles have to be between 0° and 180°");
+    }
     const t = solveTriangle(v.mode, args);
+    if (![t.a, t.b, t.c, t.A, t.B, t.C].every((x) => Number.isFinite(x) && x > 0)) throw new Error("Those values don't make a triangle");
     const stats = [
       { label: "Side a", value: t.a, unit: c.L.length, places: p }, { label: "Angle A", value: t.A, unit: "°", places: 3 },
       { label: "Side b", value: t.b, unit: c.L.length, places: p }, { label: "Angle B", value: t.B, unit: "°", places: 3 },

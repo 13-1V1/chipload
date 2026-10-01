@@ -19,21 +19,22 @@ export default register({
   pro: true,
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
-    { id: "diameter", label: "Tool diameter", kind: "length", default: "0.5", min: 0.0001 },
+    { id: "diameter", label: "Tool diameter", kind: "length", default: "0.5", defaultMm: "12", min: 0.0001 },
     { id: "flutes", label: "Flutes", kind: "int", default: "4", min: 1 },
-    { id: "sfm", label: "Surface speed", kind: "speed", default: "600", min: 1 },
-    { id: "chip", label: "Target chip thickness (hex)", kind: "length", default: "0.003", min: 0, hint: "The chip the tool maker rates the insert or flute for." },
-    { id: "woc", label: "Radial width of cut", kind: "length", default: "0.05", min: 0 },
+    { id: "sfm", label: "Surface speed", kind: "speed", default: "600", defaultMm: "180", min: 1 },
+    { id: "chip", positive: true, label: "Target chip thickness (hex)", kind: "length", default: "0.003", defaultMm: "0.08", min: 0, hint: "The chip the tool maker rates the insert or flute for." },
+    { id: "woc", label: "Radial width of cut", kind: "length", default: "0.05", defaultMm: "1.2", min: 0 },
     { id: "edge", label: "Cutting edge", kind: "segment", default: "square",
       options: [{ value: "square", label: "Square" }, { value: "lead", label: "Lead angle" }, { value: "corner", label: "Corner radius" }] },
     { id: "lead", label: "Lead angle (κ, from the axis)", kind: "angle", default: "45", min: 1, max: 90, showIf: (r) => r.edge === "lead", hint: "45° face mill, 10–17° high-feed, 90° square shoulder." },
-    { id: "cornerR", label: "Corner radius", kind: "length", default: "0.03", min: 0, showIf: (r) => r.edge === "corner" },
-    { id: "doc", label: "Axial depth of cut", kind: "length", default: "0.015", min: 0, showIf: (r) => r.edge === "corner" },
+    { id: "cornerR", label: "Corner radius", kind: "length", default: "0.03", defaultMm: "0.8", min: 0, showIf: (r) => r.edge === "corner" },
+    { id: "doc", label: "Axial depth of cut", kind: "length", default: "0.015", defaultMm: "0.4", min: 0, showIf: (r) => r.edge === "corner" },
     { id: "mode", advanced: true, label: "Cap", kind: "segment", default: "std", options: [{ value: "std", label: "Standard (2.5×)" }, { value: "hsm", label: "HSM (5×)" }] },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
     const cap = v.mode === "hsm" ? 5 : 2.5;
+    if (v.woc > v.diameter * 1.0001) throw new Error("Width of cut can't be more than the tool diameter");
     const radial = radialChipThinningFactor(v.diameter, v.woc, cap);
     let axial = 1, axialLabel = "";
     if (v.edge === "lead") { axial = Math.min(leadAngleThinningFactor(v.lead), cap); axialLabel = `lead ${fmt(v.lead, 0)}°`; }

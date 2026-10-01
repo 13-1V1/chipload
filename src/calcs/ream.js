@@ -27,8 +27,8 @@ export default register({
   keywords: ["ream", "reamer", "pre-ream", "allowance", "stock", "hole"],
   pro: true,
   inputs: [
-    { id: "target", label: "Reamed hole diameter", kind: "length", default: "0.5", min: 0.0001 },
-    { id: "allow", label: "Stock on diameter", kind: "length", default: "", places: 4, auto: (raw, c, v) => fromIn(reamAllowanceOnDia(toIn(Number.isFinite(v.target) ? v.target : 0.5, c.units)), c.units), hint: "Blank = handbook allowance for this size." },
+    { id: "target", label: "Reamed hole diameter", kind: "length", default: "0.5", defaultMm: "12", min: 0.0001 },
+    { id: "allow", positive: true, label: "Stock on diameter", kind: "length", default: "", places: 4, auto: (raw, c, v) => fromIn(reamAllowanceOnDia(toIn(Number.isFinite(v.target) ? v.target : 0.5, c.units)), c.units), hint: "Blank = handbook allowance for this size." },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);

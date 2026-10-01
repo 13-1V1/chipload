@@ -7,7 +7,7 @@ import { register } from "../app/registry.js";
 import { mowSolveMExternal, mowSolveEExternal, mowSolveMInternal, mowSolveEInternal, bestWire, wireRange, stockWire } from "../core/mow.js";
 import { basicThreadGeometry, unToleranceEnvelope } from "../core/thread.js";
 import { fmt } from "../core/format.js";
-import { threadFromSpec, threadPrefill, toIn, fromIn, lenPlaces } from "./_util.js";
+import { threadFromSpec, threadPrefill, toIn, fromIn, lenPlaces, COMMON_THREADS } from "./_util.js";
 
 export default register({
   id: "mow",
@@ -20,13 +20,13 @@ export default register({
   prefillRank: 11,
   prefill: (q) => threadPrefill(q),
   inputs: [
-    { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, M10x1.5" },
+    { id: "thread", suggest: COMMON_THREADS, label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, M10x1.5" },
     { id: "side", label: "Thread is", kind: "segment", default: "external", options: [{ value: "external", label: "External" }, { value: "internal", label: "Internal (balls)" }] },
     { id: "mode", label: "Find", kind: "segment", default: "m", options: [{ value: "m", label: "Measurement" }, { value: "e", label: "Pitch dia" }] },
-    { id: "wire", advanced: true, label: "Wire diameter", kind: "length", default: "", auto: (raw, c) => { try { return fromIn(stockWire(threadFromSpec(raw.thread).pitchIn, "in"), c.units); } catch { return NaN; } }, hint: "Blank = closest stock wire to the best size." },
-    { id: "pd", label: "Pitch diameter", kind: "length", default: "", showIf: (r) => r.mode === "m",
+    { id: "wire", positive: true, advanced: true, label: "Wire diameter", kind: "length", default: "", auto: (raw, c) => { try { const t = threadFromSpec(raw.thread); return c.units === "mm" ? stockWire(t.pitchMm, "mm") : stockWire(t.pitchIn, "in"); } catch { return NaN; } }, hint: "Blank = closest stock wire to the best size." },
+    { id: "pd", positive: true, label: "Pitch diameter", kind: "length", default: "", showIf: (r) => r.mode === "m",
       auto: (raw, c) => { try { const t = threadFromSpec(raw.thread); return fromIn(basicThreadGeometry(t.majorIn, t.pitchIn).pitchDiameter, c.units); } catch { return NaN; } }, hint: "Blank = basic pitch diameter." },
-    { id: "m", label: "Measured over wires", kind: "length", default: "", showIf: (r) => r.mode === "e" },
+    { id: "m", positive: true, label: "Measured over wires", kind: "length", default: "", showIf: (r) => r.mode === "e" },
   ],
   compute(v, c) {
     const t = threadFromSpec(v.thread);

@@ -7,13 +7,29 @@
 export const SHARE_BASE = "https://13-1v1.github.io/chipload/";
 
 const KEY = "chipload.settings.v1";
-const DEFAULTS = Object.freeze({ units: "in", theme: "dark", glove: false, pro: false, places: 4, tips: true });
 const listeners = new Set();
 let state = load();
 
+/**
+ * Pro is only ever switched on by a Google Play purchase inside the Android app, where the stored
+ * flag keeps it working offline. On the public web copy nothing can have bought it, so a stored
+ * flag there is ignored. Local dev hosts honor it so the Pro tools can be tested in a browser.
+ */
+export function proCanBeStored(host = globalThis.location?.hostname ?? "", native = !!globalThis.Capacitor?.isNativePlatform?.()) {
+  return native || host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host.endsWith(".localhost");
+}
+
 function load() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; }
-  catch { return { ...DEFAULTS }; }
+  let saved = {};
+  try { const v = JSON.parse(localStorage.getItem(KEY) || "{}"); if (v && typeof v === "object" && !Array.isArray(v)) saved = v; }
+  catch { /* unreadable settings fall back to defaults */ }
+  return {
+    units: saved.units === "mm" ? "mm" : "in",
+    theme: saved.theme === "light" ? "light" : "dark",
+    glove: saved.glove === true,
+    pro: saved.pro === true && proCanBeStored(),
+    tips: saved.tips !== false,
+  };
 }
 
 export function getSettings() { return state; }

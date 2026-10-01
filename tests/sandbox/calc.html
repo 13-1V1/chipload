@@ -38,7 +38,9 @@ brennanmmeyer@gmail.com
     pick.value = def.id;
     document.querySelector("#title").textContent = def.title;
     url.searchParams.set("id", def.id); history.replaceState(null, "", url);
-    current = mountCalculator(def, main, { params: Object.fromEntries(url.searchParams) });
+    // ?id= picks the tool; it is not an input (lathe-cycle has a field called "id")
+    const { id: _tool, ...params } = Object.fromEntries(url.searchParams);
+    current = mountCalculator(def, main, { params });
   }
   pick.addEventListener("change", () => mount(pick.value));
   document.querySelector("#glove").addEventListener("click", () => setSetting("glove", !getSettings().glove));

@@ -18,10 +18,10 @@ export default register({
   pro: true,
   inputs: [
     { id: "bar", label: "Sine bar length", kind: "segment", default: "5", options: [{ value: "5", label: '5"' }, { value: "10", label: '10"' }, { value: "custom", label: "Other" }] },
-    { id: "barLen", label: "Bar length (roll centers)", kind: "length", default: "100", min: 0.0001, showIf: (r) => r.bar === "custom" },
+    { id: "barLen", label: "Bar length (roll centers)", kind: "length", default: "2.5", defaultMm: "100", min: 0.0001, showIf: (r) => r.bar === "custom" },
     { id: "mode", label: "Find", kind: "segment", default: "height", options: [{ value: "height", label: "Stack height" }, { value: "angle", label: "Angle" }] },
     { id: "angle", label: "Angle", kind: "angle", default: "30", min: 0, max: 90, showIf: (r) => r.mode === "height" },
-    { id: "height", label: "Stack height", kind: "length", default: "2.5", min: 0, showIf: (r) => r.mode === "angle" },
+    { id: "height", label: "Stack height", kind: "length", default: "2.5", defaultMm: "50", min: 0, showIf: (r) => r.mode === "angle" },
   ],
   compute(v, c) {
     const p = c.units === "in" ? 4 : 3;
@@ -39,7 +39,9 @@ export default register({
     }
     const a = sineBarAngle({ barLength: barLen, stackHeight: v.height });
     if (!Number.isFinite(a)) throw new Error("Stack can't be taller than the bar");
-    const deg = Math.floor(a), min = Math.floor((a - deg) * 60), sec = Math.round(((a - deg) * 60 - min) * 60);
+    // round to the second first, then split — otherwise 29°59′59.7″ prints as 29° 59′ 60″
+    const totalSec = Math.round(a * 3600);
+    const deg = Math.floor(totalSec / 3600), min = Math.floor((totalSec % 3600) / 60), sec = totalSec % 60;
     return {
       primary: { label: "Angle", value: a, unit: "°", places: 4 },
       stats: [{ label: "Degrees · minutes · seconds", text: `${deg}° ${min}′ ${sec}″` }, { label: "Bar length", value: barLen, unit: c.L.length, places: p }],

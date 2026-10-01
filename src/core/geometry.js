@@ -54,13 +54,15 @@ export function sineBarAngle({ barLength, stackHeight }) {
   return radToDeg(Math.asin(stackHeight / barLength));
 }
 
-/** Taper from two diameters over a length. taperPerFoot in in/ft when units "in", mm/300mm when "mm". */
-export function taperGeometry({ largeDiameter, smallDiameter, length, units = "in" }) {
+/**
+ * Taper from two diameters over a length (any one length unit).
+ * taperPerFoot = 12 × ΔD ÷ L is the inch-shop number; taperRatio is the x in "1 : x" on diameter, the metric way to call it out.
+ */
+export function taperGeometry({ largeDiameter, smallDiameter, length }) {
   const diameterChange = largeDiameter - smallDiameter;
   const taperPerLength = diameterChange / length;
-  const taperPerFoot = units === "in" ? taperPerLength * 12 : taperPerLength * 304.8;
   const halfAngle = radToDeg(Math.atan((diameterChange / 2) / length));
-  return { diameterChange, taperPerLength, taperPerFoot, includedAngle: halfAngle * 2, halfAngle };
+  return { diameterChange, taperPerLength, taperPerFoot: taperPerLength * 12, taperRatio: length / diameterChange, includedAngle: halfAngle * 2, halfAngle };
 }
 
 // ── Oblique (any) triangle ────────────────────────────────────────────────────

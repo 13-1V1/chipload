@@ -1,4 +1,4 @@
-// Created by: Brennan Meyer with use of Claude Code 10/01/2026 Santa Clarita, CA
+// Created by: Brennan Meyer with use of Claude Code 09/30/2026 Santa Clarita, CA
 // brennanmmeyer@gmail.com
 
 // Band saw: blade speed by material, tooth pitch by stock thickness, wheel ↔ blade speed.

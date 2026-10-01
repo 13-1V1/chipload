@@ -24,6 +24,15 @@ export function parseStackLines(text) {
   return items;
 }
 
+/** The same stack written in the other unit system, so switching units doesn't turn 1.000 in into 1.000 mm. */
+export function convertStackLines(text, from, to) {
+  if (from === to) return text;
+  let items;
+  try { items = parseStackLines(text); } catch { return text; } // leave unreadable text for the user to fix
+  const k = to === "mm" ? 25.4 : 1 / 25.4, places = to === "mm" ? 3 : 4;
+  return items.map((i) => `${fmt(i.nominal * k, places)} ± ${fmt(i.tolerance * k, places)}`).join("\n");
+}
+
 export default register({
   id: "tol-stack",
   title: "Tolerance stack",
@@ -33,7 +42,7 @@ export default register({
   keywords: ["tolerance", "stack", "stackup", "stack-up", "rss", "worst case", "statistical"],
   pro: true,
   inputs: [
-    { id: "lines", label: "Dimensions (one per line, − for subtracting)", kind: "textarea", rows: 5, default: "1.000 ± 0.005\n2.000 ± 0.010\n-0.500 ± 0.002", placeholder: "1.000 ± 0.005\n-0.250 ± 0.001" },
+    { id: "lines", label: "Dimensions (one per line, − for subtracting)", kind: "textarea", rows: 5, default: "1.000 ± 0.005\n2.000 ± 0.010\n-0.500 ± 0.002", defaultMm: "25.00 ± 0.10\n50.00 ± 0.20\n-12.00 ± 0.05", placeholder: "1.000 ± 0.005\n-0.250 ± 0.001", convert: convertStackLines },
   ],
   compute(v, c) {
     const items = parseStackLines(v.lines);

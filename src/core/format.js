@@ -3,18 +3,22 @@
 
 // Number formatting and shop-style input parsing (fractions, mixed numbers, unit suffixes).
 
-/** Fixed-place format that drops trailing zeros. Non-finite → "—". */
+/** Fixed-place format that drops trailing zeros. Non-finite → "—". A value that rounds to zero prints "0", never "-0". */
 export function fmt(value, places = 3) {
   if (!Number.isFinite(value)) return "—";
   const digits = Math.max(0, Math.min(12, Number(places) || 0));
   const fixed = Number(value).toFixed(digits);
-  return digits === 0 ? fixed : fixed.replace(/\.?0+$/, "");
+  const out = digits === 0 ? fixed : fixed.replace(/\.?0+$/, "");
+  return out === "-0" ? "0" : out;
 }
 
-/** Parse "3/8", "1 1/4", "-0,5", "0.375" → number. NaN on failure. */
+/** Parse "3/8", "1 1/4", "-0,5", "0.375", "1,200" → number. NaN on failure. */
 export function parseFraction(value) {
-  // A single comma is accepted as a decimal separator, never as a grouping mark.
-  const text = String(value ?? "").trim().replace(/^([+-]?\d+),(\d+)$/, "$1.$2");
+  let text = String(value ?? "").trim();
+  // "1,200" and "12,500.5" are thousands groups, the way they are written in a US shop.
+  // Any other single comma is a decimal comma: "0,5", "1,25", "0,125".
+  if (/^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(text)) text = text.replace(/,/g, "");
+  else text = text.replace(/^([+-]?\d+),(\d+)$/, "$1.$2");
   if (!text) return NaN;
   const match = text.match(/^([+-])?(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)$/);
   if (match) {
@@ -29,20 +33,18 @@ export function parseFraction(value) {
   return Number.isFinite(numeric) ? numeric : NaN;
 }
 
-/** Parse a length; an explicit "mm" / "in" / " suffix converts to `expectedUnit`. */
+// A length may carry its own unit, with or without a space: 10mm, 10 mm, 1/2", 0.5in, 2 inches.
+const UNIT_SUFFIX = /^(.*?)\s*(millimeters?|millimetres?|mm|inches|inch|in|["″”])?$/;
+
+/** Parse a length; an explicit mm / in / " suffix converts to `expectedUnit`. NaN on failure. */
 export function parseDimension(value, expectedUnit = "in") {
-  let text = String(value ?? "").trim().toLowerCase();
-  if (!text) return NaN;
-  const suppliedMm = /\bmm\b/.test(text);
-  const suppliedIn = /(?:\bin(?:ch(?:es)?)?\b|[\"″])/.test(text);
-  text = text
-    .replace(/(?:millimeters?|millimetres?|\bmm\b)/g, "")
-    .replace(/(?:inches?|\bin\b|[\"″])/g, "")
-    .trim();
-  const parsed = parseFraction(text);
-  if (!Number.isFinite(parsed)) return NaN;
+  const m = String(value ?? "").trim().toLowerCase().match(UNIT_SUFFIX);
+  if (!m || !m[1]) return NaN;
+  const parsed = parseFraction(m[1]);
+  if (!Number.isFinite(parsed) || !m[2]) return parsed;
+  const suppliedMm = m[2].startsWith("m");
   if (expectedUnit === "in" && suppliedMm) return parsed / 25.4;
-  if (expectedUnit === "mm" && suppliedIn) return parsed * 25.4;
+  if (expectedUnit === "mm" && !suppliedMm) return parsed * 25.4;
   return parsed;
 }
 
@@ -68,12 +70,16 @@ export function decimalToFraction(inches, { maxDenominator = 64, tolerance = 0.0
   return null;
 }
 
-/** Legacy helper: `0.375 → '3/8"'`, null when no clean fraction to 1/64. */
-export function decimalToFractionStr(inches) {
-  if (!(inches > 0)) return null;
-  const f = decimalToFraction(inches);
-  if (!f) return null;
-  return f.denominator === 1 ? `${f.numerator}"` : `${f.numerator}/${f.denominator}"`;
+/**
+ * A number for a G-code word. Always carries a decimal point: on many Fanuc-style controls
+ * "X1" means 0.0001 in (or 0.001 mm), not 1.0. Trailing zeros trimmed, one digit kept: 1 → "1.0", -0.5 → "-0.5".
+ */
+export function gcodeNumber(value, places = 4) {
+  let s = Number(value).toFixed(places);
+  if (s.includes(".")) s = s.replace(/0+$/, "");
+  if (s.endsWith(".")) s += "0";
+  if (!s.includes(".")) s += ".0";
+  return /^-0\.0$/.test(s) ? "0.0" : s;
 }
 
 export const degToRad = (d) => d * Math.PI / 180;

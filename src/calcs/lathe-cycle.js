@@ -20,14 +20,14 @@ export default register({
   inputs: [
     { id: "op", label: "Operation", kind: "segment", default: "turn", options: [{ value: "turn", label: "Turn" }, { value: "face", label: "Face" }, { value: "groove", label: "Groove" }, { value: "cutoff", label: "Cutoff" }] },
     { id: "speedMode", label: "Spindle", kind: "segment", default: "css", options: [{ value: "css", label: "G96 (SFM)" }, { value: "rpm", label: "G97 (RPM)" }] },
-    { id: "sfm", label: "Surface speed", kind: "speed", default: "400", min: 1, showIf: (r) => r.speedMode === "css" },
+    { id: "sfm", label: "Surface speed", kind: "speed", default: "400", defaultMm: "120", min: 1, showIf: (r) => r.speedMode === "css" },
     { id: "rpm", label: "Spindle", kind: "int", default: "800", unit: "RPM", min: 1, showIf: (r) => r.speedMode === "rpm" },
-    { id: "maxRpm", advanced: true, label: "Max RPM (G50)", kind: "int", default: "", unit: "RPM", optional: true, placeholder: "optional", showIf: (r) => r.speedMode === "css" },
-    { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "0.010", min: 0.00001 },
-    { id: "od", label: "Outer diameter", kind: "length", default: "2", min: 0.0001 },
+    { id: "maxRpm", min: 1, advanced: true, label: "Max RPM (G50)", kind: "int", default: "", unit: "RPM", optional: true, placeholder: "optional", showIf: (r) => r.speedMode === "css" },
+    { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "0.010", defaultMm: "0.25", min: 0.00001 },
+    { id: "od", label: "Outer diameter", kind: "length", default: "2", defaultMm: "50", min: 0.0001 },
     { id: "id", label: "Inner diameter (0 = solid)", kind: "length", default: "0", min: 0, showIf: (r) => r.op !== "turn" },
-    { id: "length", label: "Length of cut", kind: "length", default: "4", min: 0, showIf: (r) => r.op === "turn" },
-    { id: "depth", label: "Groove depth (radial)", kind: "length", default: "0.1", min: 0, showIf: (r) => r.op === "groove" },
+    { id: "length", label: "Length of cut", kind: "length", default: "4", defaultMm: "100", min: 0, showIf: (r) => r.op === "turn" },
+    { id: "depth", label: "Groove depth (radial)", kind: "length", default: "0.1", defaultMm: "2.5", min: 0, showIf: (r) => r.op === "groove" },
     { id: "passes", label: "Passes", kind: "int", default: "1", min: 1 },
     { id: "rapid", advanced: true, label: "Return / index per pass", kind: "number", default: "2", unit: "sec", min: 0 },
   ],
@@ -36,6 +36,7 @@ export default register({
     const odIn = toIn(v.od, c.units), idIn = toIn(Number.isFinite(v.id) ? v.id : 0, c.units);
     const iprIn = toIn(v.ipr, c.units);
     const sfm = v.speedMode === "css" ? toSfm(v.sfm, c.units) : null;
+    if (v.op !== "turn" && idIn >= odIn) throw new Error("Inner diameter has to be smaller than the outer diameter");
     let perPass, how;
     if (v.op === "turn") {
       const rpm = v.speedMode === "css" ? Math.min(rpmFromSfm(sfm, odIn), Number.isFinite(v.maxRpm) ? v.maxRpm : Infinity) : v.rpm;

@@ -8,6 +8,7 @@ import { rpmFromSfm, sfmFromRpm } from "../core/feeds.js";
 import { materialOptions, materialSpeeds } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm } from "./_util.js";
+import { drillFeedFactor, drillAdvice } from "./_advice.js";
 
 /**
  * Drilling feed per revolution by diameter, HSS in steel/aluminum — Machinery's Handbook
@@ -37,7 +38,7 @@ export default register({
   pro: false,
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
-    { id: "diameter", label: "Drill diameter", kind: "length", default: "0.25", min: 0.0001 },
+    { id: "diameter", label: "Drill diameter", kind: "length", default: "0.25", defaultMm: "6", min: 0.0001 },
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Drill", kind: "segment", default: "hss",
       options: [{ value: "hss", label: "HSS / cobalt" }, { value: "carbide", label: "Carbide" }] },
@@ -45,8 +46,9 @@ export default register({
       auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType === "carbide" ? "carbide" : "hss").drillSfm, c.units),
       hint: "Leave blank to use the table value." },
     { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4,
-      auto: (raw, c, v) => fromIn(drillFeedPerRev(toIn(Number.isFinite(v.diameter) ? v.diameter : 0.25, c.units)), c.units) },
-    { id: "depth", advanced: true, label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "optional — gives time per hole" },
+      auto: (raw, c, v) => fromIn(drillFeedPerRev(toIn(Number.isFinite(v.diameter) ? v.diameter : 0.25, c.units)) * drillFeedFactor(materialSpeeds(raw.material).material.rating), c.units),
+      hint: "Leave blank for the handbook feed, eased off for tough materials." },
+    { id: "depth", positive: true, advanced: true, label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "optional — gives time per hole" },
   ],
   compute(v, c) {
     const dIn = toIn(v.diameter, c.units);
@@ -71,7 +73,11 @@ export default register({
     return {
       primary: { label: "Feed rate", value: fromIn(feedIpm, c.units), unit: c.L.feed, places: 1 },
       stats,
-      warnings: clampedRpm ? [`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)}. Feed is figured at ${fmt(rpm, 0)} RPM.`] : [],
+      warnings: [
+        ...(clampedRpm ? [`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)}. Feed is figured at ${fmt(rpm, 0)} RPM.`] : []),
+        ...(!c.machine && requestedRpm > 20000 ? [`${fmt(requestedRpm, 0)} RPM is more than most spindles turn. Add your machine in Shop and the feed gets figured at its top speed instead.`] : []),
+        ...drillAdvice({ dIn, depthIn }),
+      ],
       source: "feeds",
       explain: [
         { title: "Spindle speed", formula: "RPM = (SFM × 12) ÷ (π × D)", plugged: `= (${fmt(sfm, 0)} × 12) ÷ (π × ${fmt(dIn, 4)}) = ${fmt(requestedRpm, 0)}` },

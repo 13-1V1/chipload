@@ -21,12 +21,12 @@ export default register({
   keywords: ["drill point", "point length", "118", "135", "depth", "full diameter", "breakthrough", "through hole", "z depth"],
   pro: true,
   inputs: [
-    { id: "diameter", label: "Drill diameter", kind: "length", default: "0.5", min: 0.0001 },
+    { id: "diameter", label: "Drill diameter", kind: "length", default: "0.5", defaultMm: "12", min: 0.0001 },
     { id: "angle", label: "Point angle", kind: "segment", default: "118", options: [{ value: "90", label: "90°" }, { value: "118", label: "118°" }, { value: "135", label: "135°" }, { value: "140", label: "140°" }, { value: "custom", label: "Other" }] },
     { id: "customAngle", label: "Point angle", kind: "angle", default: "120", min: 1, max: 179, showIf: (r) => r.angle === "custom" },
-    { id: "depth", label: "Hole depth needed (full diameter)", kind: "length", default: "1", min: 0 },
+    { id: "depth", label: "Hole depth needed (full diameter)", kind: "length", default: "1", defaultMm: "25", min: 0 },
     { id: "through", label: "Hole is", kind: "segment", default: "blind", options: [{ value: "blind", label: "Blind" }, { value: "through", label: "Through" }] },
-    { id: "clear", label: "Breakthrough clearance", kind: "length", default: "0.05", min: 0, showIf: (r) => r.through === "through" },
+    { id: "clear", label: "Breakthrough clearance", kind: "length", default: "0.05", defaultMm: "1", min: 0, showIf: (r) => r.through === "through" },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);

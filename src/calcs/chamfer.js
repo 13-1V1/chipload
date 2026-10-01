@@ -21,7 +21,7 @@ export default register({
       options: [{ value: "82", label: "82°" }, { value: "90", label: "90°" }, { value: "100", label: "100°" }, { value: "118", label: "118°" }, { value: "120", label: "120°" }, { value: "custom", label: "Other" }] },
     { id: "customAngle", label: "Angle", kind: "angle", default: "60", min: 1, max: 179, showIf: (r) => r.angle === "custom" },
     { id: "small", label: "Small diameter (tool tip or hole)", kind: "length", default: "0", min: 0 },
-    { id: "large", label: "Large diameter (top of chamfer)", kind: "length", default: "0.5", min: 0 },
+    { id: "large", label: "Large diameter (top of chamfer)", kind: "length", default: "0.5", defaultMm: "12", min: 0 },
   ],
   compute(v, c) {
     const angle = v.angle === "custom" ? v.customAngle : Number(v.angle);

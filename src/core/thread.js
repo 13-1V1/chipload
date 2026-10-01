@@ -19,45 +19,71 @@ export const BASIC_PITCH_DIAMETER_FACTOR = 0.6495190528;
 export const BASIC_INTERNAL_MINOR_FACTOR = 1.0825317547;
 export const BASIC_EXTERNAL_MINOR_FACTOR = 1.2268693;
 
+// Standard machine-screw pitches, e.g. "#10" → [24, 32]. Tells "2-56" (a #2 screw) from "2-4.5" (a 2 inch thread).
+const MACHINE_PITCHES = (() => {
+  const map = {};
+  for (const [major, tpi] of UN_THREAD_TABLE) {
+    const num = Object.keys(MACHINE_SCREW_DIAMETERS).find((n) => Math.abs(MACHINE_SCREW_DIAMETERS[n] - major) < 1e-9);
+    if (num !== undefined) (map[num] ||= []).push(tpi);
+  }
+  return map;
+})();
+
 /**
- * Parse "1/4-20", "1/4-20 UNC", "#10-32", "M10", "M10x1.5", "0.5-13".
- * → { system: "un"|"metric", major, tpi|pitch, label, suppliedSeries } or null.
- * Inch values in inches, metric in mm.
+ * Parse a thread callout the way it is written on a print:
+ *   "1/4-20", "1/4-20 UNC-2B", "#10-32", "10-32", ".250-20", "1-8", "1 1/8-7", "1-1/8-7", "M10", "M10x1.5-6H".
+ * → { system: "un"|"metric", major, tpi|pitch, label, suppliedSeries } or null. Inch values in inches, metric in mm.
+ * A bare integer size is a numbered screw only when the pitch says so ("2-56" is #2-56; "2-4.5" is 2"-4.5; "1-8" is 1"-8).
  */
 export function parseThreadSpec(input) {
-  let normalized = String(input ?? "").trim().toLowerCase().replace(/×/g, "x");
-  const suffixMatch = normalized.match(/\s+(unc|unf|unef|unj|un)\s*$/i);
-  const suppliedSeries = suffixMatch ? suffixMatch[1].toUpperCase() : null;
-  normalized = normalized.replace(/\s+(unc|unf|unef|unj|un)\s*$/i, "").replace(/\s+/g, "");
-  if (!normalized) return null;
+  let s = String(input ?? "").trim().toLowerCase().replace(/[×✕]/g, "x").replace(/["”″]/g, "");
+  if (!s || s.length > 40) return null;
+  // series / class / hand suffixes: "UNC", "UNF-2B", "-6H", "6g", "LH", "STI"
+  let suppliedSeries = null;
+  const series = s.match(/\s*-?\s*\b(unjc|unjf|unj|unef|unc|unf|uns|un|nc|nf)\b/);
+  if (series) { suppliedSeries = series[1].toUpperCase().replace(/^N([CF])$/, "UN$1"); s = s.replace(series[0], " "); }
+  const isMetric = /^m/.test(s);
+  s = s.replace(/\s*-?\s*\b[123][ab]\b/g, " ")
+       .replace(/\s*-?\s*\b\d[a-h](?:\d[a-h])?(?:\/\d[a-h])?\b/g, (m) => (isMetric ? " " : m))
+       .replace(/\b(lh|rh|sti)\b/g, " ")
+       .trim();
+  if (!s) return null;
 
-  const machine = normalized.match(/^#?(\d{1,2})-(\d+(?:\.\d+)?)$/);
-  if (machine) {
-    const number = Number(machine[1]);
-    const tpi = Number(machine[2]);
-    const major = MACHINE_SCREW_DIAMETERS[number];
-    if (major && tpi > 0) return { system: "un", major, tpi, label: `#${number}-${tpi}`, suppliedSeries };
-  }
-
-  const metric = normalized.match(/^m(\d+(?:\.\d+)?)[x-](\d+(?:\.\d+)?)$/i);
+  // metric: M10, M10x1.5, M10-1.5, M10 x 1.5
+  const metric = s.match(/^m\s*(\d+(?:\.\d+)?)(?:\s*[x-]\s*(\d*\.?\d+))?$/);
   if (metric) {
-    return { system: "metric", major: Number(metric[1]), pitch: Number(metric[2]), label: `M${metric[1]}x${metric[2]}`, suppliedSeries: null };
+    const major = Number(metric[1]);
+    const pitch = metric[2] !== undefined ? Number(metric[2]) : METRIC_DEFAULT_PITCH[major];
+    if (!(major > 0) || !(pitch > 0) || pitch >= major) return null;
+    return { system: "metric", major, pitch, label: `M${major}x${pitch}`, suppliedSeries: null };
   }
 
-  const coarseMetric = normalized.match(/^m(\d+(?:\.\d+)?)$/i);
-  if (coarseMetric) {
-    const major = Number(coarseMetric[1]);
-    const pitch = METRIC_DEFAULT_PITCH[major];
-    if (pitch) return { system: "metric", major, pitch, label: `M${major}x${pitch}`, suppliedSeries: null };
+  // explicit machine screw: #10-32
+  const hash = s.match(/^#\s*(\d{1,2})\s*[-x]\s*(\d+(?:\.\d+)?)$/);
+  if (hash) {
+    const number = Number(hash[1]), tpi = Number(hash[2]);
+    const major = MACHINE_SCREW_DIAMETERS[number];
+    return major && tpi > 0 ? { system: "un", major, tpi, label: `#${number}-${tpi}`, suppliedSeries } : null;
   }
 
-  const unified = normalized.match(/^([0-9.]+\/[0-9.]+|[0-9]+(?:\.[0-9]+)?)[-x](\d+(?:\.\d+)?)$/);
-  if (unified) {
-    const major = parseFraction(unified[1]);
-    const tpi = Number(unified[2]);
-    if (major > 0 && tpi > 0) return { system: "un", major, tpi, label: `${unified[1]}-${unified[2]}`, suppliedSeries };
+  // inch: "1/4-20", "1 1/8-7", "1-1/8-7", ".250-20", "1.125-7", "1-8", and bare numbered screws "10-32"
+  const inch = s.match(/^(\d+\s*[-\s]\s*\d+\/\d+|\d+\/\d+|\d*\.\d+|\d+)\s*[-x]\s*(\d+(?:\.\d+)?)$/);
+  if (!inch) return null;
+  const sizeText = inch[1].trim();
+  const tpi = Number(inch[2]);
+  if (!(tpi > 0)) return null;
+  if (/^\d+$/.test(sizeText)) {
+    const number = Number(sizeText);
+    const std = MACHINE_PITCHES[number];
+    if (std && (std.includes(tpi) || (number >= 4 && tpi >= 20))) {
+      return { system: "un", major: MACHINE_SCREW_DIAMETERS[number], tpi, label: `#${number}-${tpi}`, suppliedSeries };
+    }
   }
-  return null;
+  const mixed = sizeText.match(/^(\d+)\s*[-\s]\s*(\d+)\/(\d+)$/);
+  const major = mixed ? Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]) : parseFraction(sizeText);
+  if (!(major > 0) || !Number.isFinite(major) || major > 24) return null;
+  const sizeLabel = mixed ? `${mixed[1]}-${mixed[2]}/${mixed[3]}` : sizeText.replace(/^\./, "0.");
+  return { system: "un", major, tpi, label: `${sizeLabel}-${inch[2]}`, suppliedSeries };
 }
 
 /** Basic diameters for a 60° thread. `pitch` in the same unit as `major`. */
@@ -76,34 +102,54 @@ export function basicThreadGeometry(major, pitch) {
 }
 
 /**
- * Estimated UN class limits. Source: ASME B1.1-2003 §8 tolerance formulas,
- * engagement length assumed 9P. Simplified — for acceptance work confirm
- * against the published B1.1 tables for the specific size.
- *   TD2 (2A) = 0.0015·D^(1/3) + 0.0015·√L + 0.015·P^(2/3)
- *   3A = 0.75·TD2 ; 2B = 1.30·TD2 ; 3B = 0.975·TD2 ; allowance (2A) = 0.30·TD2
- *   major tol: 2A = 0.060·P^(2/3), 3A = 0.040·P^(2/3)
+ * UN class limits from the ASME B1.1 tolerance formulas (§8), inch units.
+ *   Td2 (2A) = 0.0015 ∛D + 0.0015 √LE + 0.015 ∛P²        pitch-diameter tolerance
+ *   3A = 0.75 Td2    2B = 1.30 Td2    3B = 0.975 Td2    allowance (2A) = 0.30 Td2
+ *   major-diameter tolerance, 2A and 3A = 0.060 ∛P²
+ *   minor-diameter tolerance, internal:
+ *     2B: under 1/4 in → 0.05 ∛P² + 0.03 P/D − 0.002, held between 0.25P − 0.4P² and 0.394P;
+ *         1/4 in and up → 0.25P − 0.4P² (0.15P coarser than 4 TPI)
+ *     3B: 0.05 ∛P² + 0.03 P/D − 0.002, not over 0.394P, not under 0.23P − 1.5P² (0.120P for 12 TPI and coarser)
+ * LE is the length of engagement the published tables assume: one diameter for UNC, UNF and the
+ * 4-, 6- and 8-thread series; nine pitches for UNEF, the finer constant-pitch series and specials.
+ * Like the published tables, each allowance and tolerance is rounded to 0.0001 in before it is applied
+ * to the basic size, so the pitch- and major-diameter limits reproduce the B1.1 tables.
  */
 export function unToleranceEnvelope({ major, pitch }) {
   const g = basicThreadGeometry(major, pitch);
-  const L = 9 * pitch;
-  const TD2_2A = 0.0015 * Math.cbrt(major) + 0.0015 * Math.sqrt(L) + 0.015 * Math.pow(pitch, 2 / 3);
-  const TD2_3A = 0.75 * TD2_2A;
-  const TD2_2B = 1.30 * TD2_2A;
-  const TD2_3B = 0.975 * TD2_2A;
-  const allowance = 0.300 * TD2_2A;
-  const majorTol2A = 0.060 * Math.pow(pitch, 2 / 3);
-  const majorTol3A = 0.040 * Math.pow(pitch, 2 / 3);
+  const tpi = 1 / pitch;
+  const cbrtP2 = Math.cbrt(pitch * pitch);
+  const series = lookupUnThread(major, tpi);
+  const oneDiameter = (series && /UN[CF]$/.test(series)) || [4, 6, 8].some((n) => Math.abs(tpi - n) < 1e-6);
+  const LE = oneDiameter ? major : 9 * pitch;
+  // B1.1 rounding: work to six places, publish to four.
+  const r4 = (x) => Math.round(x * 1e4) / 1e4, r6 = (x) => Math.round(x * 1e6) / 1e6;
+  const td2 = r6(0.0015 * Math.cbrt(major) + 0.0015 * Math.sqrt(LE) + 0.015 * cbrtP2);
+  const TD2_2A = r4(td2);
+  const TD2_3A = r4(r6(0.75 * td2));
+  const TD2_2B = r4(r6(1.30 * td2));
+  const TD2_3B = r4(r6(0.975 * td2));
+  const allowance = r4(r6(0.300 * td2));
+  const majorTol = r4(r6(0.060 * cbrtP2));
+  const pd = r4(g.pitchDiameter);
+  const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+  const smallFormula = 0.05 * cbrtP2 + 0.03 * pitch / major - 0.002;
+  const minorTol2B = major < 0.25
+    ? clamp(smallFormula, 0.25 * pitch - 0.4 * pitch * pitch, 0.394 * pitch)
+    : (tpi >= 4 ? 0.25 * pitch - 0.4 * pitch * pitch : 0.15 * pitch);
+  const minorTol3B = clamp(smallFormula, tpi >= 13 ? 0.23 * pitch - 1.5 * pitch * pitch : 0.120 * pitch, 0.394 * pitch);
   return {
-    "2A": { pdMax: g.pitchDiameter - allowance, pdMin: g.pitchDiameter - allowance - TD2_2A, majorMax: major - allowance, majorMin: major - allowance - majorTol2A, tol: TD2_2A },
-    "3A": { pdMax: g.pitchDiameter, pdMin: g.pitchDiameter - TD2_3A, majorMax: major, majorMin: major - majorTol3A, tol: TD2_3A },
-    "2B": { pdMin: g.pitchDiameter, pdMax: g.pitchDiameter + TD2_2B, minorMin: g.internalMinor, minorMax: g.internalMinor + 0.25 * pitch, tol: TD2_2B },
-    "3B": { pdMin: g.pitchDiameter, pdMax: g.pitchDiameter + TD2_3B, minorMin: g.internalMinor, minorMax: g.internalMinor + 0.2 * pitch, tol: TD2_3B },
+    "2A": { pdMax: pd - allowance, pdMin: pd - allowance - TD2_2A, majorMax: major - allowance, majorMin: major - allowance - majorTol, tol: TD2_2A, allowance },
+    "3A": { pdMax: pd, pdMin: pd - TD2_3A, majorMax: major, majorMin: major - majorTol, tol: TD2_3A, allowance: 0 },
+    "2B": { pdMin: pd, pdMax: pd + TD2_2B, minorMin: g.internalMinor, minorMax: g.internalMinor + minorTol2B, tol: TD2_2B },
+    "3B": { pdMin: pd, pdMax: pd + TD2_3B, minorMin: g.internalMinor, minorMax: g.internalMinor + minorTol3B, tol: TD2_3B },
+    engagement: LE,
   };
 }
 
 /** Standard-series name for a UN size, e.g. "1/4-20 UNC", or null. */
 export function lookupUnThread(majorIn, tpi) {
-  const TOL_D = 0.003, TOL_T = 0.5;
+  const TOL_D = 0.003, TOL_T = 0.01;
   const match = UN_THREAD_TABLE.find(([d, t]) => Math.abs(d - majorIn) < TOL_D && Math.abs(t - tpi) < TOL_T);
   return match ? match[2] : null;
 }

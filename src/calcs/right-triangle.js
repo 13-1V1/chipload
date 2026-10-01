@@ -15,7 +15,9 @@ const MODES = {
   runHyp: ["Run (adjacent)", "Hypotenuse"],
   riseHyp: ["Rise (opposite)", "Hypotenuse"],
 };
-const isAngle = (mode, slot) => MODES[mode][slot] === "Angle";
+const isAngle = (mode, slot) => MODES[mode]?.[slot] === "Angle";
+// A field is whatever the chosen pair says it is: its label, its unit, and how a unit switch treats it.
+const slot = (i) => ({ label: (r) => MODES[r.mode]?.[i] ?? "Value", as: (r) => (isAngle(r.mode, i) ? "angle" : "length") });
 
 export default register({
   id: "right-triangle",
@@ -28,8 +30,8 @@ export default register({
   inputs: [
     { id: "mode", label: "I know", kind: "select", default: "runRise",
       options: Object.entries(MODES).map(([value, [a, b]]) => ({ value, label: `${a} + ${b}` })) },
-    { id: "a", label: "First value", kind: "length", default: "3" },
-    { id: "b", label: "Second value", kind: "length", default: "4" },
+    { id: "a", positive: true, kind: "number", default: "3", defaultMm: "30", ...slot(0) },
+    { id: "b", positive: true, kind: "number", default: "4", defaultMm: "40", ...slot(1) },
   ],
   compute(v, c) {
     const r = solveRightTriangle(v.mode, v.a, v.b);

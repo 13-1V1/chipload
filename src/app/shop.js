@@ -2,28 +2,31 @@
 // brennanmmeyer@gmail.com
 
 // Shop screens: machine profiles, tool library, saved jobs. Pro. Everything stays in localStorage.
+// Deleting is one tap (no "are you sure?" to fumble with gloves on) and always comes with Undo.
 
-import { loadBlob, saveBlob } from "./store.js";
+import { loadBlob, saveBlob, loadList } from "./store.js";
 import { getSettings } from "./settings.js";
 import { navigate } from "./router.js";
 import { getCalc } from "./registry.js";
 import { attachNumpad, closeNumpad } from "./numpad.js";
 import { fmt, parseFraction } from "../core/format.js";
-import { ICONS } from "./icons.js";
 import { toast } from "./ui.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 export const machines = {
-  all: () => loadBlob("machines", []),
+  all: () => loadList("machines").map((m) => ({ ...m, id: String(m.id ?? ""), name: String(m.name ?? "Machine"), type: m.type === "lathe" ? "lathe" : "mill", maxRpm: Number(m.maxRpm) || 0, maxFeed: Number(m.maxFeed) || 0, controller: String(m.controller ?? "other"), units: m.units === "mm" ? "mm" : "in" })),
   save: (list) => saveBlob("machines", list),
   activeId: () => loadBlob("activeMachine", null),
   setActive: (id) => saveBlob("activeMachine", id),
 };
-export const tools = { all: () => loadBlob("tools", []), save: (list) => saveBlob("tools", list) };
+export const tools = {
+  all: () => loadList("tools").map((t) => ({ ...t, id: String(t.id ?? ""), name: String(t.name ?? "Tool"), kind: t.kind === "drill" ? "drill" : "endmill", diameter: Number(t.diameter) || 0, flutes: Math.max(1, Math.round(Number(t.flutes) || 2)), toolType: ["hss", "carbide", "coated"].includes(t.toolType) ? t.toolType : "carbide", note: String(t.note ?? ""), units: t.units === "mm" ? "mm" : "in" })),
+  save: (list) => saveBlob("tools", list),
+};
 export const jobs = {
-  all: () => loadBlob("jobs", []),
+  all: () => loadList("jobs").filter((j) => typeof j.calcId === "string" && j.raw && typeof j.raw === "object").map((j) => ({ ...j, id: String(j.id ?? ""), name: String(j.name ?? "Job"), primary: String(j.primary ?? ""), at: Number(j.at) || 0, units: j.units === "mm" ? "mm" : "in" })),
   save: (list) => saveBlob("jobs", list),
   add(job) { const list = jobs.all(); list.unshift({ id: uid(), at: Date.now(), ...job }); jobs.save(list.slice(0, 200)); },
   remove(id) { jobs.save(jobs.all().filter((j) => j.id !== id)); },
@@ -58,9 +61,9 @@ function renderMachines(body) {
   const active = machines.activeId();
   body.innerHTML = `
     ${list.length ? `<ul class="list">${list.map((m) => `<li><div class="setting">
-        <button type="button" class="radio" role="radio" aria-checked="${m.id === active}" data-activate="${m.id}" aria-label="Use ${esc(m.name)}"></button>
+        <button type="button" class="radio" role="radio" aria-checked="${m.id === active}" data-activate="${esc(m.id)}" aria-label="Use ${esc(m.name)}"></button>
         <span class="t"><b>${esc(m.name)}</b><span class="sub">${esc(m.type)} · max ${fmt(m.maxRpm, 0)} RPM · ${fmt(m.maxFeed, 0)} ${m.units === "mm" ? "mm/min" : "IPM"} · ${esc(m.controller)}</span></span>
-        <button type="button" class="btn small" data-edit="${m.id}">Edit</button></div></li>`).join("")}</ul>
+        <button type="button" class="btn small" data-edit="${esc(m.id)}">Edit</button></div></li>`).join("")}</ul>
       <p class="hint" style="margin:10px 0 0">The selected machine caps RPM and feed in every speeds & feeds tool. Pick none to turn that off.</p>`
       : `<div class="empty">No machines yet. Add your mill or lathe and the speeds & feeds tools will respect its limits.</div>`}
     <div style="height:12px"></div>
@@ -85,9 +88,16 @@ function machineForm(body, m) {
     <div class="dl-row"><button type="button" class="btn primary" id="save">Save</button>${isNew ? "" : `<button type="button" class="btn" id="del">Delete</button>`}<button type="button" class="btn" id="cancel">Cancel</button></div>
   </div>`;
   wireSeg(host, "mType");
-  host.querySelectorAll("[data-numpad]").forEach((i) => attachNumpad(i, {}));
+  host.querySelectorAll("[data-numpad]").forEach((i) => attachNumpad(i, {}, host));
   host.querySelector("#cancel").addEventListener("click", () => { closeNumpad(); host.innerHTML = ""; });
-  host.querySelector("#del")?.addEventListener("click", () => { machines.save(machines.all().filter((x) => x.id !== m.id)); if (machines.activeId() === m.id) machines.setActive(null); closeNumpad(); renderMachines(body); });
+  host.querySelector("#del")?.addEventListener("click", () => {
+    const before = machines.all(), wasActive = machines.activeId() === m.id;
+    machines.save(before.filter((x) => x.id !== m.id));
+    if (wasActive) machines.setActive(null);
+    closeNumpad();
+    renderMachines(body);
+    toast(`Deleted ${m.name}`, { action: "Undo", onAction: () => { machines.save(before); if (wasActive) machines.setActive(m.id); if (body.isConnected) renderMachines(body); } });
+  });
   host.querySelector("#save").addEventListener("click", () => {
     const rec = { ...m, name: host.querySelector("#mName").value.trim() || "My machine", type: segValue(host, "mType"), maxRpm: parseFraction(host.querySelector("#mRpm").value) || 0, maxFeed: parseFraction(host.querySelector("#mFeed").value) || 0, controller: host.querySelector("#mCtl").value };
     const list = machines.all().filter((x) => x.id !== m.id);
@@ -107,8 +117,8 @@ function renderTools(body) {
   body.innerHTML = `
     ${list.length ? `<ul class="list">${list.map((t) => `<li><div class="setting">
         <span class="t"><b>${esc(t.name)}</b><span class="sub">Ø${fmt(t.diameter, 4)} ${t.units} · ${t.flutes} FL · ${esc(t.toolType)}${t.note ? " · " + esc(t.note) : ""}</span></span>
-        <button type="button" class="btn small" data-use="${t.id}">Feeds</button>
-        <button type="button" class="btn small" data-edit="${t.id}">Edit</button></div></li>`).join("")}</ul>`
+        <button type="button" class="btn small" data-use="${esc(t.id)}">Feeds</button>
+        <button type="button" class="btn small" data-edit="${esc(t.id)}">Edit</button></div></li>`).join("")}</ul>`
       : `<div class="empty">No tools yet. Save the end mills and drills you reach for, then jump to speeds & feeds with one tap.</div>`}
     <div style="height:12px"></div>
     <button type="button" class="btn primary block" id="add">Add tool</button>
@@ -136,9 +146,15 @@ function toolForm(body, t) {
     <div class="dl-row"><button type="button" class="btn primary" id="save">Save</button>${isNew ? "" : `<button type="button" class="btn" id="del">Delete</button>`}<button type="button" class="btn" id="cancel">Cancel</button></div>
   </div>`;
   wireSeg(host, "tKind"); wireSeg(host, "tType");
-  host.querySelectorAll("[data-numpad]").forEach((i) => attachNumpad(i, {}));
+  host.querySelectorAll("[data-numpad]").forEach((i) => attachNumpad(i, {}, host));
   host.querySelector("#cancel").addEventListener("click", () => { closeNumpad(); host.innerHTML = ""; });
-  host.querySelector("#del")?.addEventListener("click", () => { tools.save(tools.all().filter((x) => x.id !== t.id)); closeNumpad(); renderTools(body); });
+  host.querySelector("#del")?.addEventListener("click", () => {
+    const before = tools.all();
+    tools.save(before.filter((x) => x.id !== t.id));
+    closeNumpad();
+    renderTools(body);
+    toast(`Deleted ${t.name}`, { action: "Undo", onAction: () => { tools.save(before); if (body.isConnected) renderTools(body); } });
+  });
   host.querySelector("#save").addEventListener("click", () => {
     const dia = parseFraction(host.querySelector("#tDia").value);
     if (!(dia > 0)) { toast("Enter a diameter"); return; }
@@ -158,11 +174,21 @@ function renderJobs(body) {
   const list = jobs.all();
   body.innerHTML = list.length
     ? `<ul class="list">${list.map((j) => { const def = getCalc(j.calcId); return `<li><div class="setting">
-        <button type="button" class="row-btn" style="padding:0" data-open="${j.id}"><span class="t"><b>${esc(j.name)}</b><span class="sub">${esc(def?.title || j.calcId)} · <span class="num">${esc(j.primary)}</span> · ${new Date(j.at).toLocaleDateString()}</span></span></button>
-        <button type="button" class="btn small" data-del="${j.id}" aria-label="Delete ${esc(j.name)}">✕</button></div></li>`; }).join("")}</ul>`
+        <button type="button" class="row-btn" style="padding:0" data-open="${esc(j.id)}"><span class="t"><b>${esc(j.name)}</b><span class="sub">${esc(def?.title || j.calcId)} · <span class="num">${esc(j.primary)}</span> · ${new Date(j.at).toLocaleDateString()}</span></span></button>
+        <button type="button" class="btn small" data-del="${esc(j.id)}" aria-label="Delete ${esc(j.name)}">✕</button></div></li>`; }).join("")}</ul>`
     : `<div class="empty">No saved jobs. On any calculator, tap ⋯ then “Save job” to keep every input for next time.</div>`;
-  body.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => { const j = list.find((x) => x.id === b.dataset.open); navigate(`/calc/${j.calcId}`, { ...Object.fromEntries(Object.entries(j.raw).filter(([, v]) => String(v ?? "").trim() !== "")), units: j.units }); }));
-  body.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => { jobs.remove(b.dataset.del); renderJobs(body); }));
+  body.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => {
+    const j = list.find((x) => x.id === b.dataset.open);
+    // Every field goes in the link, blank ones too: a blank ("use the table value") must not pick up
+    // whatever was last typed in that tool.
+    navigate(`/calc/${j.calcId}`, { ...Object.fromEntries(Object.entries(j.raw).map(([k, v]) => [k, String(v ?? "")])), units: j.units });
+  }));
+  body.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+    const before = jobs.all(), gone = before.find((j) => j.id === b.dataset.del);
+    jobs.remove(b.dataset.del);
+    renderJobs(body);
+    toast(`Deleted ${gone?.name || "job"}`, { action: "Undo", onAction: () => { jobs.save(before); if (body.isConnected) renderJobs(body); } });
+  }));
 }
 
 // ── tiny form helpers ──
@@ -178,4 +204,3 @@ function wireSeg(host, id) {
 }
 function segValue(host, id) { return host.querySelector(`[data-seg="${id}"] [aria-pressed="true"]`)?.dataset.v; }
 
-export { ICONS };

@@ -19,13 +19,13 @@ export default register({
   pro: true,
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
-    { id: "diameter", label: "Work diameter (at the cut)", kind: "length", default: "2", min: 0.0001 },
+    { id: "diameter", label: "Work diameter (at the cut)", kind: "length", default: "2", defaultMm: "50", min: 0.0001 },
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Insert", kind: "segment", default: "coated", options: [{ value: "hss", label: "HSS" }, { value: "carbide", label: "Carbide" }, { value: "coated", label: "Coated" }] },
     { id: "cut", label: "Cut", kind: "segment", default: "rough", options: [{ value: "rough", label: "Rough" }, { value: "finish", label: "Finish" }] },
     { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType).sfm * 1.2, c.units), hint: "Blank = library value × 1.2 (turning runs a bit faster)." },
     { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(raw.cut === "finish" ? 0.004 : 0.012, c.units), hint: "Blank = 0.012 rough / 0.004 finish." },
-    { id: "length", advanced: true, label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
+    { id: "length", positive: true, advanced: true, label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);

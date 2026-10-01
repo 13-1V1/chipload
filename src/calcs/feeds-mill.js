@@ -4,15 +4,12 @@
 // Speeds & feeds — mill. Free tier. SFM → RPM, chip load → feed, with machine-limit clamping.
 
 import { register } from "../app/registry.js";
-import { rpmFromSfm, sfmFromRpm, radialChipThinningFactor } from "../core/feeds.js";
+import { rpmFromSfm, sfmFromRpm, radialChipThinningFactor, chipLoadScale } from "../core/feeds.js";
 import { TOOL_LABELS } from "../data/materials.js";
 import { materialOptions, materialSpeeds } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
-
-const toIn = (v, units) => (units === "in" ? v : v / 25.4);
-const fromIn = (v, units) => (units === "in" ? v : v * 25.4);
-const toSfm = (v, units) => (units === "in" ? v : v * 3.28084);
-const fromSfm = (v, units) => (units === "in" ? v : v / 3.28084);
+import { toIn, fromIn, toSfm, fromSfm } from "./_util.js";
+import { millAdvice } from "./_advice.js";
 
 function defaults(raw) {
   return materialSpeeds(raw.material, raw.toolType);
@@ -28,22 +25,20 @@ export default register({
   pro: false,
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
-    { id: "diameter", label: "Tool diameter", kind: "length", default: "0.375", min: 0.0001 },
+    { id: "diameter", label: "Tool diameter", kind: "length", default: "0.375", defaultMm: "10", min: 0.0001 },
     { id: "flutes", label: "Flutes", kind: "int", default: "4", min: 1, max: 20 },
     { id: "material", label: "Material", kind: "select", default: "al6061", options: materialOptions() },
     { id: "toolType", label: "Tool", kind: "segment", default: "carbide",
       options: Object.entries(TOOL_LABELS).map(([value, label]) => ({ value, label })) },
     { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0,
       auto: (raw, c) => fromSfm(defaults(raw).sfm, c.units), hint: "Leave blank to use the table value for this material." },
-    { id: "chip", advanced: true, label: "Chip load per tooth", kind: "length", default: "", places: 4,
+    { id: "chip", positive: true, advanced: true, label: "Chip load per tooth", kind: "length", default: "", places: 4,
       auto: (raw, c, values) => {
-        // table value is for a 3/8" tool; scale by diameter within 0.25×–1.5×
-        const dIn = toIn(Number.isFinite(values.diameter) ? values.diameter : 0.375, c.units);
-        const scale = Math.max(0.25, Math.min(1.5, dIn / 0.375));
-        return fromIn(defaults(raw).chipIn * scale, c.units);
+        const dIn = Number.isFinite(values.diameter) ? toIn(values.diameter, c.units) : 0.375;
+        return fromIn(defaults(raw).chipIn * chipLoadScale(dIn), c.units);
       } },
-    { id: "woc", advanced: true, label: "Width of cut (radial)", kind: "length", default: "", optional: true, placeholder: "optional — enables chip thinning" },
-    { id: "doc", advanced: true, label: "Depth of cut (axial)", kind: "length", default: "", optional: true, placeholder: "optional — enables removal rate" },
+    { id: "woc", min: 0, advanced: true, label: "Width of cut (radial)", kind: "length", default: "", optional: true, placeholder: "optional — enables chip thinning" },
+    { id: "doc", min: 0, advanced: true, label: "Depth of cut (axial)", kind: "length", default: "", optional: true, placeholder: "optional — enables removal rate" },
   ],
   compute(v, c) {
     const dIn = toIn(v.diameter, c.units);
@@ -65,9 +60,10 @@ export default register({
     const actualSfm = sfmFromRpm(rpm, dIn);
     const mrr = wocIn > 0 && docIn > 0 ? wocIn * docIn * feedIpm : null;
 
-    const warnings = [];
+    if (wocIn > dIn * 1.0001) throw new Error("Width of cut can't be more than the tool diameter");
+    const warnings = millAdvice({ dIn, wocIn, docIn, requestedRpm, machine: c.machine });
     // The math will happily feed 5× faster if you type 5× the chip load — the tool won't.
-    const libChip = defaults(v).chipIn * Math.max(0.25, Math.min(1.5, dIn / 0.375));
+    const libChip = defaults(v).chipIn * chipLoadScale(dIn);
     if (!v.chipAuto && chipIn > Math.max(libChip * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is a very heavy chip for a ${fmt(v.diameter, c.units === "in" ? 3 : 1)} ${c.L.length} tool (the library says about ${fmt(fromIn(libChip, c.units), 4)}). Expect a broken tool.`);
     if (!v.chipAuto && chipIn > 0 && chipIn < libChip * 0.25) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is very light — the tool will rub and dull instead of cutting. Typical is about ${fmt(fromIn(libChip, c.units), 4)}.`);
     if (clampedRpm) warnings.push(`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)}. Feed is figured at ${fmt(rpm, 0)} RPM so chip load stays right.`);

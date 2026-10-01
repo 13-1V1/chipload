@@ -4,7 +4,7 @@
 // Capacitor bridge: hardware back button, home-screen shortcut deep links, native share / save,
 // status bar color. Does nothing in a plain browser.
 
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { Share } from "@capacitor/share";
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
@@ -15,7 +15,11 @@ import { closeNumpad, isNumpadOpen } from "./numpad.js";
 
 export const isNative = () => Capacitor.isNativePlatform();
 
-export async function initNative() {
+// The app's own plugin (android/.../PrintPlugin.java): hands the page to Android's print dialog,
+// where "Save as PDF" lives. A WebView has no window.print of its own.
+const Print = registerPlugin("Print");
+
+export function initNative() {
   if (!isNative()) return;
 
   // Back: close the number pad first, then walk history, then leave the app from Home.
@@ -28,15 +32,17 @@ export async function initNative() {
   });
 
   // chipload://calc/feeds-mill?diameter=0.5  →  #/calc/feeds-mill?diameter=0.5
-  App.addListener("appUrlOpen", ({ url }) => {
+  const openUrl = (url) => {
     try {
       const u = new URL(url);
+      if (u.protocol !== "chipload:") return;
       const path = (u.host + u.pathname).replace(/^\/+|\/+$/g, "");
       location.hash = `#/${path}${u.search}`;
     } catch { /* ignore junk */ }
-  });
-  const launch = await App.getLaunchUrl().catch(() => null);
-  if (launch?.url) App.addListener("appUrlOpen", () => {}); // listener above handles it on first fire
+  };
+  App.addListener("appUrlOpen", ({ url }) => openUrl(url));
+  // Cold start from a home-screen shortcut: the event above never fires, the URL is waiting here.
+  App.getLaunchUrl().then((launch) => { if (launch?.url) openUrl(launch.url); }).catch(() => { /* no launch URL */ });
 
   window.chiploadNative = {
     async saveFile(name, text, mime) {
@@ -46,7 +52,9 @@ export async function initNative() {
     async share({ title, text, url }) {
       await Share.share({ title, text, url, dialogTitle: title });
     },
-    print: null, // falls back to window.print(); Android WebView has no print — handled by share of a text report later
+    async print(name) {
+      await Print.print({ name: `Chipload - ${name}` });
+    },
   };
 
   const applyBar = () => {

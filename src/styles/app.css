@@ -15,7 +15,8 @@ brennanmmeyer@gmail.com
   --warn: #FF7A1A;
   --text: #E8EAED;
   --text-2: #9AA0A6;
-  --text-3: #6B7178;
+  --text-3: #868D95;
+  --link: #7FB0FF;
   --focus: #5CE1E6;
 
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -36,7 +37,9 @@ brennanmmeyer@gmail.com
   --scribe: #0E7C86;
   --text: #16191D;
   --text-2: #5A616A;
-  --text-3: #8A9098;
+  --text-3: #666D76;
+  --warn: #C2540A;
+  --link: #1F56C8;
   --focus: #2F6FEB;
   color-scheme: light;
 }
@@ -67,7 +70,7 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-a { color: var(--accent); }
+a { color: var(--link); }
 
 /* ── App frame ────────────────────────────────────────────────── */
 #app { display: flex; flex-direction: column; min-height: 100dvh; }
@@ -220,6 +223,9 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
 .answer.up { bottom: var(--pad-h, 0px); }
 .copied { position: fixed; left: 50%; bottom: calc(var(--answer-h) + 12px); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 0.875rem; z-index: 7; animation: fade 1.6s forwards; }
 @keyframes fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+/* a toast with a way back (Undo): stays longer, and the button is a full touch target */
+.copied.has-action { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 16px; animation-duration: 5.9s; }
+.copied.has-action button { min-height: 48px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; color: var(--bg); font-weight: 700; text-decoration: underline; }
 
 /* ── Number pad ───────────────────────────────────────────────── */
 .numpad {
@@ -244,10 +250,12 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--tap); padding: 8px 14px; }
 .setting .t { flex: 1; }
 .setting .sub { display: block; color: var(--text-2); font-size: 0.8125rem; }
-.switch { position: relative; width: 56px; height: 32px; border-radius: 999px; background: var(--line); border: 0; flex: none; transition: background .15s; }
-.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: var(--text); transition: transform .15s; }
-.switch[aria-checked="true"] { background: var(--accent); }
-.switch[aria-checked="true"]::after { transform: translateX(24px); }
+/* The hit area is a full touch target; the 56×32 track is drawn inside it. */
+.switch { position: relative; width: 64px; height: var(--tap); border: 0; background: transparent; padding: 0; flex: none; }
+.switch::before { content: ""; position: absolute; left: 4px; right: 4px; top: 50%; height: 32px; margin-top: -16px; border-radius: 999px; background: var(--line); transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 50%; left: 7px; width: 26px; height: 26px; margin-top: -13px; border-radius: 50%; background: var(--text); transition: transform .15s; }
+.switch[aria-checked="true"]::before { background: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(24px); background: #fff; }
 .btn { min-height: var(--tap); padding: 0 20px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); color: var(--text); font-weight: 600; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.block { width: 100%; }
@@ -276,6 +284,14 @@ details.more .body { padding-top: 12px; display: flex; flex-direction: column; g
 .next-item span { color: var(--scribe); font-size: 0.9375rem; text-align: right; }
 .next-item:active { background: var(--card-2); }
 
+/* ── One-tap common values under a text field ─────────────────── */
+.sugg { display: flex; flex-wrap: wrap; gap: 8px; }
+.sugg button { min-height: 48px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-family: var(--mono); font-size: 0.9375rem; }
+.sugg button:active { background: var(--card-2); }
+:root[data-glove="on"] .sugg button { min-height: 60px; }
+.linkrow { display: flex; gap: 10px; flex-wrap: wrap; }
+.linkrow .btn { text-decoration: none; display: inline-flex; align-items: center; }
+
 /* ── Extras: lock, code, downloads ────────────────────────────── */
 .lock { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: var(--card); border: 1px dashed var(--accent); border-radius: var(--radius); }
 .lock span { color: var(--text-2); font-size: 0.875rem; }
@@ -285,7 +301,8 @@ details.more .body { padding-top: 12px; display: flex; flex-direction: column; g
 .codeblock { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .code-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line); }
 .code-head b { flex: 1; }
-.btn.small { min-height: 40px; padding: 0 14px; font-size: 0.875rem; }
+.btn.small { min-height: 48px; padding: 0 14px; font-size: 0.875rem; }
+:root[data-glove="on"] .btn.small { min-height: 60px; }
 pre.code { margin: 0; padding: 12px 14px; font-size: 0.875rem; line-height: 1.5; overflow-x: auto; color: var(--text); max-height: 50vh; }
 .dl-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .dl-row .btn { flex: 1; }
@@ -293,9 +310,10 @@ pre.code { margin: 0; padding: 12px 14px; font-size: 0.875rem; line-height: 1.5;
 .table-title { padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--line); }
 .extras table.chart th { top: 0; position: static; }
 
-.radio { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--text-3); background: transparent; flex: none; position: relative; }
-.radio[aria-checked="true"] { border-color: var(--scribe); }
-.radio[aria-checked="true"]::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--scribe); }
+.radio { width: var(--tap); height: var(--tap); border: 0; background: transparent; padding: 0; flex: none; position: relative; margin-left: -10px; }
+.radio::before { content: ""; position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; border: 2px solid var(--text-2); box-sizing: border-box; }
+.radio[aria-checked="true"]::before { border-color: var(--scribe); }
+.radio[aria-checked="true"]::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--scribe); }
 .menu { position: fixed; right: var(--gutter); bottom: calc(var(--answer-h) + 8px + var(--pad-h, 0px)); z-index: 9; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.4); min-width: 200px; overflow: hidden; }
 .menu button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--tap); padding: 0 16px; border: 0; background: transparent; color: var(--text); text-align: left; }
 .menu button + button { border-top: 1px solid var(--line); }
@@ -303,13 +321,26 @@ pre.code { margin: 0; padding: 12px 14px; font-size: 0.875rem; line-height: 1.5;
 .menu button svg { width: 22px; height: 22px; stroke: var(--text-2); fill: none; stroke-width: 1.75; }
 .sheet { position: fixed; left: 0; right: 0; bottom: calc(var(--answer-h) + var(--pad-h, 0px)); z-index: 9; background: var(--card); border-top: 1px solid var(--line); padding: 12px var(--gutter); display: flex; gap: 8px; align-items: center; }
 .sheet input { flex: 1; min-width: 0; }
+/* ── Print: a setup sheet, black on white ─────────────────────── */
+/* The screen's fields and answer bar are swapped for .print-block: tool name, answer, and every input as text. */
+.print-block { display: none; }
 @media print {
-  .topbar, .answer, .numpad, .menu, .sheet, details.drawer:not(.print), .seg, .lock, .dl-row, .code-head .btn { display: none !important; }
+  :root, :root[data-theme="light"] { --bg: #fff; --card: #fff; --card-2: #fff; --line: #999; --text: #000; --text-2: #222; --text-3: #444; --scribe: #000; --accent: #000; --accent-ink: #fff; --warn: #000; --link: #000; }
+  .topbar, .answer, .numpad, .menu, .sheet, .copied, .help, .field, .sugg, .calc > .seg, .lock, .dl-row, .code-head .btn, .next, details.drawer:not(.print) { display: none !important; }
   body { background: #fff; color: #000; }
   main { padding: 0; }
+  .print-block { display: block; }
+  .print-block h1 { font-size: 1.375rem; margin: 0 0 4px; }
+  .print-answer { font-size: 1.125rem; margin: 0 0 10px; }
+  .print-block table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
+  .print-block th, .print-block td { text-align: left; padding: 3px 10px 3px 0; border-bottom: 1px solid #ccc; font-weight: 400; vertical-align: top; }
+  .print-block td { font-family: var(--mono); white-space: pre-line; }
+  .print-foot { font-size: 0.75rem; margin: 0 0 12px; }
   details.drawer { border: 0; }
-  details.drawer[open] .body, .print-block { display: block !important; }
-  .input { border: 1px solid #999; }
+  details.drawer summary::after { display: none; }
+  details.drawer[open] .body { display: block !important; }
+  .stat, .warn, .table-wrap, .codeblock { break-inside: avoid; }
+  pre.code { max-height: none; overflow: visible; white-space: pre-wrap; }
 }
 
 /* ── Charts / tables ──────────────────────────────────────────── */
@@ -324,6 +355,22 @@ table.chart td.r, table.chart th.r { text-align: right; }
   main { max-width: 720px; margin: 0 auto; width: 100%; }
   .grid { grid-template-columns: repeat(4, 1fr); }
   .answer > .inner, .numpad { max-width: 720px; margin: 0 auto; }
+}
+/* Phone on its side: the pad and answer bar shrink so the field being typed in stays on screen. */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root { --pad-key: 40px; --answer-h: 68px; }
+  :root[data-glove="on"] { --pad-key: 46px; }
+  .topbar { position: static; }
+  table.chart th { top: 0; }
+  .numpad { gap: 4px; padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+  .numpad button { font-size: 1.25rem; }
+  .answer { padding-top: 8px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+  /* no room for the label under the number — but a message ("Enter tool diameter") takes the number's place */
+  .answer:not(.msg) .lbl { display: none; }
+  .answer.msg .big { display: none; }
+  .answer.msg .lbl { grid-column: 1; grid-row: 1; margin: 0; text-transform: none; letter-spacing: 0; }
+  .answer .val { font-size: 1.625rem; }
+  .answer .icon-btn { height: 48px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .numpad, .switch, .switch::after, details.drawer summary::after { transition: none; }
