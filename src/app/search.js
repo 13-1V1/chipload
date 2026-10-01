@@ -41,8 +41,10 @@ export function searchCalcs(query, defs) {
     const s = score(def, terms);
     if (s > 0) out.push({ def, s });
   }
-  // Prefill hits tie at 100; break ties with the calculator's own rank (lower first), then free before Pro.
-  return out.sort((a, b) => b.s - a.s || (a.def.prefillRank ?? 50) - (b.def.prefillRank ?? 50) || (a.def.pro ? 1 : 0) - (b.def.pro ? 1 : 0)).slice(0, 12);
+  // Prefill hits tie at 100: break those with the calculator's own rank (lower first).
+  // Keyword hits: higher score first, then free before Pro, then registration order.
+  const rank = (h) => (h.s >= 100 ? (h.def.prefillRank ?? 50) : 0);
+  return out.sort((a, b) => b.s - a.s || rank(a) - rank(b) || (a.def.pro ? 1 : 0) - (b.def.pro ? 1 : 0)).slice(0, 12);
 }
 
 /** Helpers calculators use inside prefill(). */

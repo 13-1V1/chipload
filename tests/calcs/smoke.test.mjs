@@ -92,4 +92,7 @@ test("typing a thread on the home search ranks tap drill first, then thread data
   assert.ok(hits.every((h) => h.params?.thread === "1/4-20" || !h.params));
   const num = searchCalcs("0.201", allCalcs());
   assert.equal(num[0].def.id, "fraction-converter");
+  // keyword searches: free tools outrank Pro ones that merely mention the word
+  assert.equal(searchCalcs("rpm", allCalcs())[0].def.id, "feeds-mill");
+  assert.equal(searchCalcs("tap", allCalcs())[0].def.id, "tap-drill");
 });
