@@ -112,12 +112,13 @@ main.no-answer { padding-bottom: var(--gutter); }
 .result-btn .prefill { color: var(--scribe); font-family: var(--mono); }
 
 h2.sec { font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); margin: 24px 0 10px; font-weight: 600; }
-.fav-row { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 4px; }
-.fav-row::-webkit-scrollbar { display: none; }
+/* Chips wrap onto more lines — nothing gets cut off at the edge, and no sideways swiping with gloves. */
+.fav-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .chip {
-  flex: none; display: inline-flex; align-items: center; gap: 8px;
+  flex: 0 1 auto; max-width: 100%; display: inline-flex; align-items: center; gap: 8px;
   min-height: var(--tap); padding: 0 16px;
   background: var(--card); border: 1px solid var(--line); border-radius: 999px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .chip:active { background: var(--card-2); }
 .empty { color: var(--text-3); font-size: 0.9375rem; padding: 10px 0; }

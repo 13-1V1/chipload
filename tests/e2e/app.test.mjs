@@ -210,3 +210,23 @@ test("job sheet starts short; 'add one more number' reveals the field and unlock
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test("favorites & recent chips wrap instead of running off the edge", async () => {
+  const { page, ctx, errors } = await open("/");
+  await page.evaluate(() => {
+    localStorage.setItem("chipload.favorites", JSON.stringify(["job-sheet", "feeds-mill"]));
+    localStorage.setItem("chipload.recents", JSON.stringify(["chamfer", "feeds-drill", "tap-drill", "bolt-circle", "thread-data", "right-triangle"]));
+  });
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  const info = await page.evaluate(() => {
+    const row = document.querySelector("#favs").getBoundingClientRect();
+    const chips = [...document.querySelectorAll("#favs .chip")].map((c) => c.getBoundingClientRect());
+    return { count: chips.length, overflow: chips.some((c) => c.right > row.right + 0.5 || c.left < row.left - 0.5), rowRight: row.right, viewport: window.innerWidth, scrollW: document.querySelector("#favs").scrollWidth, clientW: document.querySelector("#favs").clientWidth };
+  });
+  assert.equal(info.count, 6, "two favorites + four recents");
+  assert.equal(info.overflow, false, "no chip is cut off");
+  assert.ok(info.scrollW <= info.clientW + 1, "row does not scroll sideways");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

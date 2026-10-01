@@ -19,7 +19,8 @@ const jobRows = (settings) => COMMON_JOBS.map((j) => { const d = getCalc(j.calc)
 export function renderHome(root) {
   const settings = getSettings();
   const favIds = loadFavorites();
-  const recentIds = loadRecents().filter((id) => !favIds.includes(id));
+  // Favorites always show; recents fill in up to six chips so the wrapped rows stay short.
+  const recentIds = loadRecents().filter((id) => !favIds.includes(id)).slice(0, Math.max(0, 6 - favIds.length));
   const chips = [...favIds.map((id) => [id, true]), ...recentIds.map((id) => [id, false])].map(([id, fav]) => getCalc(id) && { def: getCalc(id), fav }).filter(Boolean);
   const introSeen = loadBlob("introSeen", false);
   const jobsOpen = loadBlob("jobsOpen", true);
