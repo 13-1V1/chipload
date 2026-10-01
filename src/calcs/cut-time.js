@@ -12,6 +12,7 @@ export default register({
   id: "cut-time",
   title: "Removal rate & cut time",
   short: "MRR, passes, and minutes for a milling cut",
+  help: "Minutes for a milling cut from length, feed, and depth per pass. Use it for quotes.",
   category: "mill",
   keywords: ["mrr", "removal rate", "cut time", "cycle time", "passes", "estimate", "quote", "minutes"],
   pro: true,
@@ -20,8 +21,8 @@ export default register({
     { id: "feed", label: "Feed rate", kind: "feed", default: "40", min: 0.0001 },
     { id: "woc", label: "Width of cut", kind: "length", default: "0.25", min: 0 },
     { id: "doc", label: "Depth of cut per pass", kind: "length", default: "0.1", min: 0.0001 },
-    { id: "stock", label: "Total stock to remove (depth)", kind: "length", default: "", optional: true, placeholder: "optional — figures the number of passes" },
-    { id: "rapid", label: "Rapid / repositioning per pass", kind: "number", default: "3", unit: "sec", min: 0 },
+    { id: "stock", advanced: true, label: "Total stock to remove (depth)", kind: "length", default: "", optional: true, placeholder: "optional — figures the number of passes" },
+    { id: "rapid", advanced: true, label: "Rapid / repositioning per pass", kind: "number", default: "3", unit: "sec", min: 0 },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);

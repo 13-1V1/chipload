@@ -22,6 +22,7 @@ export default register({
   id: "ream",
   title: "Pre-ream drill",
   short: "Drill size to leave the right reaming stock",
+  help: "Drill size that leaves the right amount of stock for a reamer.",
   category: "drill",
   keywords: ["ream", "reamer", "pre-ream", "allowance", "stock", "hole"],
   pro: true,

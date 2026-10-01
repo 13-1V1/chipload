@@ -12,6 +12,7 @@ export default register({
   id: "sine-bar",
   title: "Sine bar",
   short: "Gauge block stack for an angle",
+  help: "A sine bar sets an exact angle: stack gauge blocks under one end. This gives the stack height for an angle, or the angle from a stack.",
   category: "inspect",
   keywords: ["sine bar", "sine plate", "gauge blocks", "gage blocks", "angle", "stack"],
   pro: true,

@@ -19,6 +19,7 @@ import "./taper.js";
 // Drill & tap
 import "./tap-drill.js";
 import "./feeds-drill.js";
+import "./saw-speed.js";
 import "./tapping-feed.js";
 import "./chamfer.js";
 import "./ream.js";
@@ -50,4 +51,5 @@ import "./unit-converter.js";
 import "./charts.js";
 import "./reference.js";
 // Shop
+import "./job-sheet.js";
 import "./quote.js";

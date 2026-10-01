@@ -16,6 +16,7 @@ export default register({
   id: "drill-point",
   title: "Drill point & hole depth",
   short: "Point length, Z for full diameter, breakthrough",
+  help: "A drill's point adds length. Gives the Z depth so the full-diameter part of the hole reaches your depth, or breaks through.",
   category: "drill",
   keywords: ["drill point", "point length", "118", "135", "depth", "full diameter", "breakthrough", "through hole", "z depth"],
   pro: true,

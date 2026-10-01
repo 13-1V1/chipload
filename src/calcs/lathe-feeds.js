@@ -13,6 +13,7 @@ export default register({
   id: "lathe-feeds",
   title: "Speeds & feeds — lathe",
   short: "RPM, feed per rev, and G96 surface speed",
+  help: "RPM and feed for turning. Pick the diameter you're cutting and the material. Also gives the G96 surface speed and a max RPM to set.",
   category: "lathe",
   keywords: ["lathe", "turning", "rpm", "ipr", "sfm", "css", "g96", "g97", "feed per rev", "boring"],
   pro: true,
@@ -22,9 +23,9 @@ export default register({
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Insert", kind: "segment", default: "coated", options: [{ value: "hss", label: "HSS" }, { value: "carbide", label: "Carbide" }, { value: "coated", label: "Coated" }] },
     { id: "cut", label: "Cut", kind: "segment", default: "rough", options: [{ value: "rough", label: "Rough" }, { value: "finish", label: "Finish" }] },
-    { id: "sfm", label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType).sfm * 1.2, c.units), hint: "Blank = library value × 1.2 (turning runs a bit faster)." },
-    { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(raw.cut === "finish" ? 0.004 : 0.012, c.units), hint: "Blank = 0.012 rough / 0.004 finish." },
-    { id: "length", label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
+    { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType).sfm * 1.2, c.units), hint: "Blank = library value × 1.2 (turning runs a bit faster)." },
+    { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(raw.cut === "finish" ? 0.004 : 0.012, c.units), hint: "Blank = 0.012 rough / 0.004 finish." },
+    { id: "length", advanced: true, label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);

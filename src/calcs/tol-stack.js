@@ -28,6 +28,7 @@ export default register({
   id: "tol-stack",
   title: "Tolerance stack",
   short: "Worst case and RSS stack-up",
+  help: "Add up several toleranced dimensions and see the worst case and the statistical (RSS) range.",
   category: "inspect",
   keywords: ["tolerance", "stack", "stackup", "stack-up", "rss", "worst case", "statistical"],
   pro: true,

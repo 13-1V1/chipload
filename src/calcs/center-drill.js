@@ -12,6 +12,7 @@ export default register({
   id: "center-drill",
   title: "Center drill",
   short: "Sizes and depth for a countersink diameter",
+  help: "Center drill sizes and how deep to go for a given countersink diameter.",
   category: "drill",
   keywords: ["center drill", "centre drill", "combined drill", "countersink", "60", "lathe center", "spot"],
   pro: true,

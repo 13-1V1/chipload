@@ -14,6 +14,7 @@ export default register({
   id: "surface-finish",
   title: "Surface finish (Ra)",
   short: "Finish from feed and nose radius, or feed for a target Ra",
+  help: "Predicts the finish (Ra) you'll get from a feed and nose radius on the lathe, or the feed you need for a finish callout.",
   category: "lathe",
   keywords: ["surface finish", "ra", "rms", "roughness", "nose radius", "microinch", "feed", "finish pass"],
   pro: true,

@@ -8,6 +8,7 @@ import { GDT_SYMBOLS } from "../data/gdt.js";
 import { SHCS_INCH, SHCS_METRIC } from "../data/shcs.js";
 import { MATERIALS, materialOptions, materialById } from "../data/materials-library.js";
 import { convertHardness } from "../data/hardness.js";
+import { GLOSSARY } from "../data/glossary.js";
 import { fmt } from "../core/format.js";
 import { lenPlaces } from "./_util.js";
 
@@ -15,6 +16,7 @@ register({
   id: "gdt",
   title: "GD&T symbols",
   short: "Every Y14.5 symbol in plain English",
+  help: "Every GD&T symbol with what it means in plain words.",
   category: "reference",
   keywords: ["gd&t", "gdt", "symbol", "flatness", "position", "runout", "profile", "perpendicularity", "mmc", "datum", "y14.5", "feature control frame"],
   view: "chart",
@@ -27,12 +29,13 @@ register({
 
 register({
   id: "shcs",
-  title: "Counterbore & clearance chart",
-  short: "Socket head cap screws, inch and metric",
+  title: "Clearance & counterbore chart",
+  short: "Drill sizes for bolts to pass through, and counterbores",
+  help: "Drill sizes so a bolt passes through (clearance), and counterbore sizes so the head sits flush. Inch and metric.",
   category: "reference",
-  keywords: ["counterbore", "cbore", "shcs", "socket head", "cap screw", "clearance hole", "b18.3", "iso 4762", "spotface"],
+  keywords: ["counterbore", "cbore", "shcs", "socket head", "cap screw", "clearance hole", "b18.3", "iso 4762", "spotface", "clearance hole", "bolt hole", "screw hole", "through hole", "cap screw", "head size"],
   view: "chart",
-  pro: true,
+  pro: false,
   placeholder: "Filter: 1/4, #10, M6",
   columns: [
     { key: "size", label: "Screw" }, { key: "head", label: "Head Ø", align: "right" }, { key: "depth", label: "Cbore depth", align: "right" },
@@ -50,6 +53,7 @@ register({
   id: "materials",
   title: "Material library",
   short: `${MATERIALS.length} materials: machinability, SFM, chip load, density`,
+  help: "The machinability library behind the speeds & feeds tools: ratings, speeds, chip loads, density for 196 materials.",
   category: "reference",
   keywords: ["material", "machinability", "library", "sfm", "4140", "6061", "304", "inconel", "titanium", "density", "rating"],
   view: "chart",
@@ -67,6 +71,7 @@ register({
   id: "hardness",
   title: "Hardness conversion",
   short: "Rockwell C/B, Brinell, Vickers, tensile",
+  help: "Convert between Rockwell, Brinell, and Vickers hardness, with approximate steel tensile strength.",
   category: "reference",
   keywords: ["hardness", "rockwell", "hrc", "hrb", "brinell", "hb", "bhn", "vickers", "hv", "tensile", "e140"],
   pro: true,
@@ -98,6 +103,7 @@ register({
   id: "material-weight",
   title: "Material weight",
   short: "Bar, plate, tube, hex weight and cost",
+  help: "Weight of a bar, plate, tube, or hex from its size and material, plus cost per pound.",
   category: "reference",
   keywords: ["weight", "mass", "stock", "bar", "plate", "tube", "hex", "round", "density", "cost", "price per pound", "quote"],
   pro: true,
@@ -143,4 +149,18 @@ register({
       historyLabel: `${v.shape} ${m.name.split(" ")[0]} · ${fmt(total, 2)} lb`,
     };
   },
+});
+
+register({
+  id: "glossary",
+  title: "Shop terms",
+  short: "SFM, IPM, chip load, pitch diameter… in plain English",
+  help: "Shop words in plain English — SFM, IPM, chip load, pitch diameter, and the rest. Type a word to find it.",
+  category: "reference",
+  keywords: ["glossary", "terms", "what is", "what does", "meaning", "definition", "sfm", "ipm", "chip load", "beginner", "learn"],
+  view: "chart",
+  placeholder: "Find a term: sfm, chip load, tenths",
+  columns: [{ key: "term", label: "Term" }, { key: "name", label: "Stands for" }, { key: "meaning", label: "Means" }],
+  rows: () => GLOSSARY.map(([term, name, meaning]) => ({ term, name, meaning })),
+  note: "Written for people new to the shop. Pros: skip it, or send it to the new guy.",
 });

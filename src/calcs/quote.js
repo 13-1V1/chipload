@@ -10,6 +10,7 @@ export default register({
   id: "quote",
   title: "Quote helper",
   short: "Price per part from cycle time and shop rate",
+  help: "Price per part from cycle time, setup, shop rate, material, and markup.",
   category: "shop",
   keywords: ["quote", "price", "estimate", "shop rate", "cycle time", "setup", "markup", "cost per part", "job"],
   pro: true,

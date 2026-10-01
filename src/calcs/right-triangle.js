@@ -21,8 +21,9 @@ export default register({
   id: "right-triangle",
   title: "Right triangle",
   short: "Sides and angles from any two knowns",
+  help: "Enter any two things you know about a right triangle and get the rest — for angles, chamfers, or setting a part over at an angle.",
   category: "geometry",
-  keywords: ["triangle", "trig", "angle", "hypotenuse", "sine", "cosine", "tangent", "rise", "run", "chamfer angle"],
+  keywords: ["triangle", "trig", "angle", "hypotenuse", "sine", "cosine", "tangent", "rise", "run", "chamfer angle", "angle", "chamfer angle", "degrees", "side"],
   pro: false,
   inputs: [
     { id: "mode", label: "I know", kind: "select", default: "runRise",

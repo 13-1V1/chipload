@@ -7,8 +7,23 @@
 import { parseThreadSpec } from "../core/thread.js";
 import { parseFraction } from "../core/format.js";
 
+// How beginners type it → the words the catalog uses.
+const SYNONYMS = [
+  [/\bband\s*-?\s*saws?\b|\bbandsaws?\b/g, "band saw"], [/\bhack\s*saws?\b/g, "hacksaw"], [/\bchop\s*saw\b|\bcut\s*-?\s*off\s*saw\b/g, "cutoff saw"],
+  [/\bdrill\s*bits?\b/g, "drill"], [/\bbits?\b/g, "drill"], [/\bhow fast\b|\bspeeds?\b/g, "speed"], [/\bspindle\s*speed\b|\bspins?\b/g, "rpm"],
+  [/\bfeed\s*rates?\b|\bfeedrate\b/g, "feed"], [/\bcounter\s*bores?\b/g, "counterbore"], [/\bcounter\s*sinks?\b/g, "countersink"],
+  [/\bmillimet(?:er|re)s?\b/g, "mm"], [/\binches\b/g, "inch"], [/\bhole\s*size\b/g, "hole"], [/\bconvert(?:ing|er)?\b/g, "convert"], [/\bangles?\b/g, "angle"],
+];
+const STOP = new Set(["a", "an", "the", "for", "to", "of", "my", "i", "do", "what", "which", "is", "in", "on", "with", "and", "or", "size", "me", "need", "want", "find", "get", "how", "will", "it", "take", "much", "should", "can", "does", "be", "this", "that", "at", "from", "into", "use", "using", "run", "set"]);
+function normalizeQuery(q) {
+  let t = String(q).toLowerCase();
+  for (const [re, rep] of SYNONYMS) t = t.replace(re, rep);
+  return t;
+}
+
+const hayFor = (def) => `${def.title} ${def.short || ""} ${(def.keywords || []).join(" ")} ${def.category}`.toLowerCase();
 function score(def, terms) {
-  const hay = `${def.title} ${def.short || ""} ${(def.keywords || []).join(" ")} ${def.category}`.toLowerCase();
+  const hay = hayFor(def);
   let s = 0;
   for (const t of terms) {
     if (!t) continue;
@@ -28,22 +43,34 @@ export function searchCalcs(query, defs) {
   if (!q) return [];
   const out = [];
 
-  // Value recognition first: each calculator may claim the query.
+  // Pull a value out of a sentence ("what drill for a 1/4-20 tap" → "1/4-20") so tools can prefill it.
+  const rawTokens = q.split(/\s+/).filter(Boolean);
+  const valueToken = rawTokens.find((t) => parseThreadSpec(t) || /^-?\d[\d.,\/]*(?:mm|in|")?$/i.test(t)) || null;
+  const valueQuery = rawTokens.length === 1 ? q : (valueToken || q);
+
+  // Value recognition: each calculator may claim the value.
+  const prefills = new Map();
   for (const def of defs) {
     if (typeof def.prefill !== "function") continue;
-    const hit = def.prefill(q);
-    if (hit) out.push({ def, params: hit.params, prefillLabel: hit.label, s: 100 });
+    const hit = def.prefill(valueQuery) || (valueQuery !== q ? def.prefill(q) : null);
+    if (hit) prefills.set(def, hit);
   }
 
-  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const normalized = normalizeQuery(rawTokens.filter((t) => t !== valueToken).join(" "));
+  const allTerms = normalized.split(/\s+/).filter(Boolean);
+  const terms = allTerms.filter((t) => !STOP.has(t));
+  const phrase = terms.join(" ");
   for (const def of defs) {
-    if (out.some((o) => o.def === def)) continue;
-    const s = score(def, terms);
-    if (s > 0) out.push({ def, s });
+    const kw = terms.length ? score(def, terms) : 0;
+    const bonus = phrase && hayFor(def).includes(phrase) ? 4 : 0;
+    const hit = prefills.get(def);
+    // A value only outranks the words around it when there are no other words, or this tool matches them too.
+    const pre = hit ? ((!terms.length || kw > 0) ? 50 : 1) : 0;
+    const s = pre + kw + bonus;
+    if (s > 0) out.push({ def, s, params: hit?.params, prefillLabel: hit?.label });
   }
-  // Prefill hits tie at 100: break those with the calculator's own rank (lower first).
-  // Keyword hits: higher score first, then free before Pro, then registration order.
-  const rank = (h) => (h.s >= 100 ? (h.def.prefillRank ?? 50) : 0);
+  // Score first; among value hits the calculator's own rank; then free before Pro; then registration order.
+  const rank = (h) => (h.params ? (h.def.prefillRank ?? 50) : 0);
   return out.sort((a, b) => b.s - a.s || rank(a) - rank(b) || (a.def.pro ? 1 : 0) - (b.def.pro ? 1 : 0)).slice(0, 12);
 }
 

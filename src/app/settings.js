@@ -7,7 +7,7 @@
 export const SHARE_BASE = "https://13-1v1.github.io/chipload/";
 
 const KEY = "chipload.settings.v1";
-const DEFAULTS = Object.freeze({ units: "in", theme: "dark", glove: false, pro: false, places: 4 });
+const DEFAULTS = Object.freeze({ units: "in", theme: "dark", glove: false, pro: false, places: 4, tips: true });
 const listeners = new Set();
 let state = load();
 

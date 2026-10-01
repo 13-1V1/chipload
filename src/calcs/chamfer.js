@@ -12,6 +12,7 @@ export default register({
   id: "chamfer",
   title: "Countersink & chamfer depth",
   short: "Z depth for a countersink or chamfer",
+  help: "How deep to go with a countersink or chamfer tool to reach a given diameter.",
   category: "drill",
   keywords: ["countersink", "chamfer", "csk", "82", "90", "100", "118", "depth", "spot drill"],
   pro: true,

@@ -12,6 +12,7 @@ export default register({
   id: "taper",
   title: "Taper & included angle",
   short: "TPF, angle, and compound-rest setting",
+  help: "Taper per foot and the angle to set the compound rest, from two diameters and a length.",
   category: "lathe",
   keywords: ["taper", "tpf", "taper per foot", "included angle", "half angle", "compound", "morse", "jacobs"],
   pro: true,

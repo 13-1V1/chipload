@@ -3,7 +3,7 @@
 
 // Boot: theme, calculator modules, router → screens.
 
-import { applyTheme, onSettings } from "./settings.js";
+import { applyTheme, onSettings, getSettings, setSetting } from "./settings.js";
 import { onRoute, startRouter, navigate, back } from "./router.js";
 import { getCalc } from "./registry.js";
 import { mountCalculator, hideAnswerBar } from "./render.js";
@@ -23,12 +23,20 @@ const main = document.querySelector("main");
 const title = document.querySelector("#title");
 const backBtn = document.querySelector("#back");
 const settingsBtn = document.querySelector("#settingsBtn");
+const gloveBtn = document.querySelector("#gloveBtn");
+const helpBtn = document.querySelector("#helpBtn");
 let current = null;
 
 backBtn.addEventListener("click", back);
 settingsBtn.addEventListener("click", () => navigate("/settings"));
+// Glove mode is one tap from every screen — you shouldn't have to take a glove off to turn it on.
+const syncGlove = () => gloveBtn.setAttribute("aria-pressed", String(!!getSettings().glove));
+gloveBtn.addEventListener("click", () => setSetting("glove", !getSettings().glove));
+onSettings(syncGlove);
+syncGlove();
+helpBtn.addEventListener("click", () => current?.toggleHelp?.());
 
-function screen(name, { showBack = true, answer = false } = {}) {
+function screen(name, { showBack = true, answer = false, tool = false } = {}) {
   current?.destroy?.();
   current = null;
   closeNumpad();
@@ -38,6 +46,8 @@ function screen(name, { showBack = true, answer = false } = {}) {
   title.textContent = name;
   document.title = name === "Chipload" ? "Chipload" : `${name} · Chipload`;
   backBtn.hidden = !showBack;
+  helpBtn.hidden = !tool;
+  settingsBtn.hidden = tool; // on a tool screen the bar is back · title · ? · glove
   window.scrollTo(0, 0);
 }
 
@@ -48,9 +58,10 @@ onRoute(({ segments, params }) => {
   if (head === "calc") {
     const def = getCalc(id);
     if (!def) { screen("Not found"); main.innerHTML = `<div class="empty">That tool doesn't exist. <a href="#/">Go home</a>.</div>`; return; }
-    if (def.view === "chart") { screen(def.title); current = mountChart(def, main, { params }); return; }
-    screen(def.title, { answer: true });
+    if (def.view === "chart") { screen(def.title, { tool: true }); current = mountChart(def, main, { params }); helpBtn.hidden = !current?.hasHelp; return; }
+    screen(def.title, { answer: true, tool: true });
     current = mountCalculator(def, main, { params });
+    helpBtn.hidden = !current?.hasHelp;
     return;
   }
   if (head === "shop") { screen("Shop"); renderShop(main, id || "machines"); return; }

@@ -12,6 +12,7 @@ export default register({
   id: "true-position",
   title: "True position",
   short: "Position error from X/Y deviation, with MMC bonus",
+  help: "Is a hole where the print says? Converts X/Y error to the position value inspectors use, with bonus tolerance at MMC.",
   category: "inspect",
   keywords: ["true position", "position", "gd&t", "mmc", "bonus", "tolerance zone", "cmm", "deviation", "y14.5"],
   pro: true,

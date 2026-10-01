@@ -13,6 +13,7 @@ export default register({
   id: "sti",
   title: "STI insert tap drill",
   short: "Drill for Heli-Coil style screw-thread inserts",
+  help: "Drill size for a Heli-Coil type wire insert — bigger than the plain tap drill.",
   category: "thread",
   keywords: ["sti", "helicoil", "heli-coil", "insert", "thread repair", "wire insert", "keensert", "tap drill"],
   pro: true,

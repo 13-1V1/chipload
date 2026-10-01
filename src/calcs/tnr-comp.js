@@ -14,6 +14,7 @@ export default register({
   id: "tnr-comp",
   title: "Nose radius comp & G-code",
   short: "Chamfer / taper / radius offsets without G41-G42, plus a snippet",
+  help: "A lathe tool's nose is round, not a point. This gives the shifts to program a chamfer or taper without G41/G42, and a snippet with it.",
   category: "lathe",
   keywords: ["tool nose", "tnr", "nose radius", "compensation", "g41", "g42", "chamfer", "taper", "radius", "g02", "g03", "lathe g-code"],
   pro: true,
@@ -26,9 +27,9 @@ export default register({
     { id: "size", label: "Chamfer size (axial, Z)", kind: "length", default: "0.05", min: 0, showIf: (r) => r.feature === "chamfer" },
     { id: "radius", label: "Part radius", kind: "length", default: "0.125", min: 0.0001, showIf: (r) => r.feature === "radius" },
     { id: "convex", label: "Radius is", kind: "segment", default: "convex", options: [{ value: "convex", label: "Outside corner" }, { value: "concave", label: "Inside fillet" }], showIf: (r) => r.feature === "radius" },
-    { id: "dia", label: "Diameter the feature starts from", kind: "length", default: "1", min: 0 },
-    { id: "z", label: "Z of the face / corner", kind: "length", default: "0" },
-    { id: "feed", label: "Feed per rev", kind: "feedRev", default: "0.006", min: 0 },
+    { id: "dia", advanced: true, label: "Diameter the feature starts from", kind: "length", default: "1", min: 0 },
+    { id: "z", advanced: true, label: "Z of the face / corner", kind: "length", default: "0" },
+    { id: "feed", advanced: true, label: "Feed per rev", kind: "feedRev", default: "0.006", min: 0 },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);

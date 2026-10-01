@@ -14,6 +14,7 @@ export default register({
   id: "thread-metric",
   title: "Metric thread limits",
   short: "6g / 6H limits from ISO 965",
+  help: "Max and min sizes for metric threads by tolerance class (6g for the screw, 6H for the hole).",
   category: "thread",
   keywords: ["metric", "iso", "6g", "6h", "4h", "8g", "tolerance class", "limits", "pitch diameter", "m10", "m8"],
   pro: true,

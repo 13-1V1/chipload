@@ -31,8 +31,9 @@ export default register({
   id: "feeds-drill",
   title: "Speeds & feeds — drill",
   short: "RPM, feed, and time per hole",
+  help: "RPM and feed for a drill bit in a drill press or mill. Pick the drill size and material. If your machine only has a few speeds, use the closest one below the number.",
   category: "drill",
-  keywords: ["drill", "rpm", "ipr", "feed", "sfm", "hole", "drilling speed"],
+  keywords: ["drill", "rpm", "ipr", "feed", "sfm", "hole", "drilling speed", "drill bit", "drill press", "how fast to drill", "drilling speed"],
   pro: false,
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
@@ -40,12 +41,12 @@ export default register({
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Drill", kind: "segment", default: "hss",
       options: [{ value: "hss", label: "HSS / cobalt" }, { value: "carbide", label: "Carbide" }] },
-    { id: "sfm", label: "Surface speed", kind: "speed", default: "", places: 0,
+    { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0,
       auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType === "carbide" ? "carbide" : "hss").drillSfm, c.units),
       hint: "Leave blank to use the table value." },
-    { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "", places: 4,
+    { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4,
       auto: (raw, c, v) => fromIn(drillFeedPerRev(toIn(Number.isFinite(v.diameter) ? v.diameter : 0.25, c.units)), c.units) },
-    { id: "depth", label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "optional — gives time per hole" },
+    { id: "depth", advanced: true, label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "optional — gives time per hole" },
   ],
   compute(v, c) {
     const dIn = toIn(v.diameter, c.units);

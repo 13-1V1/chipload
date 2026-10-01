@@ -21,6 +21,7 @@ export default register({
   id: "oblique-triangle",
   title: "Any triangle",
   short: "Law of sines / cosines from three knowns",
+  help: "Any triangle, not just right ones. Give three things and get the rest.",
   category: "geometry",
   keywords: ["oblique", "triangle", "law of sines", "law of cosines", "sss", "sas", "asa", "angle", "any triangle"],
   pro: true,

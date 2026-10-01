@@ -12,6 +12,7 @@ export default register({
   id: "thermal",
   title: "Thermal expansion",
   short: "Size change with temperature, by material",
+  help: "How much a part grows or shrinks with temperature, so a hot part doesn't measure wrong.",
   category: "inspect",
   keywords: ["thermal", "expansion", "temperature", "68", "20c", "grow", "shrink", "shrink fit", "heat", "coefficient"],
   pro: true,

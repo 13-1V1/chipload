@@ -12,6 +12,7 @@ export default register({
   id: "fillet",
   title: "Fillet tangent points",
   short: "Where an arc starts and ends between two lines",
+  help: "Where an arc starts and ends when it blends two lines — for programming G02/G03.",
   category: "geometry",
   keywords: ["fillet", "tangent", "corner radius", "blend", "arc start", "g02", "g03", "included angle"],
   pro: true,

@@ -22,6 +22,7 @@ export default register({
   id: "acme",
   title: "ACME thread",
   short: "29° general-purpose geometry and class allowance",
+  help: "29° Acme threads used on lead screws: basic sizes and class allowance.",
   category: "thread",
   keywords: ["acme", "29", "lead screw", "leadscrew", "trapezoidal", "2g", "3g", "4g", "power screw"],
   pro: true,

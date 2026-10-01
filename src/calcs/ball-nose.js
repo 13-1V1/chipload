@@ -20,6 +20,7 @@ export default register({
   id: "ball-nose",
   title: "Ball nose scallop & effective dia",
   short: "Stepover for a finish, RPM at the real cutting diameter",
+  help: "For 3D finishing with a ball end mill: how far to step over for the finish you want, and the real cutting diameter at a shallow depth.",
   category: "mill",
   keywords: ["ball nose", "ball end mill", "scallop", "cusp", "stepover", "effective diameter", "3d finish", "surface finish"],
   pro: true,
@@ -28,8 +29,8 @@ export default register({
     { id: "mode", label: "Find", kind: "segment", default: "stepover", options: [{ value: "stepover", label: "Stepover" }, { value: "scallop", label: "Scallop" }] },
     { id: "scallop", label: "Scallop height wanted", kind: "length", default: "0.0005", min: 0, showIf: (r) => r.mode === "stepover" },
     { id: "stepover", label: "Stepover", kind: "length", default: "0.05", min: 0, showIf: (r) => r.mode === "scallop" },
-    { id: "depth", label: "Axial depth of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives effective diameter" },
-    { id: "sfm", label: "Surface speed", kind: "speed", default: "", optional: true, placeholder: "optional — RPM at effective dia" },
+    { id: "depth", advanced: true, label: "Axial depth of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives effective diameter" },
+    { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", optional: true, placeholder: "optional — RPM at effective dia" },
   ],
   compute(v, c) {
     const p = c.units === "in" ? 4 : 3;

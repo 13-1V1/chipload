@@ -17,6 +17,7 @@ export default register({
   id: "fits",
   title: "Fits & limits (ISO 286)",
   short: "H7/g6 and friends: hole and shaft limits, clearance",
+  help: "Hole and shaft sizes for a fit callout like H7/g6, and how much clearance or press you get.",
   category: "inspect",
   keywords: ["fit", "fits", "limits", "h7", "g6", "p6", "press fit", "clearance", "interference", "iso 286", "tolerance grade", "it7"],
   pro: true,

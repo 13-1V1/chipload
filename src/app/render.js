@@ -8,7 +8,7 @@ import { fmt, parseDimension } from "../core/format.js";
 import { buildValues, optionsFor, NUMERIC_KINDS } from "./values.js";
 import { CALCULATION_SOURCES } from "../data/sources.js";
 import { getSettings, setSetting, UNIT_LABEL } from "./settings.js";
-import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, loadBlob } from "./store.js";
+import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, loadBlob, saveBlob } from "./store.js";
 import { attachNumpad, closeNumpad } from "./numpad.js";
 import { ICONS } from "./icons.js";
 import { toast, download, share, printScreen } from "./ui.js";
@@ -63,6 +63,22 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   calc.className = "calc";
   root.append(calc);
 
+  // ── "What is this?" help card: shows once per tool while tips are on, and on demand from the ? button ──
+  let helpCard = null;
+  const helpText = def.help || def.short || "";
+  function toggleHelp(force) {
+    const show = force ?? !helpCard;
+    if (!show) { helpCard?.remove(); helpCard = null; return; }
+    if (helpCard) return;
+    helpCard = document.createElement("div");
+    helpCard.className = "help";
+    helpCard.setAttribute("role", "note");
+    helpCard.innerHTML = `<div><b>${esc(def.title)}</b> — ${esc(helpText)}</div><div class="row"><a class="btn small" href="#/calc/glossary">Shop terms</a><button type="button" class="btn small primary" data-gotit>Got it</button></div>`;
+    helpCard.querySelector("[data-gotit]").addEventListener("click", () => { markHelpSeen(def.id); toggleHelp(false); });
+    calc.prepend(helpCard);
+  }
+  if (getSettings().tips !== false && !helpSeen(def.id) && helpText) toggleHelp(true);
+
   // ── Unit toggle ──
   if (def.units !== false) {
     const seg = document.createElement("div");
@@ -92,6 +108,17 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   const fieldWraps = {};
   const unitLabels = {};
   const numericInputs = [];
+  const advancedInputs = def.inputs.filter((i) => i.advanced);
+  let more = null, moreBody = null;
+  if (advancedInputs.length) {
+    more = document.createElement("details");
+    more.className = "drawer more";
+    const changed = advancedInputs.some((i) => String(raw[i.id] ?? "").trim() !== "" && String(raw[i.id]) !== String(i.default ?? ""));
+    more.open = saved.more === true || changed;
+    more.innerHTML = `<summary>More options<span class="sub">${esc(advancedInputs.slice(0, 3).map((i) => i.label.replace(/\s*\(.*?\)/g, "").toLowerCase()).join(", "))}${advancedInputs.length > 3 ? "…" : ""}</span></summary><div class="body"></div>`;
+    moreBody = more.querySelector(".body");
+    more.addEventListener("toggle", () => saveInputs(def.id, { ...(loadInputs(def.id) || {}), more: more.open }));
+  }
 
   for (const input of def.inputs) {
     const wrap = document.createElement("div");
@@ -161,8 +188,9 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     fields[input.id] = control;
     wrap.append(control);
     if (input.hint) { const h = document.createElement("div"); h.className = "hint"; h.textContent = input.hint; wrap.append(h); }
-    calc.append(wrap);
+    (input.advanced ? moreBody : calc).append(wrap);
   }
+  if (more) calc.append(more);
 
   // ── Output regions ──
   const locked = !!def.pro && !getSettings().pro;
@@ -287,7 +315,7 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
         el.classList.toggle("bad", invalid.has(input.id) && String(raw[input.id]).trim() !== "");
       }
     }
-    saveInputs(def.id, { values: raw, units });
+    saveInputs(def.id, { values: raw, units, more: more ? more.open : undefined });
 
     if (invalid.size) { renderEmpty("Check the highlighted field"); return; }
     let out;
@@ -376,7 +404,16 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     const lockedDls = (out.downloads || []).filter((d) => d.pro && !pro);
     if (dls.length) html += `<div class="dl-row">${dls.map((d) => `<button type="button" class="btn" data-dl="${esc(d.filename)}" data-mime="${esc(d.mime || "text/plain")}" data-text="${esc(d.text)}">${esc(d.label)}</button>`).join("")}</div>`;
     if (lockedDls.length) html += lockStub(lockedDls.map((d) => d.label).join(" / "));
+    if (out.next?.length) {
+      html += `<div class="next"><div class="next-h">Add one more number to get…</div>${out.next.map((n) => `<button type="button" class="next-item" ${n.input ? `data-focus="${esc(n.input)}"` : ""} ${n.href ? `data-href="${esc(n.href)}"` : ""}><b>${esc(n.add)}</b><span>→ ${esc(n.get)}</span></button>`).join("")}</div>`;
+    }
     extras.innerHTML = html;
+    extras.querySelectorAll("[data-href]").forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.href; }));
+    extras.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
+      const el = fields[b.dataset.focus]; if (!el) return;
+      if (more && more.contains(el)) more.open = true;
+      el.focus(); el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }));
     extras.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied"); } catch { toast("Copy blocked"); }
     }));
@@ -419,8 +456,14 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
   return {
     destroy() { clearTimeout(historyTimer); closeNumpad(); closeMenu(); closeSheet(); },
     setUnits(u) { if (u !== units) calc.querySelector(`.seg [data-u="${u}"]`)?.click(); },
+    toggleHelp,
+    hasHelp: !!helpText,
   };
 }
+
+/** Per-tool "Got it" memory for the help card. */
+export function helpSeen(id) { return (loadBlob("helpSeen", []) || []).includes(id); }
+export function markHelpSeen(id) { const list = loadBlob("helpSeen", []) || []; if (!list.includes(id)) saveBlob("helpSeen", [...list, id]); }
 
 export function hideAnswerBar() {
   const a = document.querySelector(".answer");

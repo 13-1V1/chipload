@@ -8,30 +8,39 @@ import { allCalcs, calcsInCategory, getCalc } from "./registry.js";
 import { searchCalcs } from "./search.js";
 import { navigate } from "./router.js";
 import { getSettings, setSetting } from "./settings.js";
-import { loadFavorites, loadRecents } from "./store.js";
+import { loadFavorites, loadRecents, loadBlob, saveBlob } from "./store.js";
+import { COMMON_JOBS } from "./common-jobs.js";
 import { getBillingState, onBilling } from "./billing.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+const jobRows = (settings) => COMMON_JOBS.map((j) => { const d = getCalc(j.calc); if (!d) return ""; return `<li><button type="button" class="row-btn" data-calc="${j.calc}"><span class="t">${esc(j.label)}<span class="sub">${esc(j.hint)}</span></span>${d.pro && !settings.pro ? `<span class="pro-tag">PRO</span>` : ""}<span class="chev">${ICONS.chevron}</span></button></li>`; }).join("");
+
 export function renderHome(root) {
   const settings = getSettings();
-  root.innerHTML = `
-    <label class="search"><span class="sr-only">Search tools or type a value</span>${ICONS.search}<input id="q" type="search" placeholder="Search: tap, 1/4-20, rpm…" autocomplete="off" autocapitalize="off" enterkeyhint="go"></label>
-    <ul class="results" id="results" hidden></ul>
-    <div id="homeBody">
-      <h2 class="sec">Favorites &amp; recent</h2>
-      <div class="fav-row" id="favs"></div>
-      <h2 class="sec">Categories</h2>
-      <div class="grid">${CATEGORIES.map((c) => `<button type="button" class="cat" data-cat="${c.id}">${ICONS[c.id]}<span><span class="n">${c.name}</span><br><span class="c">${c.blurb}</span></span></button>`).join("")}</div>
-    </div>`;
-
-  const favs = root.querySelector("#favs");
   const favIds = loadFavorites();
   const recentIds = loadRecents().filter((id) => !favIds.includes(id));
   const chips = [...favIds.map((id) => [id, true]), ...recentIds.map((id) => [id, false])].map(([id, fav]) => getCalc(id) && { def: getCalc(id), fav }).filter(Boolean);
-  favs.innerHTML = chips.length
-    ? chips.map(({ def, fav }) => `<button type="button" class="chip" data-calc="${def.id}">${fav ? ICONS.starFilled.replace("<svg", '<svg width="18" height="18" style="color:var(--scribe)"') : ""}${esc(def.title)}</button>`).join("")
-    : `<div class="empty">Tools you star or open show up here.</div>`;
+  const introSeen = loadBlob("introSeen", false);
+  const jobsOpen = loadBlob("jobsOpen", true);
+
+  const favHtml = chips.length ? `<h2 class="sec">Favorites &amp; recent</h2><div class="fav-row" id="favs">${chips.map(({ def, fav }) => `<button type="button" class="chip" data-calc="${def.id}">${fav ? ICONS.starFilled.replace("<svg", '<svg width="18" height="18" style="color:var(--scribe)"') : ""}${esc(def.title)}</button>`).join("")}</div>` : "";
+  const jobsHtml = `<details class="drawer jobs" id="jobs" ${jobsOpen ? "open" : ""}><summary>Common jobs<span class="sub">plain-English starting points</span></summary><div class="body"><ul class="list">${jobRows(settings)}</ul></div></details>`;
+  // Pros with favorites get them first; everyone else starts with the plain-English list.
+  const middle = favIds.length ? favHtml + `<div style="height:16px"></div>` + jobsHtml : jobsHtml + (favHtml ? `<div style="height:16px"></div>` + favHtml : "");
+
+  root.innerHTML = `
+    <label class="search"><span class="sr-only">Search tools or type a value</span>${ICONS.search}<input id="q" type="search" placeholder="What do you need? tap drill, 1/4-20, band saw…" autocomplete="off" autocapitalize="off" enterkeyhint="go"></label>
+    <ul class="results" id="results" hidden></ul>
+    <div id="homeBody">
+      ${introSeen ? "" : `<div class="intro" id="intro"><div><b>New here?</b> Start with <b>Common jobs</b>, or type what you're trying to do. Tap the glove at the top for bigger buttons. Every answer shows how it was figured.</div><div class="row"><a class="btn small" href="#/calc/glossary">Shop terms</a><button type="button" class="btn small primary" id="introOk">Got it</button></div></div><div style="height:16px"></div>`}
+      ${middle}
+      <h2 class="sec">All tools</h2>
+      <div class="grid">${CATEGORIES.map((c) => `<button type="button" class="cat" data-cat="${c.id}">${ICONS[c.id]}<span><span class="n">${c.name}</span><br><span class="c">${c.blurb}</span></span></button>`).join("")}</div>
+    </div>`;
+
+  root.querySelector("#introOk")?.addEventListener("click", () => { saveBlob("introSeen", true); const i = root.querySelector("#intro"); i.nextElementSibling?.remove(); i.remove(); });
+  root.querySelector("#jobs")?.addEventListener("toggle", (e) => saveBlob("jobsOpen", e.target.open));
 
   root.addEventListener("click", (e) => {
     const cat = e.target.closest("[data-cat]");
@@ -54,8 +63,7 @@ export function renderHome(root) {
       ? hits.map((h) => `<li><button type="button" class="result-btn" data-calc="${h.def.id}" ${h.params ? `data-params='${esc(JSON.stringify(h.params))}'` : ""}>
           <span class="t">${esc(h.def.title)}${h.prefillLabel ? ` <span class="prefill">${esc(h.prefillLabel)}</span>` : ""}<br><span class="k">${esc(h.def.short || "")}</span></span>
           ${h.def.pro && !settings.pro ? `<span class="pro-tag">PRO</span>` : ""}${ICONS.chevron}</button></li>`).join("")
-      : `<li class="empty">No tool matches “${esc(q.value)}”. Try a category below.</li>`;
-    if (!hits.length) body.hidden = false;
+      : `<li class="empty">Nothing called “${esc(q.value)}”. Try one of these:</li>${jobRows(settings)}`;
   };
   q.addEventListener("input", run);
   q.addEventListener("keydown", (e) => {
@@ -84,7 +92,8 @@ export function renderSettings(root) {
     <div class="list">
       <div class="setting"><span class="t">Units<span class="sub">Default for every calculator</span></span>
         <div class="seg" style="min-width:160px"><button type="button" data-units="in" aria-pressed="${s.units === "in"}">inch</button><button type="button" data-units="mm" aria-pressed="${s.units === "mm"}">mm</button></div></div>
-      ${sw("glove", "Glove mode", "Bigger keys and buttons", s.glove)}
+      ${sw("glove", "Glove mode", "Bigger keys and buttons (also the glove button up top)", s.glove)}
+      ${sw("tips", "Show tips", "A plain-English card the first time you open each tool", s.tips !== false)}
       ${sw("light", "Light theme", "For bright shops and outdoors", s.theme === "light")}
     </div>
     <h2 class="sec">Pro</h2>
@@ -107,6 +116,7 @@ export function renderSettings(root) {
       t.setAttribute("aria-checked", String(on));
       if (t.dataset.set === "glove") setSetting("glove", on);
       if (t.dataset.set === "light") setSetting("theme", on ? "light" : "dark");
+      if (t.dataset.set === "tips") setSetting("tips", on);
       return;
     }
     const n = e.target.closest("[data-nav]");

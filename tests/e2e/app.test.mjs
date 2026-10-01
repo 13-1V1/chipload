@@ -130,3 +130,65 @@ test("machine profile clamps RPM and shows both numbers", async () => {
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test("glove toggle sits in the top bar on every screen and sticks", async () => {
+  const { page, ctx, errors } = await open("/");
+  await page.locator("#gloveBtn").click();
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.glove), "on");
+  await page.goto(`${BASE}?e2e=g2#/calc/tap-drill`);
+  await page.waitForLoadState("networkidle");
+  assert.ok(await page.locator("#gloveBtn").isVisible(), "glove button on a tool screen");
+  assert.equal(await page.locator("#gloveBtn").getAttribute("aria-pressed"), "true");
+  assert.ok(await page.locator("#settingsBtn").isHidden(), "gear hidden on tool screens");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("home: intro card, common jobs in plain English, a job row opens its tool", async () => {
+  const { page, ctx, errors } = await open("/");
+  assert.ok(await page.locator("#intro").isVisible());
+  await page.locator("#introOk").click();
+  assert.equal(await page.locator("#intro").count(), 0);
+  await page.locator('#jobs [data-calc="tap-drill"]').click();
+  await page.waitForURL(/#\/calc\/tap-drill/);
+  await page.goto(`${BASE}?e2e=h2#/`);
+  await page.waitForLoadState("networkidle");
+  assert.equal(await page.locator("#intro").count(), 0, "intro stays dismissed");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("beginner words find the right tool: 'how fast band saw', 'drill bit', 'screw hole'", async () => {
+  const { page, ctx, errors } = await open("/");
+  const first = async (text) => { await page.fill("#q", text); return page.locator("#results [data-calc]").first().getAttribute("data-calc"); };
+  assert.equal(await first("how fast band saw"), "saw-speed");
+  assert.equal(await first("bandsaw blade"), "saw-speed");
+  assert.equal(await first("what drill for a 1/4-20 tap"), "tap-drill");
+  assert.equal(await first("screw hole"), "shcs");
+  assert.equal(await first("clearance hole for a 3/8 bolt"), "shcs");
+  assert.equal(await first("set up a job"), "job-sheet");
+  await page.fill("#q", "zzzz");
+  assert.ok((await page.locator("#results [data-calc]").count()) >= 5, "no-results fallback lists common jobs");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("tool screen: help card shows once, advanced inputs fold under More options", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill");
+  assert.ok(await page.locator(".help").isVisible(), "help card on first open");
+  assert.ok(await page.locator("#f-feeds-mill-woc").isHidden(), "width of cut folded away");
+  await page.locator(".help [data-gotit]").click();
+  assert.equal(await page.locator(".help").count(), 0);
+  await page.locator("details.more summary").click();
+  assert.ok(await page.locator("#f-feeds-mill-woc").isVisible(), "More options opens the advanced fields");
+  // <details> fires `toggle` asynchronously — wait until the open state is saved before reloading
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("chipload.inputs.feeds-mill") || "{}").more === true);
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  assert.equal(await page.locator(".help").count(), 0, "help stays dismissed");
+  assert.ok(await page.locator("#f-feeds-mill-woc").isVisible(), "More options stays open");
+  await page.locator("#helpBtn").click();
+  assert.ok(await page.locator(".help").isVisible(), "? brings the help back");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

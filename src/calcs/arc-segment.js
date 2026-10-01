@@ -21,6 +21,7 @@ export default register({
   id: "arc-segment",
   title: "Arc, chord & segment",
   short: "Radius, chord, height, angle, arc length — from any two",
+  help: "Measure a radius you can't reach: lay a rule across (chord), measure the gap (height), get the radius. Or any two of the four.",
   category: "geometry",
   keywords: ["arc", "chord", "segment", "sagitta", "radius", "arc length", "bow", "height of arc", "radius gauge"],
   pro: true,

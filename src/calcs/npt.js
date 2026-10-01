@@ -12,6 +12,7 @@ export default register({
   id: "npt",
   title: "NPT pipe thread",
   short: "Tap drill, engagement, E0/E1, taper",
+  help: "Tapered pipe threads: tap drill, how far the thread should engage, and the dimensions from the standard.",
   category: "thread",
   keywords: ["npt", "pipe thread", "pipe tap", "taper", "1/8-27", "1/4-18", "1/2-14", "3/4-14", "nptf", "hand tight"],
   pro: true,

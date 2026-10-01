@@ -12,6 +12,7 @@ export default register({
   id: "thread-mill",
   title: "Thread mill feed",
   short: "Centerline feed comp for thread milling",
+  help: "Feed for a thread mill: the control feeds the tool center, which travels a smaller circle than the cutting edge.",
   category: "mill",
   keywords: ["thread mill", "thread milling", "feed comp", "centerline", "helical", "internal", "external"],
   pro: true,

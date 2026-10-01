@@ -22,8 +22,9 @@ export default register({
   id: "feeds-mill",
   title: "Speeds & feeds — mill",
   short: "RPM and feed for an end mill",
+  help: "Tells you how fast to spin an end mill (RPM) and how fast to push it (feed). Pick the cutter size, number of flutes, and the material; the table fills in the rest. These are starting points — ease off if it chatters.",
   category: "mill",
-  keywords: ["rpm", "ipm", "sfm", "feed", "speed", "chip load", "end mill", "surface speed", "feed rate"],
+  keywords: ["rpm", "ipm", "sfm", "feed", "speed", "chip load", "end mill", "surface speed", "feed rate", "how fast", "end mill speed", "milling speed", "cutter", "spindle speed"],
   pro: false,
   safety: "Starting point. Verify with your tooling maker and dry run.",
   inputs: [
@@ -32,17 +33,17 @@ export default register({
     { id: "material", label: "Material", kind: "select", default: "al6061", options: materialOptions() },
     { id: "toolType", label: "Tool", kind: "segment", default: "carbide",
       options: Object.entries(TOOL_LABELS).map(([value, label]) => ({ value, label })) },
-    { id: "sfm", label: "Surface speed", kind: "speed", default: "", places: 0,
+    { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0,
       auto: (raw, c) => fromSfm(defaults(raw).sfm, c.units), hint: "Leave blank to use the table value for this material." },
-    { id: "chip", label: "Chip load per tooth", kind: "length", default: "", places: 4,
+    { id: "chip", advanced: true, label: "Chip load per tooth", kind: "length", default: "", places: 4,
       auto: (raw, c, values) => {
         // table value is for a 3/8" tool; scale by diameter within 0.25×–1.5×
         const dIn = toIn(Number.isFinite(values.diameter) ? values.diameter : 0.375, c.units);
         const scale = Math.max(0.25, Math.min(1.5, dIn / 0.375));
         return fromIn(defaults(raw).chipIn * scale, c.units);
       } },
-    { id: "woc", label: "Width of cut (radial)", kind: "length", default: "", optional: true, placeholder: "optional — enables chip thinning" },
-    { id: "doc", label: "Depth of cut (axial)", kind: "length", default: "", optional: true, placeholder: "optional — enables removal rate" },
+    { id: "woc", advanced: true, label: "Width of cut (radial)", kind: "length", default: "", optional: true, placeholder: "optional — enables chip thinning" },
+    { id: "doc", advanced: true, label: "Depth of cut (axial)", kind: "length", default: "", optional: true, placeholder: "optional — enables removal rate" },
   ],
   compute(v, c) {
     const dIn = toIn(v.diameter, c.units);
@@ -65,6 +66,10 @@ export default register({
     const mrr = wocIn > 0 && docIn > 0 ? wocIn * docIn * feedIpm : null;
 
     const warnings = [];
+    // The math will happily feed 5× faster if you type 5× the chip load — the tool won't.
+    const libChip = defaults(v).chipIn * Math.max(0.25, Math.min(1.5, dIn / 0.375));
+    if (!v.chipAuto && chipIn > Math.max(libChip * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is a very heavy chip for a ${fmt(v.diameter, c.units === "in" ? 3 : 1)} ${c.L.length} tool (the library says about ${fmt(fromIn(libChip, c.units), 4)}). Expect a broken tool.`);
+    if (!v.chipAuto && chipIn > 0 && chipIn < libChip * 0.25) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is very light — the tool will rub and dull instead of cutting. Typical is about ${fmt(fromIn(libChip, c.units), 4)}.`);
     if (clampedRpm) warnings.push(`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)}. Feed is figured at ${fmt(rpm, 0)} RPM so chip load stays right.`);
     if (clampedFeed) warnings.push(`${c.machine.name} max feed is ${fmt(fromIn(maxFeedIpm, c.units), 1)} ${c.L.feed}. Wanted ${fmt(fromIn(requestedFeedIpm, c.units), 1)}. Chip load will be thinner than planned.`);
 

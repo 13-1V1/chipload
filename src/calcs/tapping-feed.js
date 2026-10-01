@@ -12,6 +12,7 @@ export default register({
   id: "tapping-feed",
   title: "Tapping feed",
   short: "Feed for rigid tapping at an RPM",
+  help: "Rigid tapping feed: the spindle and feed have to match the thread pitch exactly.",
   category: "drill",
   keywords: ["tap", "tapping", "rigid tap", "g84", "feed", "lead", "pitch"],
   pro: true,

@@ -8,6 +8,7 @@ import { fmt } from "../core/format.js";
 import { getSettings, UNIT_LABEL } from "./settings.js";
 import { ICONS } from "./icons.js";
 import { pushRecent } from "./store.js";
+import { helpSeen, markHelpSeen } from "./render.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -21,12 +22,22 @@ export function mountChart(def, root, { params = {} } = {}) {
   const cols = typeof def.columns === "function" ? def.columns(ctx) : def.columns;
 
   root.innerHTML = `
+    <div id="chartHelp"></div>
     <label class="search"><span class="sr-only">Filter rows</span>${ICONS.search}<input id="cq" type="search" placeholder="${esc(def.placeholder || "Filter…")}" autocomplete="off" autocapitalize="off" value="${esc(params.q || "")}"></label>
     ${def.note ? `<p class="hint" style="margin:10px 0 0">${esc(def.note)}</p>` : ""}
     <div style="height:12px"></div>
     ${locked ? `<div class="lock"><div><b>Pro chart</b><br><span>${esc(def.short || "")}</span></div><a class="btn primary" href="#/pro">Unlock Pro</a></div>` : `<div class="table-wrap"><table class="chart"><thead><tr>${cols.map((c) => `<th${c.align === "right" ? ' class="r"' : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody id="cbody"></tbody></table></div>`}`;
 
-  if (locked) return { destroy() {} };
+  const helpHost = root.querySelector("#chartHelp");
+  const helpText = def.help || def.short || "";
+  let helpOpen = false;
+  function toggleHelp(force) {
+    helpOpen = force ?? !helpOpen;
+    helpHost.innerHTML = helpOpen ? `<div class="help" role="note"><div><b>${esc(def.title)}</b> — ${esc(helpText)}</div><div class="row"><button type="button" class="btn small primary" data-gotit>Got it</button></div></div><div style="height:12px"></div>` : "";
+    helpHost.querySelector("[data-gotit]")?.addEventListener("click", () => { markHelpSeen(def.id); toggleHelp(false); });
+  }
+  if (settings.tips !== false && !helpSeen(def.id) && helpText) toggleHelp(true);
+  if (locked) return { destroy() {}, toggleHelp, hasHelp: !!helpText };
   const q = root.querySelector("#cq");
   const body = root.querySelector("#cbody");
   const cell = (r, c) => typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : String(r[c.key] ?? "");
@@ -47,5 +58,5 @@ export function mountChart(def, root, { params = {} } = {}) {
   }
   q.addEventListener("input", draw);
   draw();
-  return { destroy() {} };
+  return { destroy() {}, toggleHelp, hasHelp: !!helpText };
 }

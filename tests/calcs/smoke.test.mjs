@@ -96,3 +96,32 @@ test("typing a thread on the home search ranks tap drill first, then thread data
   assert.equal(searchCalcs("rpm", allCalcs())[0].def.id, "feeds-mill");
   assert.equal(searchCalcs("tap", allCalcs())[0].def.id, "tap-drill");
 });
+
+test("every tool has plain-English help, and the band saw tool is free", () => {
+  for (const d of allCalcs()) assert.ok((d.help || "").length > 40, `${d.id} needs help text`);
+  const saw = allCalcs().find((d) => d.id === "saw-speed");
+  assert.equal(saw.pro, false);
+  const ctx = ctxFor("in");
+  const out = saw.compute(buildValues(saw, defaultRaw(saw, { material: "s1018", thickness: "1" }), ctx).values, ctx);
+  assert.ok(out.primary.value >= 250 && out.primary.value <= 350, `steel blade speed ${out.primary.value}`);
+  assert.match(out.stats[1].text, /8 TPI/);
+  assert.equal(allCalcs().find((d) => d.id === "shcs").pro, false);
+});
+
+test("job sheet: answers what it can and asks for the next number", () => {
+  const def = allCalcs().find((d) => d.id === "job-sheet");
+  assert.equal(def.pro, false);
+  const ctx = ctxFor("in", { id: "m1", name: "Bridgeport", maxRpm: 2720, maxFeed: 30, units: "in" });
+  let out = def.compute(buildValues(def, defaultRaw(def, { op: "mill", material: "s1018", diameter: "0.5", flutes: "4" }), ctx).values, ctx);
+  assert.ok(out.stats.some((s) => /Spindle/.test(s.label)));
+  assert.ok(out.next.some((n) => n.input === "woc"), "asks for width of cut");
+  assert.ok(out.next.some((n) => n.input === "length"), "asks for length");
+  out = def.compute(buildValues(def, defaultRaw(def, { op: "mill", material: "s1018", diameter: "0.5", flutes: "4", woc: "0.1", doc: "0.25", length: "10", stock: "1", qty: "20", rate: "90" }), ctx).values, ctx);
+  assert.ok(out.stats.some((s) => s.label === "Metal removal rate"));
+  assert.ok(out.stats.some((s) => s.label === "Passes" && s.value === 4));
+  assert.ok(out.stats.some((s) => /Job time/.test(s.label)));
+  assert.equal(out.tables[0].pro, true, "price is the Pro line");
+  assert.ok(!out.next.some((n) => n.input === "rate"));
+  out = def.compute(buildValues(def, defaultRaw(def, { op: "drill", material: "al6061", diameter: "0.25", depth: "1", holes: "8" }), ctx).values, ctx);
+  assert.ok(out.stats.some((s) => /Drilling time per part/.test(s.label)));
+});

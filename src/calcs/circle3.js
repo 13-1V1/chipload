@@ -12,6 +12,7 @@ export default register({
   id: "circle3",
   title: "Circle from 3 points",
   short: "Center and diameter from three points",
+  help: "Touch three points on a bore or boss and get its center and diameter.",
   category: "geometry",
   keywords: ["circle", "3 points", "three point", "center", "radius", "bore", "probe", "indicate"],
   pro: true,

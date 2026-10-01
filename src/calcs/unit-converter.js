@@ -33,8 +33,9 @@ export default register({
   id: "unit-converter",
   title: "Unit converter",
   short: "Length, speed, feed, temp, weight, torque, pressure",
+  help: "Convert shop units: inches and mm, SFM and m/min, °F and °C, torque, pressure, weight.",
   category: "reference",
-  keywords: ["convert", "units", "mm", "inch", "celsius", "fahrenheit", "kg", "lb", "torque", "psi", "bar", "sfm", "m/min"],
+  keywords: ["convert", "units", "mm", "inch", "celsius", "fahrenheit", "kg", "lb", "torque", "psi", "bar", "sfm", "m/min", "inch", "temperature", "conversion"],
   pro: false,
   units: false,
   inputs: [

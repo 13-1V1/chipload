@@ -254,6 +254,27 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
 .about h3 { color: var(--text); font-size: 1rem; margin: 18px 0 6px; }
 pre.lic { font: 0.75rem/1.4 var(--mono); white-space: pre-wrap; color: var(--text-3); max-height: 200px; overflow: auto; background: var(--card); padding: 10px; border-radius: 6px; }
 
+/* ── Help / intro cards, common jobs, more options ────────────── */
+.help, .intro { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--text); font-size: 0.9375rem; line-height: 1.5; }
+.help .row, .intro .row { display: flex; gap: 8px; justify-content: flex-end; }
+.help .btn, .intro .btn { text-decoration: none; display: inline-flex; align-items: center; }
+details.jobs .body { padding: 0; }
+details.jobs .list { border: 0; border-radius: 0; border-top: 1px solid var(--line); }
+details.drawer summary .sub { display: block; font-weight: 400; font-size: 0.8125rem; color: var(--text-2); }
+details.drawer summary { padding-top: 8px; padding-bottom: 8px; }
+details.drawer summary > .sub { flex-basis: 100%; }
+details.drawer summary { flex-wrap: wrap; }
+details.more .body { padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+#gloveBtn[aria-pressed="true"] { color: var(--scribe); background: color-mix(in srgb, var(--scribe) 16%, transparent); }
+#helpBtn { color: var(--text-2); }
+
+/* ── "Add more to get more" (job sheet) ───────────────────────── */
+.next { display: flex; flex-direction: column; gap: 6px; }
+.next-h { font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); font-weight: 600; }
+.next-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--tap); padding: 0 14px; background: var(--card); border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--text); text-align: left; font: inherit; }
+.next-item span { color: var(--scribe); font-size: 0.9375rem; text-align: right; }
+.next-item:active { background: var(--card-2); }
+
 /* ── Extras: lock, code, downloads ────────────────────────────── */
 .lock { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: var(--card); border: 1px dashed var(--accent); border-radius: var(--radius); }
 .lock span { color: var(--text-2); font-size: 0.875rem; }

@@ -34,16 +34,18 @@ export const ICONS = Object.freeze({
   history: wrap('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>'),
   share: wrap('<path d="M4 12v8h16v-8"/><path d="M12 3v12M8 7l4-4 4 4"/>'),
   more: `<svg viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor;stroke:none"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>`,
+  glove: wrap('<path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10M10 10V3.5a1.5 1.5 0 0 1 3 0V10M13 10V4.5a1.5 1.5 0 0 1 3 0V11M16 11V7.5a1.5 1.5 0 0 1 3 0V14c0 4-3 7-7 7h-1c-2.5 0-4.5-1.3-5.6-3.3L3.6 14a1.6 1.6 0 0 1 2.7-1.7L7 13.5"/>'),
+  help: wrap('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.6a2.4 2.4 0 1 1 3.4 2.2c-.7.3-1 .9-1 1.7M12 17h.01"/>'),
   chevron: wrap('<path d="m9 5 7 7-7 7"/>'),
 });
 
 export const CATEGORIES = Object.freeze([
-  { id: "mill", name: "Mill", blurb: "Speeds, feeds, chip thinning" },
-  { id: "lathe", name: "Lathe", blurb: "RPM, IPR, finish, cycle time" },
-  { id: "drill", name: "Drill & Tap", blurb: "Tap drills, points, reaming" },
-  { id: "thread", name: "Threads", blurb: "UN, metric, NPT, wires" },
+  { id: "mill", name: "Mill", blurb: "End mill speed, feed, cut time" },
+  { id: "lathe", name: "Lathe", blurb: "Turning speed, finish, cycle time" },
+  { id: "drill", name: "Drill, Tap & Saw", blurb: "Drill speed, tap drills, saw blades" },
+  { id: "thread", name: "Threads", blurb: "Sizes, limits, pipe, Acme" },
   { id: "geometry", name: "Geometry", blurb: "Triangles, circles, bolt holes" },
-  { id: "inspect", name: "Inspect", blurb: "True position, stacks, fits" },
-  { id: "reference", name: "Reference", blurb: "Charts, GD&T, hardness" },
-  { id: "shop", name: "Shop", blurb: "Machines, tools, jobs" },
+  { id: "inspect", name: "Inspect", blurb: "Position, fits, tolerances" },
+  { id: "reference", name: "Reference", blurb: "Charts, materials, G-codes, terms" },
+  { id: "shop", name: "Shop", blurb: "Your machines, tools, saved jobs" },
 ]);

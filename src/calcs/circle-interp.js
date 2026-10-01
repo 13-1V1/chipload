@@ -12,6 +12,7 @@ export default register({
   id: "circle-interp",
   title: "Circle interpolation feed",
   short: "Adjust feed for helical bores and OD circles",
+  help: "Feed to program when the tool travels in a circle (helical bore, round boss) so the cutting edge keeps the right speed.",
   category: "mill",
   keywords: ["circular", "interpolation", "helical", "bore", "feed comp", "id", "od", "g02", "g03", "arc feed"],
   pro: true,

@@ -34,10 +34,13 @@ const TABS = [["machines", "Machines"], ["tools", "Tools"], ["jobs", "Jobs"]];
 export function renderShop(root, tab = "machines") {
   const s = getSettings();
   root.innerHTML = `
+    <div class="dl-row"><button type="button" class="btn primary" data-go="/calc/job-sheet">Job sheet</button><button type="button" class="btn" data-go="/calc/quote">Quote helper</button></div>
+    <div style="height:14px"></div>
     <div class="seg" role="tablist">${TABS.map(([id, label]) => `<button type="button" role="tab" data-tab="${id}" aria-pressed="${id === tab}">${label}</button>`).join("")}</div>
     <div style="height:12px"></div>
     <div id="shopBody"></div>`;
   root.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => navigate(`/shop/${b.dataset.tab}`)));
+  root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => navigate(b.dataset.go)));
   const body = root.querySelector("#shopBody");
   if (!s.pro) {
     body.innerHTML = `<div class="lock"><div><b>Shop is a Pro feature</b><br><span>Machine limits, your tool library, and saved jobs.</span></div><a class="btn primary" href="#/pro">Unlock Pro</a></div>

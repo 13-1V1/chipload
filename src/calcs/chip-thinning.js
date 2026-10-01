@@ -13,6 +13,7 @@ export default register({
   id: "chip-thinning",
   title: "Chip thinning & HSM",
   short: "Real chip load with light radial cuts, lead angles, corner radii",
+  help: "When you take a light sideways cut, the chip comes out thinner than the number you programmed. This bumps the feed back up so the tool actually cuts instead of rubbing.",
   category: "mill",
   keywords: ["chip thinning", "hsm", "high speed", "trochoidal", "radial", "axial", "lead angle", "face mill", "high feed", "corner radius", "feed"],
   pro: true,
@@ -28,7 +29,7 @@ export default register({
     { id: "lead", label: "Lead angle (κ, from the axis)", kind: "angle", default: "45", min: 1, max: 90, showIf: (r) => r.edge === "lead", hint: "45° face mill, 10–17° high-feed, 90° square shoulder." },
     { id: "cornerR", label: "Corner radius", kind: "length", default: "0.03", min: 0, showIf: (r) => r.edge === "corner" },
     { id: "doc", label: "Axial depth of cut", kind: "length", default: "0.015", min: 0, showIf: (r) => r.edge === "corner" },
-    { id: "mode", label: "Cap", kind: "segment", default: "std", options: [{ value: "std", label: "Standard (2.5×)" }, { value: "hsm", label: "HSM (5×)" }] },
+    { id: "mode", advanced: true, label: "Cap", kind: "segment", default: "std", options: [{ value: "std", label: "Standard (2.5×)" }, { value: "hsm", label: "HSM (5×)" }] },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
