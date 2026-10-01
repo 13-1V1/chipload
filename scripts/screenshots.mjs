@@ -20,7 +20,7 @@ const shots = [
   { file: "05-explain", path: "/calc/feeds-drill", caption: "Every answer shows its math and its source.", pro: true, openDrawer: true },
   { file: "06-boltcircle", path: "/calc/bolt-circle?gcode=drill", caption: "Bolt circles with G81/G83, CSV and DXF.", pro: true, scroll: 700 },
   { file: "07-threads", path: "/calc/thread-metric?thread=M10", caption: "UN, metric, NPT, ACME — with class limits.", pro: true, scroll: 500 },
-  { file: "08-jobsheet", path: "/calc/job-sheet?op=mill&material=s4140&diameter=0.5&flutes=4&woc=0.1&doc=0.25&length=12&stock=1&qty=25", caption: "Plug in what you know. It figures the rest.", pro: true, machine: true, scroll: 620 },
+  { file: "08-jobsheet", path: "/calc/job-sheet?op=mill&material=s4140&diameter=0.5&flutes=4&woc=0.1&doc=0.25&length=12&stock=1&qty=25", caption: "Plug in what you know. It figures the rest.", pro: true, machine: true, active: "m1", scrollSel: ".stats" },
 ];
 
 const browser = await chromium.launch();
@@ -28,7 +28,7 @@ for (const s of shots) {
   const ctx = await browser.newContext({ viewport: { width: 412, height: 892 }, deviceScaleFactor: 2.62, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
   await page.goto(BASE);
-  await page.evaluate(({ pro, machine, glove, noFavs }) => {
+  await page.evaluate(({ pro, machine, glove, noFavs, active }) => {
     localStorage.setItem("chipload.settings.v1", JSON.stringify({ units: "in", theme: "dark", glove: !!glove, pro, places: 4 }));
     if (!noFavs) {
       localStorage.setItem("chipload.favorites", JSON.stringify(["feeds-mill", "tap-drill", "bolt-circle"]));
@@ -39,7 +39,7 @@ for (const s of shots) {
     localStorage.setItem("chipload.settings.v1", JSON.stringify({ units: "in", theme: "dark", glove: !!glove, pro, places: 4, tips: false }));
     if (machine) {
       localStorage.setItem("chipload.blob.machines", JSON.stringify([{ id: "m1", name: "Haas VF-2", type: "mill", maxRpm: 8100, maxFeed: 650, controller: "haas", units: "in" }, { id: "m2", name: "Bridgeport", type: "mill", maxRpm: 2720, maxFeed: 30, controller: "other", units: "in" }]));
-      localStorage.setItem("chipload.blob.activeMachine", JSON.stringify("m2"));
+      localStorage.setItem("chipload.blob.activeMachine", JSON.stringify(active || "m2"));
       localStorage.setItem("chipload.blob.tools", JSON.stringify([{ id: "t1", name: '1/2" 4FL carbide AlTiN', kind: "endmill", diameter: 0.5, flutes: 4, toolType: "coated", note: "1.25 LOC", units: "in" }, { id: "t2", name: "#7 cobalt drill", kind: "drill", diameter: 0.201, flutes: 2, toolType: "hss", note: "", units: "in" }]));
       localStorage.setItem("chipload.blob.jobs", JSON.stringify([{ id: "j1", at: Date.now() - 86400000, calcId: "bolt-circle", name: "Pump flange · 8 holes", raw: { diameter: "6.5", holes: "8" }, units: "in", primary: "X3.25 Y0" }]));
     }
@@ -50,6 +50,7 @@ for (const s of shots) {
   if (s.focus) { await page.locator(s.focus).click(); await page.waitForTimeout(300); }
   if (s.openDrawer) { await page.locator("details.drawer summary").first().click(); await page.waitForTimeout(200); }
   if (s.scroll) { await page.evaluate((y) => window.scrollTo(0, y), s.scroll); await page.waitForTimeout(200); }
+  if (s.scrollSel) { await page.evaluate((sel) => { const el = document.querySelector(sel); if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 190); }, s.scrollSel); await page.waitForTimeout(200); }
   // caption band: overlay inside the page so it ends up in the same PNG
   await page.evaluate((caption) => {
     const band = document.createElement("div");

@@ -409,10 +409,17 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
     }
     extras.innerHTML = html;
     extras.querySelectorAll("[data-href]").forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.href; }));
-    extras.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
-      const el = fields[b.dataset.focus]; if (!el) return;
+    extras.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", (ev) => {
+      ev.stopPropagation(); // keep the "tap outside closes the pad" handler from undoing the focus below
+      const id = b.dataset.focus;
+      const el = fields[id]; if (!el) return;
+      // Progressive forms keep optional fields hidden until asked for: remember it as shown, then redraw.
+      if (fieldWraps[id].hidden && "shown" in raw) {
+        raw.shown = [...new Set([...String(raw.shown || "").split(",").filter(Boolean), id])].join(",");
+        recalc();
+      }
       if (more && more.contains(el)) more.open = true;
-      el.focus(); el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.focus();
     }));
     extras.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied"); } catch { toast("Copy blocked"); }

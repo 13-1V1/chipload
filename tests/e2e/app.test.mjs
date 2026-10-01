@@ -192,3 +192,21 @@ test("tool screen: help card shows once, advanced inputs fold under More options
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test("job sheet starts short; 'add one more number' reveals the field and unlocks the next answer", async () => {
+  const { page, ctx, errors } = await open("/calc/job-sheet");
+  await page.locator(".help [data-gotit]").click();
+  assert.ok(await page.locator("#f-job-sheet-diameter").isVisible());
+  assert.ok(await page.locator("#f-job-sheet-length").isHidden(), "optional fields start hidden");
+  assert.ok(await page.locator("#f-job-sheet-qty").isHidden());
+  const addLength = page.locator('.next-item[data-focus="length"]');
+  assert.ok(await addLength.isVisible(), "offers length → time per pass");
+  await addLength.click();
+  await page.waitForSelector("#f-job-sheet-length", { state: "visible" });
+  await page.waitForSelector(".numpad.open");
+  for (const k of ["1", "0"]) await page.locator(`.numpad [data-key="${k}"]`).dispatchEvent("pointerdown");
+  await page.waitForFunction(() => [...document.querySelectorAll(".stat .l")].some((l) => /Time per pass/.test(l.textContent)));
+  assert.ok(await page.locator('.next-item[data-focus="qty"]').isVisible(), "now offers quantity → job time");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

@@ -260,10 +260,10 @@ pre.lic { font: 0.75rem/1.4 var(--mono); white-space: pre-wrap; color: var(--tex
 .help .btn, .intro .btn { text-decoration: none; display: inline-flex; align-items: center; }
 details.jobs .body { padding: 0; }
 details.jobs .list { border: 0; border-radius: 0; border-top: 1px solid var(--line); }
-details.drawer summary .sub { display: block; font-weight: 400; font-size: 0.8125rem; color: var(--text-2); }
-details.drawer summary { padding-top: 8px; padding-bottom: 8px; }
-details.drawer summary > .sub { flex-basis: 100%; }
-details.drawer summary { flex-wrap: wrap; }
+details.drawer summary { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 10px; padding-top: 8px; padding-bottom: 8px; }
+details.drawer summary .sub { grid-column: 1; font-weight: 400; font-size: 0.8125rem; color: var(--text-2); }
+details.drawer summary::after { grid-column: 2; grid-row: 1 / span 2; margin-left: 0; }
+#homeBody > :first-child { margin-top: 16px; }
 details.more .body { padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
 #gloveBtn[aria-pressed="true"] { color: var(--scribe); background: color-mix(in srgb, var(--scribe) 16%, transparent); }
 #helpBtn { color: var(--text-2); }

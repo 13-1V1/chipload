@@ -17,6 +17,8 @@ import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
 const isMill = (r) => r.op === "mill";
 const isDrill = (r) => r.op === "drill";
 const isLathe = (r) => r.op === "lathe";
+// Optional fields stay out of the way until they hold a value or the user taps "add …" for them.
+const want = (r, id) => String(r[id] ?? "").trim() !== "" || String(r.shown || "").split(",").includes(id);
 
 export default register({
   id: "job-sheet",
@@ -33,15 +35,16 @@ export default register({
     { id: "toolType", label: "Tool", kind: "segment", default: "carbide", options: Object.entries(TOOL_LABELS).map(([value, label]) => ({ value, label })) },
     { id: "diameter", label: "Diameter (tool — or the part, on a lathe)", kind: "length", default: "0.5", min: 0.0001 },
     { id: "flutes", label: "Flutes", kind: "int", default: "4", min: 1, max: 20, showIf: isMill },
-    { id: "woc", label: "Width of cut (sideways)", kind: "length", default: "", optional: true, placeholder: "add for chip thinning & removal rate", showIf: isMill },
-    { id: "doc", label: "Depth of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for removal rate & passes", showIf: (r) => !isDrill(r) },
-    { id: "length", label: "Length of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for cut time", showIf: (r) => !isDrill(r) },
-    { id: "depth", label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "add for time per hole", showIf: isDrill },
-    { id: "holes", label: "Holes per part", kind: "int", default: "", optional: true, placeholder: "add for drilling time per part", min: 1, showIf: isDrill },
-    { id: "stock", label: "Total depth to remove", kind: "length", default: "", optional: true, placeholder: "add for number of passes", showIf: (r) => !isDrill(r) },
-    { id: "qty", label: "Parts to make", kind: "int", default: "", optional: true, placeholder: "add for job time", min: 1 },
-    { id: "rate", label: "Shop rate", kind: "number", default: "", unit: "$/hr", optional: true, placeholder: "add for price (Pro)", min: 0 },
-    { id: "setup", label: "Setup time", kind: "number", default: "", unit: "min", optional: true, placeholder: "optional, spread over the parts", min: 0 },
+    { id: "woc", label: "Width of cut (sideways)", kind: "length", default: "", optional: true, placeholder: "add for chip thinning & removal rate", showIf: (r) => isMill(r) && want(r, "woc") },
+    { id: "doc", label: "Depth of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for removal rate & passes", showIf: (r) => !isDrill(r) && want(r, "doc") },
+    { id: "length", label: "Length of cut per pass", kind: "length", default: "", optional: true, placeholder: "add for cut time", showIf: (r) => !isDrill(r) && want(r, "length") },
+    { id: "depth", label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "add for time per hole", showIf: (r) => isDrill(r) && want(r, "depth") },
+    { id: "holes", label: "Holes per part", kind: "int", default: "", optional: true, placeholder: "add for drilling time per part", min: 1, showIf: (r) => isDrill(r) && want(r, "holes") },
+    { id: "stock", label: "Total depth to remove", kind: "length", default: "", optional: true, placeholder: "add for number of passes", showIf: (r) => !isDrill(r) && want(r, "stock") },
+    { id: "qty", label: "Parts to make", kind: "int", default: "", optional: true, placeholder: "add for job time", min: 1, showIf: (r) => want(r, "qty") },
+    { id: "rate", label: "Shop rate", kind: "number", default: "", unit: "$/hr", optional: true, placeholder: "add for price (Pro)", min: 0, showIf: (r) => want(r, "rate") },
+    { id: "setup", label: "Setup time", kind: "number", default: "", unit: "min", optional: true, placeholder: "optional, spread over the parts", min: 0, showIf: (r) => want(r, "setup") || want(r, "rate") },
+    { id: "shown", label: "", kind: "text", default: "", showIf: () => false },
     { id: "sfm", label: "Surface speed override", kind: "speed", default: "", optional: true, placeholder: "blank = library value", advanced: true },
     { id: "chip", label: "Chip load / feed-per-rev override", kind: "length", default: "", optional: true, placeholder: "blank = library value", advanced: true },
   ],
@@ -86,7 +89,6 @@ export default register({
     const warnings = [];
     if (mill && Number.isFinite(v.chip) && chipIn > Math.max(sp.chipIn * Math.max(0.25, Math.min(1.5, dIn / 0.375)) * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is a very heavy chip for this tool. Expect it to break.`);
     if (clamped) warnings.push(`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)}. Feed is figured at ${fmt(rpm, 0)} RPM.`);
-    if (!c.machine) next.push({ add: "A machine profile", get: "RPM and feed capped to your machine", href: "#/shop" });
 
     // ── what the cut adds ──
     const wocIn = Number.isFinite(v.woc) ? toIn(v.woc, c.units) : NaN, docIn = Number.isFinite(v.doc) ? toIn(v.doc, c.units) : NaN;
@@ -125,6 +127,8 @@ export default register({
           rows: [{ k: "Machine time", v: `${fmt(jobMin / 60, 2)} hr` }, { k: `At $${fmt(v.rate, 0)}/hr`, v: `$${fmt(cost, 2)}` }, { k: "Per part", v: `$${fmt(cost / v.qty, 2)}` }] });
       } else next.push({ add: "Shop rate", get: "price per part (Pro)", input: "rate" });
     }
+
+    if (!c.machine) next.push({ add: "Your machine (Shop)", get: "RPM and feed capped to its limits", href: "#/shop" });
 
     return {
       primary: { label: `Feed · ${sp.material.name}`, value: fromIn(feedOut, c.units), unit: c.L.feed, places: 1, clamped: feedOut < feedIpm },
