@@ -71,7 +71,14 @@ export function openNumpad(input, { change, next } = {}) {
   el.classList.add("open");
   requestAnimationFrame(() => {
     setPadHeight();
-    input.scrollIntoView({ block: "center", behavior: "smooth" });
+    // Keep the field visible in the strip above the pad and answer bar, not under them.
+    const answer = document.querySelector(".answer");
+    const covered = el.offsetHeight + (answer && !answer.hidden ? answer.offsetHeight : 0);
+    const visibleBottom = window.innerHeight - covered;
+    const r = input.getBoundingClientRect();
+    const top = document.querySelector(".topbar")?.offsetHeight || 0;
+    if (r.bottom > visibleBottom - 12) window.scrollBy({ top: r.bottom - visibleBottom + 12, behavior: "smooth" });
+    else if (r.top < top + 12) window.scrollBy({ top: r.top - top - 12, behavior: "smooth" });
   });
 }
 

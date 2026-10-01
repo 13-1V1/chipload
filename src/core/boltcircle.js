@@ -42,6 +42,7 @@ export function buildBoltGcode(coords, {
   const out = ["%"];
   out.push(`(Bolt circle: ${coords.length} hole${coords.length === 1 ? "" : "s"}; ${String(controller).toUpperCase()} profile)`);
   out.push("(STARTING POINT - SIMULATE, SINGLE-BLOCK, AND DRY-RUN ABOVE THE PART)");
+  out.push("(ADD YOUR TOOL CALL AND G43 H__ LENGTH OFFSET BEFORE RUNNING)");
   out.push(`${unitHeader} G90 G17 G40 G49 G80`);
   out.push(workOffset);
   out.push(`G0 Z${fmt(safeZ, dp)}`);

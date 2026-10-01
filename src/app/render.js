@@ -335,8 +335,12 @@ export function mountCalculator(def, root, { params = {}, onBack } = {}) {
 
     stats.innerHTML = (out.stats || []).map((s) => {
       const v = Number.isFinite(s.value) ? fmt(s.value, s.places ?? 4) : esc(s.text ?? "—");
-      return `<div class="stat${s.wide ? " wide" : ""}${s.clamped ? " clamped" : ""}"><span class="l">${esc(s.label)}</span><span class="v">${v}${s.unit ? `<small>${esc(s.unit)}</small>` : ""}</span></div>`;
+      const plain = Number.isFinite(s.value) ? fmt(s.value, s.places ?? 4) : String(s.text ?? "");
+      return `<button type="button" class="stat${s.wide ? " wide" : ""}${s.clamped ? " clamped" : ""}" data-copy="${esc(plain)}" title="Tap to copy"><span class="l">${esc(s.label)}</span><span class="v">${v}${s.unit ? `<small>${esc(s.unit)}</small>` : ""}</span></button>`;
     }).join("");
+    stats.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); toast(`Copied ${b.dataset.copy}`); } catch { toast("Copy blocked"); }
+    }));
 
     warnBox.innerHTML = (out.warnings || []).filter(Boolean).map((w) => `<div class="warn">${ICONS.warn}<div>${esc(w)}</div></div>`).join("");
 

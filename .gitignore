@@ -11,3 +11,5 @@ android/.idea/
 android/app/release/
 *.keystore
 *.jks
+android/keystore.properties
+android/keystore/

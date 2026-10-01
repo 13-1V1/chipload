@@ -175,7 +175,8 @@ select.input { font-family: var(--sans); font-size: 1.0625rem; padding-right: 40
 
 /* results table */
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; min-height: var(--tap); }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; min-height: var(--tap); text-align: left; color: var(--text); font: inherit; }
+.stat:active { background: var(--card-2); }
 .stat .l { display: block; font-size: 0.75rem; color: var(--text-2); }
 .stat .v { display: block; font-family: var(--mono); font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 .stat .v small { color: var(--text-2); font-size: 0.75rem; margin-left: 4px; font-family: var(--sans); }
