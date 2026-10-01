@@ -17,6 +17,7 @@ export default register({
   keywords: ["sti", "helicoil", "heli-coil", "insert", "thread repair", "wire insert", "keensert", "tap drill"],
   pro: true,
   units: false,
+  prefillRank: 13,
   prefill: (q) => (/sti|heli/i.test(q) ? threadPrefill(q.replace(/sti|heli-?coil/gi, "").trim()) : null),
   inputs: [
     { id: "thread", label: "Finished thread (the screw that goes in)", kind: "text", default: "1/4-20", placeholder: "1/4-20, M8x1.25" },

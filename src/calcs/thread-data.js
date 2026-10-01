@@ -17,6 +17,7 @@ export default register({
   keywords: ["thread", "pitch diameter", "minor diameter", "major", "tpi", "unc", "unf", "metric", "class", "2a", "2b", "tolerance"],
   pro: false,
   units: false,
+  prefillRank: 2,
   prefill: (q) => threadPrefill(q),
   inputs: [
     { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20 UNC, 3/8-24, M8x1.25" },

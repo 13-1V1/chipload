@@ -15,6 +15,7 @@ export default register({
   category: "mill",
   keywords: ["thread mill", "thread milling", "feed comp", "centerline", "helical", "internal", "external"],
   pro: true,
+  prefillRank: 14,
   prefill: (q) => threadPrefill(q),
   inputs: [
     { id: "thread", label: "Thread", kind: "text", default: "1/2-13", placeholder: "1/2-13, M12x1.75" },

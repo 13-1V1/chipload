@@ -16,6 +16,7 @@ export default register({
   category: "thread",
   keywords: ["wires", "three wire", "3 wire", "measure over wires", "pitch diameter", "best wire", "thread mic"],
   pro: true,
+  prefillRank: 11,
   prefill: (q) => threadPrefill(q),
   inputs: [
     { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, M10x1.5" },

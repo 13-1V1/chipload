@@ -26,6 +26,7 @@ export default register({
   keywords: ["acme", "29", "lead screw", "leadscrew", "trapezoidal", "2g", "3g", "4g", "power screw"],
   pro: true,
   units: false,
+  prefillRank: 16,
   prefill: (q) => { try { const t = parseAcme(q); return /acme/i.test(q) ? { params: { thread: q.trim() }, label: t.label } : null; } catch { return null; } },
   inputs: [
     { id: "thread", label: "Thread (inch)", kind: "text", default: "1/2-10", placeholder: "1/2-10, 3/4-6, 1-5" },

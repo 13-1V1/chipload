@@ -15,6 +15,7 @@ export default register({
   category: "thread",
   keywords: ["npt", "pipe thread", "pipe tap", "taper", "1/8-27", "1/4-18", "1/2-14", "3/4-14", "nptf", "hand tight"],
   pro: true,
+  prefillRank: 15,
   prefill: (q) => { const s = q.trim().toLowerCase().replace(/\s*npt\s*$/, ""); const hit = NPT_TABLE.find((r) => r.name === s || r.name.split("-")[0] === s); return hit ? { params: { size: hit.name }, label: `${hit.name} NPT` } : null; },
   inputs: [
     { id: "size", label: "Size", kind: "select", default: "1/4-18", options: NPT_TABLE.map((r) => ({ value: r.name, label: `${r.name} NPT` })) },

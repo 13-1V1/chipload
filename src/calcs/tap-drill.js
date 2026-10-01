@@ -17,6 +17,7 @@ export default register({
   keywords: ["tap", "tap drill", "thread", "percent", "drill size", "form tap", "roll tap", "unc", "unf", "metric"],
   pro: false,
   units: false,
+  prefillRank: 1,
   prefill: (q) => threadPrefill(q),
   inputs: [
     { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, #10-32, M10x1.5" },

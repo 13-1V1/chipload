@@ -83,3 +83,13 @@ test("unit converter dynamic options and temperature", () => {
   const out = def.compute(values, ctx);
   assert.ok(Math.abs(out.primary.value - 100) < 1e-9);
 });
+
+test("typing a thread on the home search ranks tap drill first, then thread data", async () => {
+  const { searchCalcs } = await import("../../src/app/search.js");
+  const hits = searchCalcs("1/4-20", allCalcs());
+  assert.equal(hits[0].def.id, "tap-drill");
+  assert.equal(hits[1].def.id, "thread-data");
+  assert.ok(hits.every((h) => h.params?.thread === "1/4-20" || !h.params));
+  const num = searchCalcs("0.201", allCalcs());
+  assert.equal(num[0].def.id, "fraction-converter");
+});

@@ -16,6 +16,7 @@ export default register({
   keywords: ["fraction", "decimal", "convert", "64ths", "drill", "mm", "inch", "size"],
   pro: false,
   units: false,
+  prefillRank: 3,
   prefill: (q) => {
     const n = recognize.number(q);
     if (!n || n.value <= 0 || n.value > 100) return null;

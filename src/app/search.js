@@ -41,7 +41,8 @@ export function searchCalcs(query, defs) {
     const s = score(def, terms);
     if (s > 0) out.push({ def, s });
   }
-  return out.sort((a, b) => b.s - a.s).slice(0, 12);
+  // Prefill hits tie at 100; break ties with the calculator's own rank (lower first), then free before Pro.
+  return out.sort((a, b) => b.s - a.s || (a.def.prefillRank ?? 50) - (b.def.prefillRank ?? 50) || (a.def.pro ? 1 : 0) - (b.def.pro ? 1 : 0)).slice(0, 12);
 }
 
 /** Helpers calculators use inside prefill(). */

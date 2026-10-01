@@ -18,6 +18,7 @@ export default register({
   keywords: ["metric", "iso", "6g", "6h", "4h", "8g", "tolerance class", "limits", "pitch diameter", "m10", "m8"],
   pro: true,
   units: false,
+  prefillRank: 10,
   prefill: (q) => { const t = parseThreadSpec(q); return t?.system === "metric" ? { params: { thread: q.trim() }, label: t.label } : null; },
   inputs: [
     { id: "thread", label: "Thread", kind: "text", default: "M10", placeholder: "M10, M8x1.25, M12x1" },

@@ -16,6 +16,7 @@ export default register({
   keywords: ["tap", "tapping", "rigid tap", "g84", "feed", "lead", "pitch"],
   pro: true,
   safety: "Rigid tapping needs a synchronized spindle. Check the control mode (M29 / G84) before running.",
+  prefillRank: 12,
   prefill: (q) => threadPrefill(q),
   inputs: [
     { id: "thread", label: "Thread", kind: "text", default: "1/4-20", placeholder: "1/4-20, M6" },
