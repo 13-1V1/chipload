@@ -19,7 +19,12 @@ export default register({
   pro: true,
   units: false,
   prefillRank: 13,
-  prefill: (q) => (/sti|heli/i.test(q) ? threadPrefill(q.replace(/sti|heli-?coil/gi, "").trim()) : null),
+  // the thread may come with other words around it ("3/8-16 helicoil drill"): take it from whichever word it is
+  prefill: (q) => {
+    if (!/sti|heli/i.test(q)) return null;
+    const rest = q.replace(/sti|heli-?coils?|inserts?/gi, " ").trim();
+    return threadPrefill(rest) || rest.split(/\s+/).map((w) => threadPrefill(w)).find(Boolean) || null;
+  },
   inputs: [
     { id: "thread", suggest: COMMON_THREADS, label: "Finished thread (the screw that goes in)", kind: "text", default: "1/4-20", placeholder: "1/4-20, M8x1.25" },
   ],

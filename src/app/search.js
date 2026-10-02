@@ -9,13 +9,20 @@ import { parseFraction, splitUnit } from "../core/format.js";
 import { UNIT_LABEL } from "./settings.js";
 import { chartCells, chartFilter, threadCallout } from "./chart-filter.js";
 
-// What a material word in a question is asking for: how fast to cut it, or the material itself.
-const MATERIAL_WORDS = /\b(?:aluminum|aluminium|alum|steel|stainless|ss|brass|bronze|copper|titanium|ti|inconel|cast iron|iron|plastic|delrin|acetal|nylon|hdpe|uhmw|acrylic|tool steel|mild steel)\b/g;
+// What a material word in a question is asking for: how fast to cut it, or the material itself. Alloy grades
+// count when they aren't the size typed ("1/2 drill 4140"; "6061" alone is the materials chart, read as a value).
+const MATERIAL_WORDS = /\b(?:aluminum|aluminium|alum|steel|stainless|ss|brass|bronze|copper|titanium|ti|inconel|cast iron|iron|plastic|delrin|acetal|nylon|hdpe|uhmw|acrylic|tool steel|mild steel|10[1-9]\d|11[1-4]\d|12l14|41[34]0|4340|8620|30[34]|316l?|41[06]|440c|17-4(?:ph)?|2024|5052|606[13]|7075|c360|6al-?4v|ti-?6al-?4v)\b/g;
 /** The words a material stands for. Optional: they add points, but "brass tap" still finds the tap tools. */
 const MATERIAL_TERMS = ["material", "speed"];
 // Words that hint at a tool without naming it, each with the catalog words it hints at. Optional, like a material:
-// "4 flute" alone is an end mill, but "4 flute tap" and "fluted reamer" are still a tap and a reamer.
-const HINTS = [[MATERIAL_WORDS, MATERIAL_TERMS], [/\b(?:flutes?|fluted|fl)\b/g, ["end", "mill"]]];
+// "4 flute" alone is an end mill, but "4 flute tap" and "fluted reamer" are still a tap and a reamer. A flute count
+// may be glued on ("4fl", "3flute"); the tool's material or job ("carbide", "rougher") asks how fast to run it.
+const HINTS = [
+  [MATERIAL_WORDS, MATERIAL_TERMS],
+  [/\b\d+\s*-?\s*(?:flutes?|fl)\b|\b(?:flutes?|fluted|fl)\b/g, ["end", "mill"]],
+  [/\b(?:solid\s+)?carbide\b|\bhss\b|\bcobalt\b|\b(?:un)?coated\b/g, ["speed"]],
+  [/\b(?:roughers?|roughing|finishers?)\b/g, ["end", "mill"]],
+];
 // Words that only go with a fastener: nobody counterbores to a number-drill size (ASME B18.3 lists #10 by its screw).
 const SCREW_CONTEXT = /\b(?:counterbore|cbore|c-bore|clearance|spot\s*-?\s*faces?|spotface)\b/;
 /** A bare "#10": a screw next to counterbore/clearance words, a number drill next to "drill" or alone, else nothing. */
@@ -35,8 +42,14 @@ const SYNONYMS = [
   [/\bdrill\s*bits?\b/g, "drill"], [/\bbits?\b/g, "drill"], [/\bhow fast\b|\bspeeds?\b/g, "speed"], [/\bspindle\s*speed\b|\bspins?\b/g, "rpm"],
   [/\bfeed\s*rates?\b|\bfeedrate\b/g, "feed"], [/\bcounter\s*bores?\b/g, "counterbore"], [/\bcounter\s*sinks?\b/g, "countersink"],
   [/\bmillimet(?:er|re)s?\b/g, "mm"], [/\binches\b/g, "inch"], [/\bhole\s*size\b/g, "hole"], [/\bconvert(?:ing|er)?\b/g, "convert"], [/\bangles?\b/g, "angle"],
-  // "bcd" is bolt circle diameter, "10 tooth" a saw blade
-  [/\bbcd\b/g, "bolt circle"], [/\btooth\b/g, "teeth"],
+  // "bcd" is bolt circle diameter; "feed per tooth" is the chip load, but "10 tooth" a saw blade
+  [/\bbcd\b/g, "bolt circle"], [/\b(?:feed|chip)?\s*per\s+tooth\b/g, " chip load "], [/\btooth\b/g, "teeth"],
+  // shop words the catalog spells another way
+  // parting off is lathe work; a "bolt hole" is the hole a bolt goes through, unless the question is about the circle
+  [/\bparting(?:\s*-?\s*off)?\b|\bpart\s*-?\s*off\b/g, "lathe part off"], [/\bhow far apart\b|\bapart\b/g, "spaced"], [/\bgrowth\b/g, "grow"],
+  [/\bbolt\s+holes?\b/g, (m, ...a) => (/\b(?:circles?|patterns?|pcd|bhc)\b/.test(a[a.length - 1]) ? m : "clearance hole")],
+  [/°?\bf\s+to\s+°?c\b|°?\bc\s+to\s+°?f\b|\bdeg(?:rees)?\s+f\b|\bdeg(?:rees)?\s+c\b/g, "fahrenheit celsius"],
+  [/\bfoot\s*-?\s*pounds?\b|\bft\s*-?\s*lbs?\b|\binch\s*-?\s*pounds?\b|\bin\s*-?\s*lbs?\b|\bnewton\s*-?\s*met(?:er|re)s?\b|\bn\s*-\s*m\b/g, "torque"],
   // a numbered size ("#7", "#10") next to what it is: a number drill or a screw
   [/#\s?\d{1,2}\s+drills?\b/g, (...a) => (SCREW_CONTEXT.test(a[a.length - 1]) ? "cap screw" : "number drill")], [/#\s?\d{1,2}\s+(?:socket head\s+)?(?:cap\s+)?(?:screws?|bolts?|shcs)\b/g, "cap screw"], [/#\s?\d{1,2}\b/g, numberedSize],
 ];
@@ -57,7 +70,7 @@ function normalizeQuery(q) {
   const terms = [...new Set(t.split(/\s+/).filter((w) => w && !STOP.has(w)))];
   const optional = [...new Set(hinted)].filter((w) => !terms.includes(w));
   // A hint alone ("aluminum", "4 flute") is the whole question: how fast to cut it, the material, the end mill.
-  return terms.length ? { terms, optional, material } : { terms: optional, optional: [], material };
+  return terms.length ? { terms, optional, material } : { terms: optional, optional: [], material, hintsOnly: true };
 }
 
 const hayFor = (def) => `${def.title} ${def.short || ""} ${(def.keywords || []).join(" ")} ${def.category}`.toLowerCase();
@@ -103,7 +116,7 @@ const FLUTE_WORD = /^(?:flutes?|fl|fluted|teeth|tooth)$/i;
 // A count of holes or parts: a count, unless the question is about tapping them ("1/4 20 holes to tap"). Only the
 // plural "holes" counts: "a 1/4 20 hole" is shop talk for one tapped hole.
 const PIECE_WORD = /^(?:holes|pcs|pieces?|places|pl|parts?)$/i;
-const COUNT_WORD = new RegExp(`${FLUTE_WORD.source}|${PIECE_WORD.source}|^hole$|^tpi$`, "i"); // "6 hole pattern"
+const COUNT_WORD = new RegExp(`${FLUTE_WORD.source}|${PIECE_WORD.source}|^hole$|^tpi$|^wires?$`, "i"); // "6 hole pattern", "3 wire"
 /** A whole number with a count word after it ("6 holes", "10 teeth", "3 flute"): never a value, a pitch or a catalog word. */
 const isCount = (tokens, i) => /^\d+$/.test(tokens[i]) && COUNT_WORD.test(tokens[i + 1] || "");
 // A bolt circle or a saw question has sizes and counts, not threads ("bolt circle 3.5 6 holes", "saw 3/4 10 tpi").
@@ -167,7 +180,10 @@ function valueSpan(tokens) {
   if (thread) return { start, end: start + thread.len, text: thread.text };
   let end = start + 1;
   if (/^\d+$/.test(tokens[start]) && /^\d+\/\d+/.test(tokens[end] || "")) end++;
-  if (UNIT_WORD.test(tokens[end] || "")) end++;
+  // A unit word belongs to a plain size ("8.5 mm", "3/8 in mm"). A thread never takes one, nor does a size that
+  // already has its own: there "in" starts the next phrase ("1/4-20 in steel", "10mm in inches").
+  const last = tokens[end - 1];
+  if (!parseThreadSpec(last) && !/(?:mm|in|["″”])$/i.test(last) && UNIT_WORD.test(tokens[end] || "")) end++;
   const text = tokens.slice(start, end).join(" ").replace(HYPHEN_MIXED, "$1 $2$3");
   return { start, end, text };
 }
@@ -253,7 +269,11 @@ export function searchCalcs(query, defs) {
   }
   const rest = rawTokens.filter((t, i) => !(span && i >= span.start && i < span.end) && !SEPARATOR.test(t) && !isCount(rawTokens, i) &&
     !(typedThread && i >= after && i < lengthEnd) && !(counting && i === after && /^\d+$/.test(t)));
-  const { terms, optional, material } = normalizeQuery(rest.join(" "));
+  const asked = normalizeQuery(rest.join(" "));
+  // With a thread typed, a material alone doesn't turn the question into how fast to cut it: the thread is the
+  // question ("1/4-20 aluminum" is the 1/4-20 tap drill, as "1/4-20" alone is).
+  const { terms, optional } = typedThread && asked.hintsOnly ? { terms: [], optional: [] } : asked;
+  const { material } = asked;
   // A bare grade or angle nobody claimed as a value ("6061", "304", "118") still finds tools that list it.
   const loose = span && /^\d{2,}$/.test(span.text) && !prefills.size ? span.text : null;
   // A size typed next to a chart's name opens that chart filtered to the first one it lists ("#7 drill",
@@ -268,7 +288,9 @@ export function searchCalcs(query, defs) {
   const named = terms.filter((w) => !NUMBER_TERM.test(w) && !UNIT_WORD.test(w));
   const makesCode = (d) => (d.keywords || []).some((k) => k.toLowerCase() === code);
   const answers = (d) => score(d, named, optional).full || (makesCode(d) && named.some((w) => w !== code && score(d, [w]).s > 0));
-  const codeLeads = !!code && !(named.length > 1 && defs.some((d) => !(d.view === "chart" && namesCode(d, code)) && answers(d)));
+  // A material with the code asks how fast to cut it, which the tool that makes the code answers ("g96 aluminum").
+  const codeLeads = !!code && !(material && defs.some(makesCode)) &&
+    !(named.length > 1 && defs.some((d) => !(d.view === "chart" && namesCode(d, code)) && answers(d)));
   for (const def of defs) {
     const hay = hayFor(def);
     const { s: kw, full, allWords } = terms.length ? score(def, terms, optional) : { s: 0, full: false, allWords: false };

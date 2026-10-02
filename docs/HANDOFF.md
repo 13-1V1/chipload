@@ -10,7 +10,7 @@ Everything below is a step only you can do (your phone, your Google account, you
 - `dist/chipload-1.0.0-debug.apk` → copy to the phone (USB, Drive, email to yourself) → open it → allow "install unknown apps" for that source.
 - Things to check with gloves on: search → tap drill, type 1/4-20; number pad and the ± / fraction keys; long-press the app icon (four shortcuts); rotate the phone mid-calculation with the number pad open; airplane mode (everything should still work); Settings → Glove mode and Light theme.
 - Checked on Brennan's phone (10/01/2026): install, tap drill, number pad, Print and Save as PDF, home-screen shortcut from cold, sideways pad.
-- Still to check on the phone: **Save CSV / DXF**. Turn on Pro for testing (below), open Bolt circle, tap **Save CSV**; the share sheet should offer to save or send the file.
+- Still to check on the phone: **Save CSV / DXF / G-code**. Turn on Pro for testing (below), open Bolt circle, tap **Save CSV**; the share sheet should offer to save or send the file. Since 10/02/2026 the app hands Android the file's real type (ShareFilePlugin), so a G-code file should now offer text editors and G-code viewers, not just "Files".
 - Pro can't be bought in this build (purchases only work in the Play Store version). To try the Pro tools: **Settings → Test build → Pro for testing**, or tap **Turn on Pro for testing** on the Pro screen. Flip the switch off to see what a free user sees. Only test builds have this switch: the Play Store build and the public web copy don't, because the app asks Android itself whether it's a test build.
 - Anything broken: tell me the tool name and what you typed. `adb logcat | grep -i chipload` catches crashes if the phone is plugged in with USB debugging.
 

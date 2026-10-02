@@ -402,6 +402,46 @@ const CORPUS = [
   { q: "1/4-20 x .75", top: ["tap-drill", "shcs"], oneThread: "1/4-20", not: ["npt"], src: "f5" },
   { q: "3/8-16 x 1-1/2", top: ["tap-drill", "shcs"], oneThread: "3/8-16", not: ["npt"], src: "f5" },
   { q: "2 flute vs 3 flute aluminum", top: "feeds-mill", src: "f5 day" },
+
+  // ── final search review (hobbyist and machinist probes) ──
+  // "in" before a material is a preposition, not inches: a thread never takes a unit, nor does a size that has one.
+  { q: "what drill for 1/4-20 in steel", top: "tap-drill", pre: { thread: "1/4-20" }, src: "rv4" },
+  { q: "1/4-20 in aluminum", top: "tap-drill", pre: { thread: "1/4-20" }, src: "rv4" },
+  { q: "1/4-20 aluminum", top: "tap-drill", pre: { thread: "1/4-20" }, src: "rv4" },
+  { q: "10-32 in brass", top: "tap-drill", pre: { thread: "10-32" }, src: "rv4" },
+  { q: "M6x1 in steel", top: "tap-drill", pre: { thread: "M6x1" }, src: "rv4" },
+  { q: "3/8-16 in steel", top: "tap-drill", pre: { thread: "3/8-16" }, src: "rv4" },
+  { q: "tap drill for 1/4-20 in aluminum", top: "tap-drill", pre: { thread: "1/4-20" }, src: "rv4" },
+  { q: "10mm in inches", top: "fraction-converter", pre: { value: "10", units: "mm" }, src: "rv4" },
+  { q: "what is 12mm in inches", top: "fraction-converter", pre: { value: "12", units: "mm" }, src: "rv4" },
+  { q: "6mm in inch", top: "fraction-converter", pre: { value: "6", units: "mm" }, src: "rv4" },
+  { q: "3/8 in mm", top: "fraction-converter", pre: { value: "3/8", units: "in" }, src: "rv4" },
+  // A code with a material is a cutting-speed question for the tool that makes the code.
+  { q: "g96 aluminum", top: "lathe-feeds", find: { "gcode-ref": { q: "g96" } }, src: "rv4" },
+  { q: "g96 s500 aluminum", top: "lathe-feeds", src: "rv4" },
+  { q: "g96 steel", top: "lathe-feeds", src: "rv4" },
+  { q: "g84 aluminum", top: ["tapping-feed", "gcode-ref"], src: "rv4" },
+  // Shop shorthand for end mills and drills: glued flute counts, tool material, roughers, alloy grades.
+  { q: "1/2 4fl carbide 6061", top: "feeds-mill", src: "rv4 day" },
+  { q: "1/4 3fl aluminum", top: "feeds-mill", src: "rv4 day" },
+  { q: "3/8 4 flute carbide steel", top: "feeds-mill", src: "rv4 day" },
+  { q: "3/4 4 flute rougher steel", top: "feeds-mill", src: "rv4" },
+  { q: "5/8 6 flute finisher", top: "feeds-mill", src: "rv4" },
+  { q: "1/2 drill 4140", top: "feeds-drill", src: "rv4 day" },
+  { q: "3/8 drill 1018", top: "feeds-drill", src: "rv4" },
+  { q: "feed per tooth 1/2 4 flute", top: ["feeds-mill", "chip-thinning"], src: "rv4 day" },
+  // Everyday words the catalog spells differently.
+  { q: "parting off speed", top: ["lathe-feeds", "lathe-cycle"], src: "rv4 day" },
+  { q: "thermal growth 10 inch aluminum", top: "thermal", src: "rv4" },
+  { q: "3 wire 3/8-16", top: "mow", pre: { thread: "3/8-16" }, src: "rv4" },
+  { q: "3 wire 1/4-20", top: "mow", pre: { thread: "1/4-20" }, src: "rv4" },
+  { q: "1/4 bolt hole", top: "shcs", pre: { q: "1/4" }, src: "rv4 day" },
+  { q: "bolt hole for 3/8", top: "shcs", pre: { q: "3/8" }, src: "rv4" },
+  { q: "how far apart are 5 holes on 4 inch circle", top: "bolt-circle", src: "rv4 day" },
+  { q: "convert 70 f to c", top: "unit-converter", src: "rv4 day" },
+  { q: "foot pounds to newton meters", top: "unit-converter", src: "rv4 day" },
+  { q: "3/8-16 helicoil drill", top: "sti", pre: { thread: "3/8-16" }, src: "rv4" },
+  { q: "helicoil drill 3/8-16", top: "sti", pre: { thread: "3/8-16" }, src: "rv4" },
 ];
 
 const list = (q) => searchCalcs(q, allCalcs());

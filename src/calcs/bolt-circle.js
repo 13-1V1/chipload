@@ -16,7 +16,7 @@ export default register({
   short: "Hole coordinates, G-code, CSV, DXF",
   help: "Holes spaced evenly around a circle, like on a flange. Gives the X/Y of every hole so you can dial them in, plus a drill program for CNC (Pro).",
   category: "geometry",
-  keywords: ["bolt circle", "bolt hole", "bhc", "pcd", "pattern", "holes", "coordinates", "g81", "g83", "dxf", "flange", "hole pattern", "evenly spaced holes", "circle of holes"],
+  keywords: ["bolt circle", "bolt hole circle", "bhc", "pcd", "pattern", "holes", "coordinates", "g81", "g83", "dxf", "flange", "hole pattern", "evenly spaced holes", "circle of holes"],
   pro: false,
   safety: "G-code is a starting point. Simulate, single-block, and dry run above the part.",
   inputs: [

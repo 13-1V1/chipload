@@ -77,7 +77,7 @@ mark("2. Unit toggle semantics: a typed surface speed must mean the same cut aft
     { id: "bolt-circle", set: { gcode: "drill", feed: "5" }, same: "code" },
     { id: "cut-time", set: { feed: "40", length: "12" }, stat: /Per pass/ },
     { id: "circle-interp", set: { feed: "40" }, stat: /Ratio/ },
-    { id: "surface-finish", set: { ipr: "0.005" }, stat: null },
+    { id: "surface-finish", set: { ipr: "0.005" }, stat: null, same: "ra" },
     { id: "lathe-cycle", set: { sfm: "400", ipr: "0.010" }, stat: /Per pass/ },
     { id: "thermal", set: { from: "68", to: "100", length: "10" }, stat: /Final size/, same: "length" },
     { id: "chip-thinning", set: { sfm: "600" }, stat: /Spindle/ },
@@ -100,9 +100,14 @@ mark("2. Unit toggle semantics: a typed surface speed must mean the same cut aft
     await page.locator('.calc > .seg [data-u="in"]').click(); await page.waitForTimeout(150);
     const back = await read();
     const num = (t) => parseFloat(String(t ?? "").replace(/[^0-9.\-]/g, ""));
-    // quantities that must not change when only the unit system changes: RPM, seconds, ratios, µin
+    // quantities that must not change when only the unit system changes: RPM, seconds, ratios
     const invariant = cse.stat ? [before.stat, inMm.stat] : [before.primary, inMm.primary];
+    // Ra reads µin on an inch screen, µm on a metric one (1 µin = 0.0254 µm). Allow the two displays' rounding
+    // (whole µin, 0.01 µm) and 1%: the metric screen figures the same insert at its ISO 1832 radius (0.8 mm for
+    // the 1/32" chip, 0.794 mm), and Ra goes as 1/r.
+    const sameRa = () => { const a = num(before.primary), b = num(inMm.primary) / 0.0254; return Math.abs(a - b) <= 0.5 + 0.005 / 0.0254 + a * 0.01; };
     const sameCut = cse.same === "length" ? Math.abs(num(inMm.stat) / 25.4 - num(before.stat)) < 0.001
+      : cse.same === "ra" ? sameRa()
       : cse.same === "code" ? /F127\.0/.test(inMm.code)
       : Math.abs(num(invariant[0]) - num(invariant[1])) <= Math.max(1, Math.abs(num(invariant[0])) * 0.005);
     report.unitToggle.push({ id: cse.id, inch: before.primary, inchStat: before.stat, mm: inMm.primary, mmStat: inMm.stat, backToInch: back.primary, roundTripOk: back.primary === before.primary && back.stat === before.stat, sameCut });
