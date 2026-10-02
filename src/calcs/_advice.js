@@ -4,6 +4,7 @@
 // The cautions an experienced machinist would say out loud. Shared by the speeds & feeds tools and the job sheet.
 
 import { fmt } from "../core/format.js";
+import { spindleSanity } from "./_machine.js";
 
 /**
  * Drill feed per rev scales with how well the material cuts. Machinability rating is vs. B1112 = 100%.
@@ -13,10 +14,12 @@ export function drillFeedFactor(rating) {
   return Math.max(0.5, Math.min(1.25, 0.5 + (Number(rating) || 0) / 200));
 }
 
-/** End-mill cautions. All lengths in inches. */
-export function millAdvice({ dIn, wocIn, docIn, requestedRpm, machine }) {
-  const out = [];
-  if (!machine && requestedRpm > 20000) out.push(`${fmt(requestedRpm, 0)} RPM is more than most spindles turn. Add your machine in Shop and the feed gets figured at its top speed instead.`);
+/**
+ * End-mill cautions. All lengths in inches. `machine` is the mill that applies (machineFor(c, "mill"));
+ * `c` is the calculator context, so the spindle wording matches every other tool.
+ */
+export function millAdvice({ dIn, wocIn, docIn, requestedRpm, machine, c }) {
+  const out = [...spindleSanity(requestedRpm, machine, "mill", c)];
   if (wocIn >= dIn * 0.95) out.push("Full-width slot: the chips have nowhere to go. Cut the feed 20–50%, and use a 2- or 3-flute in aluminum.");
   if (docIn > dIn * 2) out.push("Depth of cut is over 2× the tool diameter. Step down in passes or the tool will deflect and chatter.");
   return out;

@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import { resolve } from "node:path";
 
-const PORT = 4199;
+const PORT = Number(process.env.E2E_PORT) || 4199; // another port when two runs share the machine
 const BASE = `http://127.0.0.1:${PORT}/`;
 let server, browser;
 
@@ -666,4 +666,271 @@ test("the last line of a tool scrolls clear of the answer bar on a phone with a 
     assert.deepEqual(errors, []);
     await ctx.close();
   }
+});
+
+// ── Fixes from the 10/02/2026 double-check (ui team) ─────────────────────────────────────────────
+
+const setPro = (page, on) => page.evaluate(async (on) => { const s = await import("./src/app/settings.js"); s.setSetting("pro", on); }, on);
+
+test("Pro landing while a locked screen is open unlocks that screen, and Home drops its PRO tags", async () => {
+  const { page, ctx, errors } = await open("/calc/chamfer");
+  assert.equal(await page.locator("#answerVal").textContent(), "Pro");
+  await setPro(page, true); // what billing.js does when Play approves a purchase
+  await page.waitForFunction(() => document.querySelector("#answerVal")?.textContent === "0.25");
+  assert.equal(await page.locator(".lock").count(), 0, "the lock card is gone without leaving the screen");
+  // Home: the chamfer chip (a Pro tool in recents) is tagged for a free user, and loses the tag live
+  await setPro(page, false);
+  await page.evaluate(() => { location.hash = "#/"; });
+  const chip = page.locator('#favs .chip[data-calc="chamfer"]');
+  await chip.waitFor();
+  assert.equal(await chip.locator(".pro-tag").count(), 1, "Pro chip carries the PRO tag");
+  await setPro(page, true);
+  await page.waitForFunction(() => !document.querySelector('#favs .chip[data-calc="chamfer"] .pro-tag'));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("a locked Pro tool shows no part of its answer: no Recent drawer, no auto numbers, a fixed label", async () => {
+  const { page, ctx, errors } = await open("/calc/lathe-feeds", { pro: true });
+  await page.waitForTimeout(1200); // long enough for Recent to save this answer
+  await setPro(page, false);
+  await page.locator(".lock").waitFor();
+  const s = await page.evaluate(() => ({
+    drawers: [...document.querySelectorAll("details.drawer summary")].map((x) => x.textContent),
+    placeholders: [...document.querySelectorAll("main input.input")].map((x) => x.placeholder).filter((p) => /auto/.test(p)),
+    lbl: document.querySelector("#answerLbl").textContent,
+  }));
+  assert.ok(!s.drawers.some((d) => /Recent/.test(d)), `no Recent drawer: ${s.drawers}`);
+  assert.ok(s.placeholders.length && s.placeholders.every((p) => p === "auto"), `auto without a number: ${s.placeholders}`);
+  assert.equal(s.lbl, "Unlock Pro to see the answer");
+  await page.evaluate(() => { location.hash = "#/calc/true-position"; });
+  await page.locator(".lock").waitFor();
+  assert.doesNotMatch(await page.locator("#answerLbl").textContent(), /OUT|in tolerance/i, "pass/fail stays locked");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("without Pro, a machine saved in Shop no longer clamps the free tools", async () => {
+  const { page, ctx, errors } = await open("/");
+  await page.evaluate(() => {
+    localStorage.setItem("chipload.blob.machines", JSON.stringify([{ id: "m1", name: "Slow mill", type: "mill", maxRpm: 2000, maxFeed: 30, controller: "other", units: "in" }]));
+    localStorage.setItem("chipload.blob.activeMachine", JSON.stringify("m1"));
+  });
+  await page.goto(`${BASE}?e2e=noclamp#/calc/feeds-mill?diameter=0.25&sfm=800`);
+  await page.waitForLoadState("networkidle");
+  assert.equal(await page.locator(".warn", { hasText: "tops out" }).count(), 0, "no machine warning");
+  assert.notEqual(await page.locator("#answerVal").textContent(), "", "answer shows");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("the Pro button shows no made-up price before Play answers", async () => {
+  const { page, ctx, errors } = await open("/pro");
+  const buy = await page.locator("#buy").textContent();
+  assert.doesNotMatch(buy, /\$|€|£/, `no hard-coded price: "${buy}"`);
+  assert.match(buy, /Unlock Pro/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("home search: '8.5 mm' opens the converter in mm, '1 1/4 npt' opens the 1-1/4 pipe size", async () => {
+  const { page, ctx, errors } = await open("/");
+  await page.fill("#q", "8.5 mm");
+  await page.press("#q", "Enter");
+  await page.waitForURL(/#\/calc\/fraction-converter/);
+  assert.match(page.url(), /units=mm/);
+  assert.equal(await page.locator('.seg [data-v="mm"]').getAttribute("aria-pressed"), "true");
+  await page.evaluate(() => { location.hash = "#/"; });
+  await page.fill("#q", "1 1/4 npt");
+  // ASME B1.20.1: 1-1/4 NPT is 1-1/4-11.5 — never the 1 in size
+  assert.match(await page.locator("#results [data-calc]").first().getAttribute("data-params"), /1-1\/4-11\.5/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("G-code reference: M6 finds M06 Tool change first", async () => {
+  const { page, ctx, errors } = await open("/calc/gcode-ref?q=M6");
+  const row = page.locator("#cbody tr").first();
+  assert.match(await row.textContent(), /M06/);
+  assert.equal(await row.getAttribute("class"), "hit");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("the answer bar never cuts the answer short, glove mode included", async () => {
+  // tap drill for 1/4-20 is #7 (ASME B1.1 / Machinery's Handbook tap drill table); fits and tol-stack are long ranges
+  for (const [w, glove] of [[375, true], [320, true], [320, false]]) {
+    for (const id of ["tap-drill", "fits", "tol-stack", "drill-point"]) {
+      const { page, ctx, errors } = await open(`/calc/${id}`, { pro: true });
+      await page.setViewportSize({ width: w, height: 740 });
+      if (glove) await page.locator("#gloveBtn").click();
+      await page.waitForTimeout(150);
+      const v = await page.evaluate(() => { const el = document.querySelector("#answerVal"); return { text: el.textContent, sw: el.scrollWidth, cw: el.clientWidth, right: el.getBoundingClientRect().right, vw: innerWidth }; });
+      assert.ok(v.text && v.sw <= v.cw + 1 && v.right <= v.vw, `${id} ${w}px${glove ? " glove" : ""}: "${v.text}" shows ${v.cw} of ${v.sw} px`);
+      if (id === "tap-drill") assert.equal(v.text, "#7");
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  }
+});
+
+test("320 px glove: a number is never split across lines — it takes the whole row instead", async () => {
+  // "-1.150" over "2" read as -1.150, not -1.1502 (drill point); "0.0020" over "8" for 0.00208 (thermal)
+  for (const units of ["in", "mm"]) {
+    for (const id of ["drill-point", "thermal", "fits", "thread-metric"]) {
+      const { page, ctx, errors } = await open("/");
+      await page.evaluate((units) => localStorage.setItem("chipload.settings.v1", JSON.stringify({ units, theme: "dark", glove: true, pro: true, places: 4 })), units);
+      await page.setViewportSize({ width: 320, height: 640 });
+      await page.goto(`${BASE}?e2e=wide-${units}#/calc/${id}`);
+      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(150);
+      const r = await page.evaluate(() => {
+        const el = document.querySelector("#answerVal"), box = (s) => document.querySelector(s).getBoundingClientRect();
+        // each piece ("-1.1502", "0.0003 –") on one line: its line boxes share one top
+        const split = [...el.querySelectorAll(".nw")].filter((s) => new Set([...s.getClientRects()].map((q) => Math.round(q.top))).size > 1).map((s) => s.textContent);
+        const val = box("#answerVal"), more = box("#answerMore");
+        return { text: el.textContent, sw: el.scrollWidth, cw: el.clientWidth, split, fontPx: parseFloat(getComputedStyle(el).fontSize),
+          overlap: more.left < val.right && more.top < val.bottom && more.bottom > val.top, moreRight: more.right, vw: innerWidth };
+      });
+      const where = `${id} ${units} 320px glove "${r.text}"`;
+      assert.ok(r.text, `${where}: shows an answer`);
+      assert.deepEqual(r.split, [], `${where}: no number broken across lines`);
+      assert.ok(r.sw <= r.cw + 1, `${where}: shows ${r.cw} of ${r.sw} px`);
+      assert.ok(r.fontPx >= 16, `${where}: readable (${r.fontPx} px)`);
+      assert.ok(!r.overlap && r.moreRight <= r.vw, `${where}: the buttons stay clear of the number and on screen`);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  }
+});
+
+test("320 px glove: a long unit ('(0.4844 in)', 'mm/min') never runs under the copy button", async () => {
+  for (const [id, units] of [["ream", "in"], ["npt", "in"], ["sti", "in"], ["feeds-mill", "mm"]]) {
+    const { page, ctx, errors } = await open("/");
+    await page.evaluate((units) => localStorage.setItem("chipload.settings.v1", JSON.stringify({ units, theme: "dark", glove: true, pro: true, places: 4 })), units);
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.goto(`${BASE}?e2e=unit-${units}#/calc/${id}`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(150);
+    const r = await page.evaluate(() => {
+      const box = (s) => document.querySelector(s).getBoundingClientRect();
+      const u = box("#answerUnit"), c = box("#answerCopy"), v = box("#answerVal");
+      const hits = (b) => b.right > c.left + 0.5 && b.left < c.right && b.bottom > c.top && b.top < c.bottom;
+      return { unit: document.querySelector("#answerUnit").textContent, unitHit: hits(u), valHit: hits(v), fontPx: parseFloat(getComputedStyle(document.querySelector("#answerVal")).fontSize) };
+    });
+    assert.ok(r.unit, `${id} ${units}: shows its unit`);
+    assert.ok(!r.unitHit && !r.valHit, `${id} ${units}: "${r.unit}" stays clear of the copy button`);
+    assert.ok(r.fontPx >= 16, `${id} ${units}: readable (${r.fontPx} px)`);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test("320 x 568 glove, pad open: the field being typed in shows whole above a three-row answer bar", async () => {
+  // fits / drill-point / thermal answers take the whole row at 320 px glove; with the pad up the bar drops its label
+  for (const [id, field, units] of [["fits", "nominal", "in"], ["drill-point", "diameter", "in"], ["thermal", "length", "in"], ["feeds-mill", "diameter", "mm"]]) {
+    const { page, ctx, errors } = await open("/");
+    await page.evaluate((units) => localStorage.setItem("chipload.settings.v1", JSON.stringify({ units, theme: "dark", glove: true, pro: true, places: 4 })), units);
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.goto(`${BASE}?e2e=pad-${units}#/calc/${id}`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(150);
+    await page.locator(`#f-${id}-${field}`).click();
+    await page.waitForSelector(".numpad.open");
+    await page.waitForTimeout(600);
+    const r = await page.evaluate(() => {
+      const f = document.querySelector('[data-active="true"]').getBoundingClientRect();
+      const bar = document.querySelector(".answer"), top = document.querySelector(".topbar");
+      const topBottom = getComputedStyle(top).position === "sticky" ? top.getBoundingClientRect().bottom : 0;
+      return { wide: bar.classList.contains("wide"), fTop: f.top, fBottom: f.bottom, barTop: bar.getBoundingClientRect().top, topBottom: Math.max(0, topBottom) };
+    });
+    assert.ok(r.wide, `${id} ${units}: the answer takes the whole row at 320 px glove`);
+    assert.ok(r.fTop >= r.topBottom - 1 && r.fBottom <= r.barTop + 1, `${id} ${units}: field ${r.fTop}–${r.fBottom} between ${r.topBottom} and ${r.barTop}`);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test("pad open on a short phone with a nav bar: the field being typed in stays in view", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill");
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.locator("#gloveBtn").click();
+  await page.evaluate(() => document.documentElement.style.setProperty("--inset-bottom", "48px")); // 3-button nav bar
+  await page.locator("#f-feeds-mill-diameter").click();
+  await page.waitForSelector(".numpad.open");
+  await page.waitForTimeout(500);
+  const r = await page.evaluate(() => {
+    const field = document.querySelector('[data-active="true"]').getBoundingClientRect();
+    const bar = document.querySelector(".answer"), top = document.querySelector(".topbar").getBoundingClientRect();
+    return { pad: getComputedStyle(bar).paddingBottom, fTop: field.top, fBottom: field.bottom, barTop: bar.getBoundingClientRect().top, topBottom: Math.max(0, top.bottom) };
+  });
+  assert.equal(r.pad, "10px", "the pad pads for the nav bar; the answer bar on it doesn't again");
+  assert.ok(r.fTop >= r.topBottom - 1 && r.fBottom <= r.barTop + 1, `field ${r.fTop}–${r.fBottom} between ${r.topBottom} and ${r.barTop}`);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("sideways: controls stay clear of a camera cutout or side nav bar, and the ⋯ menu fits in glove mode", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill", { pro: true });
+  await page.setViewportSize({ width: 640, height: 320 });
+  await page.locator("#gloveBtn").click();
+  await page.locator("#answerMore").click();
+  const m = await page.evaluate(() => { const r = document.querySelector(".menu").getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
+  assert.ok(m.top >= 0, `menu top ${m.top} is on screen`);
+  await page.locator('.menu [data-act="reset"]').scrollIntoViewIfNeeded();
+  await page.locator('.menu [data-act="job"]').scrollIntoViewIfNeeded();
+  const job = await page.evaluate(() => { const r = document.querySelector('.menu [data-act="job"]').getBoundingClientRect(); return { top: r.top, h: r.height }; });
+  assert.ok(job.top >= 0 && job.h >= 56, `Save job is reachable: ${JSON.stringify(job)}`);
+  await page.keyboard.press("Escape");
+  await page.mouse.click(5, 100);
+  // a 48 px inset on each side (Chromium's safe-area emulation stands in for the phone)
+  const cdp = await ctx.newCDPSession(page);
+  let emulated = true;
+  try { await cdp.send("Emulation.setSafeAreaInsetsOverride", { insets: { left: 48, right: 48 } }); } catch { emulated = false; }
+  if (emulated) {
+    await page.setViewportSize({ width: 780, height: 360 });
+    await page.waitForTimeout(200);
+    const b = await page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      return { back: r("#back").left, val: r("#answerVal").left, glove: r("#gloveBtn").right, more: r("#answerMore").right, vw: innerWidth };
+    });
+    assert.ok(b.back >= 48 && b.val >= 48, `left side clear: ${JSON.stringify(b)}`);
+    assert.ok(b.glove <= b.vw - 48 && b.more <= b.vw - 48, `right side clear: ${JSON.stringify(b)}`);
+  }
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Back stays in the app: past a bad link, and from a shared link opened in a used tab", async () => {
+  const { page, ctx, errors } = await open("/");
+  await page.evaluate(() => { location.hash = "#/calc/feeds-mill"; });
+  await page.waitForURL(/feeds-mill/);
+  await page.evaluate(() => { location.hash = "#/bogus"; });
+  await page.waitForFunction(() => location.hash === "#/");
+  await page.goBack();
+  await page.waitForURL(/feeds-mill/); // the bad link was replaced, not stacked on top
+  // a shared link opened in a tab that already showed another page
+  await page.goto(`${BASE}assets/icons/app-192.png`);
+  await page.goto(`${BASE}?e2e=shared#/calc/tap-drill`);
+  await page.waitForLoadState("networkidle");
+  await page.locator("#back").click();
+  await page.waitForFunction(() => location.hash === "#/" && document.querySelector("#title")?.textContent === "Chipload");
+  assert.ok(page.url().startsWith(BASE), "still in Chipload");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("job sheet: a field added with 'add one more number' stays through an inch/mm switch", async () => {
+  const { page, ctx, errors } = await open("/calc/job-sheet");
+  await page.locator(".help [data-gotit]").click();
+  await page.locator('.next-item[data-focus="woc"]').click();
+  await page.waitForSelector("#f-job-sheet-woc", { state: "visible" });
+  await page.mouse.click(5, 100); // put the pad away
+  await page.locator('.calc > .seg [data-u="mm"]').click();
+  await page.waitForTimeout(100);
+  assert.ok(await page.locator("#f-job-sheet-woc").isVisible(), "still shown in mm");
+  await page.locator('.calc > .seg [data-u="in"]').click();
+  assert.ok(await page.locator("#f-job-sheet-woc").isVisible(), "and back in inch");
+  assert.deepEqual(errors, []);
+  await ctx.close();
 });

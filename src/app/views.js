@@ -26,7 +26,7 @@ export function renderHome(root) {
   const introSeen = loadBlob("introSeen", false);
   const jobsOpen = loadBlob("jobsOpen", true);
 
-  const favHtml = chips.length ? `<h2 class="sec">Favorites &amp; recent</h2><div class="fav-row" id="favs">${chips.map(({ def, fav }) => `<button type="button" class="chip" data-calc="${def.id}">${fav ? ICONS.starFilled.replace("<svg", '<svg width="18" height="18" style="color:var(--scribe)"') : ""}${esc(def.title)}</button>`).join("")}</div>` : "";
+  const favHtml = chips.length ? `<h2 class="sec">Favorites &amp; recent</h2><div class="fav-row" id="favs">${chips.map(({ def, fav }) => `<button type="button" class="chip" data-calc="${def.id}">${fav ? ICONS.starFilled.replace("<svg", '<svg width="18" height="18" style="color:var(--scribe)"') : ""}${esc(def.title)}${def.pro && !settings.pro ? ` <span class="pro-tag">PRO</span>` : ""}</button>`).join("")}</div>` : "";
   const jobsHtml = `<details class="drawer jobs" id="jobs" ${jobsOpen ? "open" : ""}><summary>Common jobs<span class="sub">plain-English starting points</span></summary><div class="body"><ul class="list">${jobRows(settings)}</ul></div></details>`;
   // Pros with favorites get them first; everyone else starts with the plain-English list.
   const middle = favIds.length ? favHtml + `<div style="height:16px"></div>` + jobsHtml : jobsHtml + (favHtml ? `<div style="height:16px"></div>` + favHtml : "");
@@ -150,7 +150,8 @@ export function renderPro(root) {
   const draw = () => {
     const s = getSettings();
     const b = getBillingState();
-    const price = b.price ? ` — ${esc(b.price)}` : " — $9.99";
+    // Only Play knows the price in this country and currency: show none until it answers.
+    const price = b.price ? ` — ${esc(b.price)}` : "";
     const noStore = b.error === "no-store";
     root.innerHTML = `
     <div class="about">

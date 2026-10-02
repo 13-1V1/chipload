@@ -32,16 +32,22 @@ export function chamferDepth(smallDiameter, largeDiameter, includedAngleDegrees)
   return (largeDiameter - smallDiameter) / (2 * Math.tan(degToRad(includedAngleDegrees / 2)));
 }
 
-/** Center and radius through three points, or null if collinear. */
+/**
+ * Center and radius through three points, or null if they are on a line (or two are the same point).
+ * Worked from point 1 so big coordinates don't eat the precision, and the straight-line test is scaled
+ * to the spread of the points: |cross| ÷ span² is the same number in inches or mm, at X10 or X1000.
+ */
 export function circleThrough3Points(p1, p2, p3) {
-  const [x1, y1] = p1, [x2, y2] = p2, [x3, y3] = p3;
-  const determinant = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
-  if (Math.abs(determinant) < 1e-12) return null;
-  const a = x1 * x1 + y1 * y1, b = x2 * x2 + y2 * y2, c = x3 * x3 + y3 * y3;
-  const x = (a * (y2 - y3) + b * (y3 - y1) + c * (y1 - y2)) / determinant;
-  const y = (a * (x3 - x2) + b * (x1 - x3) + c * (x2 - x1)) / determinant;
-  const radius = Math.hypot(x1 - x, y1 - y);
-  return { x, y, radius, diameter: radius * 2 };
+  const [x1, y1] = p1;
+  const bx = p2[0] - x1, by = p2[1] - y1, cx = p3[0] - x1, cy = p3[1] - y1;
+  const span2 = Math.max(bx * bx + by * by, cx * cx + cy * cy, (cx - bx) ** 2 + (cy - by) ** 2);
+  const cross = bx * cy - by * cx;
+  if (!(span2 > 0) || Math.abs(cross) <= 1e-9 * span2) return null;
+  const b2 = bx * bx + by * by, c2 = cx * cx + cy * cy;
+  const ux = (cy * b2 - by * c2) / (2 * cross);
+  const uy = (bx * c2 - cx * b2) / (2 * cross);
+  const radius = Math.hypot(ux, uy);
+  return { x: x1 + ux, y: y1 + uy, radius, diameter: radius * 2 };
 }
 
 /** Gauge-block stack for a sine bar: H = L × sin(θ). */
@@ -92,12 +98,18 @@ export function solveTriangle(mode, p) {
     C = 180 - A - B; if (C <= 0) throw new Error("Angles must add to less than 180°");
     b = a * Math.sin(r(B)) / Math.sin(r(A)); c = a * Math.sin(r(C)) / Math.sin(r(A));
   } else if (mode === "SSA") {
+    // Two triangles only when A < 90° and b·sin A < a < b (law of sines, ambiguous case). At a = b·sin A
+    // there is one, with B = 90°; at a = b there is one, isosceles. Float rounding lands a few parts in
+    // 10^16 off those edges, so they are matched with a small relative tolerance, not exactly.
+    const EDGE = 1e-12;
     ({ a, b, A } = p);
-    const sinB = b * Math.sin(r(A)) / a;
-    if (sinB > 1) throw new Error("No triangle: side a is too short for that angle");
+    let sinB = b * Math.sin(r(A)) / a;
+    if (sinB > 1 + EDGE) throw new Error("No triangle: side a is too short for that angle");
+    const right = sinB >= 1 - EDGE;
+    if (right) sinB = 1;
     B = d(Math.asin(sinB)); C = 180 - A - B; c = a * Math.sin(r(C)) / Math.sin(r(A));
     const B2 = 180 - B, C2 = 180 - A - B2;
-    if (C2 > 0 && Math.abs(B2 - B) > 1e-9) ambiguous = { a, b, c: a * Math.sin(r(C2)) / Math.sin(r(A)), A, B: B2, C: C2 };
+    if (!right && A < 90 && a < b * (1 - EDGE) && C2 > 1e-9) ambiguous = { a, b, c: a * Math.sin(r(C2)) / Math.sin(r(A)), A, B: B2, C: C2 };
   } else throw new Error("Unsupported triangle mode");
   const area = 0.5 * a * b * Math.sin(r(C));
   return { a, b, c, A, B, C, area, ambiguous };
@@ -107,6 +119,9 @@ export function solveTriangle(mode, p) {
 /**
  * Circular segment from any two of: radius R, chord c, height (sagitta) h, central angle θ (deg).
  * Source: Machinery's Handbook "Segments of Circles".
+ * Chord + height pins one arc: when h > R it is more than a half circle, so θ = 2·atan2(c/2, R − h)
+ * (= 360° − 2·asin(c/2R) there). Radius + chord fits two arcs; this returns the minor one (θ ≤ 180°),
+ * the handbook's convention — the major arc is 360° − θ, height 2R − h.
  */
 export function circularSegment({ radius, chord, height, angle }) {
   let R = radius, c = chord, h = height, th = angle;
@@ -114,7 +129,7 @@ export function circularSegment({ radius, chord, height, angle }) {
   if (Number.isFinite(R) && Number.isFinite(c)) { if (c > 2 * R) throw new Error("Chord can't be longer than the diameter"); th = d(2 * Math.asin(c / (2 * R))); h = R - Math.sqrt(R * R - c * c / 4); }
   else if (Number.isFinite(R) && Number.isFinite(h)) { if (h > 2 * R) throw new Error("Height can't exceed the diameter"); c = 2 * Math.sqrt(2 * R * h - h * h); th = d(2 * Math.acos((R - h) / R)); }
   else if (Number.isFinite(R) && Number.isFinite(th)) { c = 2 * R * Math.sin(r(th) / 2); h = R * (1 - Math.cos(r(th) / 2)); }
-  else if (Number.isFinite(c) && Number.isFinite(h)) { R = (c * c / (4 * h) + h) / 2; th = d(2 * Math.asin(c / (2 * R))); }
+  else if (Number.isFinite(c) && Number.isFinite(h)) { R = (c * c / (4 * h) + h) / 2; th = d(2 * Math.atan2(c / 2, R - h)); }
   else if (Number.isFinite(c) && Number.isFinite(th)) { R = c / (2 * Math.sin(r(th) / 2)); h = R * (1 - Math.cos(r(th) / 2)); }
   else if (Number.isFinite(h) && Number.isFinite(th)) { R = h / (1 - Math.cos(r(th) / 2)); c = 2 * R * Math.sin(r(th) / 2); }
   else throw new Error("Give any two of radius, chord, height, angle");

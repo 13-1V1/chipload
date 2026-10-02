@@ -37,7 +37,7 @@ export default register({
         { label: "Face width (hypotenuse)", value: Math.hypot(leg, depth), unit: c.L.length, places: p },
       ],
       source: "geometry",
-      explain: [{ title: "Chamfer depth", formula: "depth = (Dlarge − Dsmall) ÷ (2 tan(θ ÷ 2))", plugged: `= (${fmt(v.large, p)} − ${fmt(v.small, p)}) ÷ (2 tan ${fmt(angle / 2, 1)}°) = ${fmt(depth, p)}` }],
+      explain: [{ title: "Chamfer depth", formula: "depth = (Dlarge − Dsmall) ÷ (2 tan(θ ÷ 2))", plugged: `= (${fmt(v.large, p)} − ${fmt(v.small, p)} ${c.L.length}) ÷ (2 tan ${fmt(angle / 2, 1)}°) = ${fmt(depth, p)} ${c.L.length}` }],
       notes: ["For a spot drill, small diameter is 0 (the point). For a chamfer tool with a flat tip, enter the tip diameter."],
       historyLabel: `${angle}° · ${fmt(v.small, p)} → ${fmt(v.large, p)}`,
     };

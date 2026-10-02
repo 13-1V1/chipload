@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { boltCircleCoordinates, partialBoltCircleCoordinates, buildBoltGcode, buildBoltPositions, buildBoltCsv, buildBoltDxf, boltGcodeProblems, usesOtherDialect } from "../../src/core/boltcircle.js";
+import { boltCircleCoordinates, partialBoltCircleCoordinates, buildBoltGcode, buildBoltPositions, buildBoltCsv, buildBoltDxf, boltGcodeProblems, boltFeedCaution, usesOtherDialect, wrapDegrees, zHome } from "../../src/core/boltcircle.js";
 import { gcodeNumber } from "../../src/core/format.js";
 
 test("4 holes on a 2 inch circle land on the axes", () => {
@@ -32,7 +32,9 @@ test("G-code output is inch by default with G81 / G83 cycles", () => {
   const coords = boltCircleCoordinates(2, 4);
   const drill = buildBoltGcode(coords, { mode: "drill", z: -0.5, r: 0.1, feed: 5 });
   assert.match(drill, /^%\n/);
-  assert.match(drill, /\nG20 G17 G40 G49 G80 G90\n/);
+  // Fanuc/Haas safe start sets the feed mode outright: F is per minute only under G94 (Haas Setting 56 off,
+  // or Fanuc's CLR parameter, keeps a G95 from a tapping program alive through M30).
+  assert.match(drill, /\nG20 G17 G40 G49 G80 G90 G94\n/);
   assert.match(drill, /G81 G98 X1\.0 Y0\.0 Z-0\.5 R0\.1 F5\.0/);
   assert.match(drill, /M30\n%$/);
   const peck = buildBoltGcode(coords, { mode: "peck", peck: 0.1 });
@@ -111,6 +113,57 @@ test("G-code words always carry a decimal point", () => {
   }
 });
 
+// Haas mill F range is 0.0001–500.0000 in/min (4 places), metric F 3 places (Haas Mill Programming Workbook).
+test("F word keeps the feed typed, and a feed that posts as F0 is refused", () => {
+  const coords = boltCircleCoordinates(2, 4);
+  const f = (feed, units = "in") => buildBoltGcode(coords, { mode: "drill", units, feed }).match(/^G81 .* F([\d.]+)$/m)[1];
+  assert.equal(f(0.125), "0.125");
+  assert.equal(f(0.006), "0.006");
+  assert.equal(f(7.25), "7.25");
+  assert.equal(f(0.0125, "mm"), "0.013");
+  assert.equal(f(120, "mm"), "120.0");
+  const ok = { mode: "drill", z: -0.5, r: 0.1, safeZ: 1, spindle: 1000 };
+  assert.deepEqual(boltGcodeProblems({ ...ok, feed: 0.004 }), []);
+  assert.match(boltGcodeProblems({ ...ok, feed: 0.00004 })[0], /posts as F0/);
+  assert.match(boltGcodeProblems({ ...ok, units: "mm", feed: 0.0004 })[0], /0\.0004 mm\/min posts as F0/);
+});
+
+test("a feed slow enough to be a feed per rev gets a plain warning", () => {
+  assert.match(boltFeedCaution(0.004, 1000, "in"), /looks like a feed per rev.*0\.004 × 1000 RPM = 4 IPM/);
+  assert.equal(boltFeedCaution(0.5, 1000, "in"), null);
+  assert.match(boltFeedCaution(0.1, 1000, "mm"), /mm\/rev.*100 mm\/min/);
+  assert.equal(boltFeedCaution(120, 1000, "mm"), null);
+});
+
+// Typical end: Z to home before M30 (Fanuc G91 G28 Z0 then G90; Haas basic program G53 Z0) — src/data/gcodes.js
+// calls G91 G28 Z0 "the safe form".
+test("drill program sends Z home before M30, in the controller's own words", () => {
+  const coords = boltCircleCoordinates(2, 4);
+  const tail = (controller) => buildBoltGcode(coords, { mode: "drill", controller }).split("\n").slice(-6);
+  assert.deepEqual(tail("fanuc"), ["M9", "M5", "G91 G28 Z0.0", "G90", "M30", "%"]);
+  assert.deepEqual(tail("mazak"), ["M9", "M5", "G91 G28 Z0.0", "G90", "M30", "%"]);
+  assert.deepEqual(tail("haas").slice(-4), ["M5", "G53 G0 Z0.0", "M30", "%"]);
+  assert.deepEqual(zHome("linuxcnc"), ["G53 G0 Z0.0"]);
+  assert.deepEqual(zHome(undefined), ["G91 G28 Z0.0", "G90"]);
+  // positions never moves Z, so it never homes Z either
+  assert.doesNotMatch(buildBoltGcode(coords), /G28|G53/);
+});
+
+// The field hint says 0° is +X and CCW is positive: a polar angle, read 0 to under 360.
+test("hole angles read 0 to under 360; X and Y are unchanged", () => {
+  const six = boltCircleCoordinates(2, 6, 300);
+  assert.deepEqual(six.map((h) => Math.round(h.angleDeg * 1e6) / 1e6), [300, 0, 60, 120, 180, 240]);
+  near(six[1].x, 1, 1e-12); near(six[2].y, Math.sin(Math.PI / 3), 1e-12);
+  const cw = boltCircleCoordinates(2, 6, 0, "cw");
+  assert.deepEqual(cw.map((h) => Math.round(h.angleDeg * 1e6) / 1e6), [0, 300, 240, 180, 120, 60]);
+  near(cw[1].y, -Math.sin(Math.PI / 3), 1e-12);
+  const part = partialBoltCircleCoordinates(2, 3, 0, 90, "cw");
+  assert.deepEqual(part.map((h) => h.angleDeg), [0, 315, 270]);
+  assert.equal(wrapDegrees(720), 0);
+  assert.equal(wrapDegrees(-1e-12), 0);
+  assert.match(buildBoltCsv(six, "in").split("\n")[2], /^2,0,/);
+});
+
 test("drill cycles that would cut air or crash are refused with a reason", () => {
   assert.deepEqual(boltGcodeProblems({ mode: "drill", z: -0.5, r: 0.1, safeZ: 1, feed: 5, spindle: 1000 }), []);
   assert.match(boltGcodeProblems({ mode: "drill", z: 0.5, r: 0.1, safeZ: 1, feed: 5, spindle: 1000 })[0], /below the R plane/);
@@ -118,4 +171,11 @@ test("drill cycles that would cut air or crash are refused with a reason", () =>
   assert.match(boltGcodeProblems({ mode: "peck", z: -0.5, r: 0.1, safeZ: 1, feed: 5, spindle: 1000, peck: 0 })[0], /Peck/);
   assert.match(boltGcodeProblems({ mode: "drill", z: -0.5, r: 0.1, safeZ: 1, feed: 0, spindle: 1000 })[0], /Feed/);
   assert.deepEqual(boltGcodeProblems({ mode: "positions", z: 5, r: 0, safeZ: 1 }), []);
+  // Every length in the message carries its unit, and the example depth is in the units the user works in.
+  assert.equal(boltGcodeProblems({ mode: "drill", z: 0.5, r: 0.1, safeZ: 1, feed: 5, spindle: 1000 })[0],
+    "Hole depth Z (0.5 in) has to be below the R plane (0.1 in). Depth is a negative number, like -0.5 in.");
+  const mm = boltGcodeProblems({ mode: "peck", units: "mm", z: 5, r: 2, safeZ: 1, feed: 100, spindle: 1000, peck: 2 });
+  assert.equal(mm[0], "Hole depth Z (5 mm) has to be below the R plane (2 mm). Depth is a negative number, like -12 mm.");
+  assert.match(mm[1], /^Safe Z \(1 mm\) has to be at or above the R plane \(2 mm\)\./);
+  assert.ok(!mm.join(" ").includes(" in"), "no inch words in mm mode");
 });

@@ -7,25 +7,48 @@
 import { register } from "../app/registry.js";
 import { rpmFromSfm, sfmFromRpm, radialChipThinningFactor, chipLoadScale } from "../core/feeds.js";
 import { cutTime, metalRemovalRate } from "../core/milling.js";
-import { turningTime } from "../core/lathe.js";
-import { materialOptions, materialSpeeds } from "../data/materials-library.js";
+import { materialOptions, materialSpeeds, toolCaution } from "../data/materials-library.js";
 import { TOOL_LABELS } from "../data/materials.js";
 import { drillFeedPerRev } from "./feeds-drill.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
 import { drillFeedFactor, millAdvice, drillAdvice } from "./_advice.js";
+import { machineFor, fitToMachine, spindleSanity, maxRpmOf, maxFeedIpmOf } from "./_machine.js";
+import { money } from "./_money.js";
 
 const isMill = (r) => r.op === "mill";
 const isDrill = (r) => r.op === "drill";
 const isLathe = (r) => r.op === "lathe";
 // Optional fields stay out of the way until they hold a value or the user taps "add …" for them.
 const want = (r, id) => String(r[id] ?? "").trim() !== "" || String(r.shown || "").split(",").includes(id);
+// The sheet's lathe line is a stock-removal plan, so it takes the roughing feed Speeds & feeds — lathe uses
+// (0.012 in/rev; Machinery's Handbook bases its turning speed tables on 0.012 in/rev at 0.125 in depth).
+export const LATHE_ROUGH_IPR = 0.012;
+
+/** Library feed in inches: chip load per tooth before thinning (mill), or feed per rev (drill, lathe). */
+function libraryFeedIn(r, dIn) {
+  const sp = materialSpeeds(r.material, r.toolType);
+  if (isMill(r)) return sp.chipIn * chipLoadScale(dIn);
+  if (isDrill(r)) return drillFeedPerRev(dIn) * drillFeedFactor(sp.material.rating);
+  return LATHE_ROUGH_IPR;
+}
+
+/** The Machine stat: the profile in play and its limits in words, or why none applies. */
+function machineText(m, mill, c) {
+  if (m) {
+    const rpm = maxRpmOf(m), feed = maxFeedIpmOf(m);
+    return [m.name, Number.isFinite(rpm) ? `max ${fmt(rpm, 0)} RPM` : "no RPM limit",
+      Number.isFinite(feed) ? `max ${fmt(fromIn(feed, c.units), 1)} ${c.L.feed}` : "no feed limit"].join(" · ");
+  }
+  if (c.machine) return `${c.machine.name} is a ${c.machine.type === "lathe" ? "lathe" : "mill"}, not used for ${mill ? "end milling" : "turning"}`;
+  return c.settings?.pro ? "none set (Shop → Machines)" : "none set (Shop, Pro)";
+}
 
 export default register({
   id: "job-sheet",
   title: "Job sheet",
   short: "Plug in what you know; get everything it can figure",
-  help: "Start with the tool, the material, and what you're doing. The sheet gives speed and feed right away, then each number you add — depth of cut, length, quantity, shop rate — unlocks the next answer: removal rate, cut time, job time, price. Your Shop machine profile caps the RPM automatically.",
+  help: "Start with the tool, the material, and what you're doing. The sheet gives speed and feed right away, then each number you add — depth of cut, length, quantity, shop rate — unlocks the next answer: removal rate, cut time, job time, price. With Pro, your Shop machine profile caps the RPM and feed automatically.",
   category: "shop",
   keywords: ["job", "job sheet", "setup", "project", "plan", "whole job", "everything", "cycle time", "quote", "how long", "price", "start here"],
   pro: false,
@@ -47,7 +70,10 @@ export default register({
     { id: "setup", label: "Setup time", kind: "number", default: "", unit: "min", optional: true, placeholder: "optional, spread over the parts", min: 0, showIf: (r) => want(r, "setup") || want(r, "rate") },
     { id: "shown", label: "", kind: "text", default: "", showIf: () => false },
     { id: "sfm", label: "Surface speed override", kind: "speed", default: "", optional: true, placeholder: "blank = library value", advanced: true },
-    { id: "chip", positive: true, label: "Chip load / feed-per-rev override", kind: "length", default: "", optional: true, placeholder: "blank = library value", advanced: true },
+    // A chip load per tooth on the mill, a feed per rev on the drill and lathe: the label and unit follow the job.
+    { id: "chip", positive: true, label: (r) => (isMill(r) ? "Chip load per tooth" : "Feed per rev"), as: (r) => (isMill(r) ? "length" : "feedRev"), kind: "length", default: "", places: 4, advanced: true,
+      auto: (raw, c, values) => fromIn(libraryFeedIn(raw, Number.isFinite(values.diameter) ? toIn(values.diameter, c.units) : 0.5), c.units),
+      hint: "Leave blank for the library value (on a lathe, the roughing feed)." },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
@@ -57,40 +83,43 @@ export default register({
     const lathe = v.op === "lathe", drill = v.op === "drill", mill = v.op === "mill";
     const baseSfm = Number.isFinite(v.sfm) ? toSfm(v.sfm, c.units) : (drill ? sp.drillSfm : lathe ? sp.sfm * 1.2 : sp.sfm);
     const requestedRpm = rpmFromSfm(baseSfm, dIn);
-    const maxRpm = c.machine?.maxRpm > 0 ? c.machine.maxRpm : Infinity;
-    const rpm = Math.min(requestedRpm, maxRpm);
-    const clamped = rpm < requestedRpm;
+    if (mill && wocIn > dIn * 1.0001) throw new Error("Width of cut can't be more than the tool diameter");
 
-    // feed per rev (drill/lathe) or chip load per tooth (mill), in inches
-    let perRevIn, feedIpm, thin = 1, chipIn = NaN;
+    // Feed per rev in inches: flutes × chip load × thinning on the mill, the drill or turning feed otherwise.
+    // v.chip is the typed override or the library value (its "auto").
+    let thin = 1, chipIn = NaN, iprIn;
     if (mill) {
-      chipIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : sp.chipIn * chipLoadScale(dIn);
+      chipIn = toIn(v.chip, c.units);
       thin = radialChipThinningFactor(dIn, wocIn);
-      feedIpm = rpm * v.flutes * chipIn * thin;
-      perRevIn = feedIpm / rpm;
-    } else if (drill) {
-      perRevIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : drillFeedPerRev(dIn) * drillFeedFactor(sp.material.rating);
-      feedIpm = rpm * perRevIn;
-    } else {
-      perRevIn = Number.isFinite(v.chip) ? toIn(v.chip, c.units) : 0.010;
-      feedIpm = rpm * perRevIn;
-    }
-    const maxFeedIpm = c.machine?.maxFeed > 0 ? toIn(c.machine.maxFeed, c.machine.units || "in") : Infinity;
-    const feedOut = Math.min(feedIpm, maxFeedIpm);
+      iprIn = v.flutes * chipIn * thin;
+    } else iprIn = toIn(v.chip, c.units);
+
+    // The machine for this work (a mill for end milling, a lathe for turning, either for drilling), and the
+    // cut fitted inside it. Every number below describes the cut as fitted.
+    const work = mill ? "mill" : lathe ? "lathe" : "any";
+    const m = machineFor(c, work);
+    const fit = fitToMachine(m, requestedRpm, iprIn, c);
+    const rpm = fit.rpm, feedOut = fit.feedIpm;
+    const spindleCapped = fit.rpmCapped || fit.feedCapped;
+    const fp = c.units === "in" ? 4 : 3;
 
     const stats = [
-      { label: clamped ? "Spindle (machine max)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped },
-      { label: mill ? "Chip load per tooth" : "Feed per rev", value: fromIn(mill ? chipIn * thin : perRevIn, c.units), unit: mill ? c.L.length : c.L.feedRev, places: 4 },
+      { label: fit.feedCapped ? "Spindle (slowed for max feed)" : fit.rpmCapped ? "Spindle (machine max)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped: spindleCapped },
+      mill ? { label: "Chip load programmed", value: fromIn(chipIn * thin, c.units), unit: c.L.length, places: fp }
+        : { label: "Feed per rev", value: fromIn(iprIn, c.units), unit: c.L.feedRev, places: fp },
       { label: "Surface speed used", value: fromSfm(sfmFromRpm(rpm, dIn), c.units), unit: c.L.speed, places: 0 },
-      { label: "Machine", text: c.machine ? `${c.machine.name} · max ${fmt(maxRpm, 0)} RPM` : "none set (Shop → Machines)" },
+      { label: "Machine", text: machineText(m, mill, c) },
     ];
-    if (mill && thin > 1) stats.push({ label: "Chip thinning", value: thin, unit: "×", places: 2 });
+    if (spindleCapped) stats.push({ label: "Wanted RPM", value: requestedRpm, unit: "RPM", places: 0 });
+    if (mill && thin > 1) stats.push({ label: "Chip thinning factor", value: thin, unit: "×", places: 2 });
     const next = [];
-    if (mill && wocIn > dIn * 1.0001) throw new Error("Width of cut can't be more than the tool diameter");
-    const warnings = mill ? millAdvice({ dIn, wocIn, docIn, requestedRpm, machine: c.machine })
-      : drill ? drillAdvice({ dIn, depthIn: Number.isFinite(v.depth) ? toIn(v.depth, c.units) : NaN }) : [];
-    if (mill && Number.isFinite(v.chip) && chipIn > Math.max(sp.chipIn * chipLoadScale(dIn) * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), 4)} ${c.L.length} per tooth is a very heavy chip for this tool. Expect it to break.`);
-    if (clamped) warnings.push(`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)}. Feed is figured at ${fmt(rpm, 0)} RPM.`);
+    // The too-fast-spindle check is spindleSanity's, the same for every op (millAdvice gets no RPM for it).
+    const warnings = [...spindleSanity(requestedRpm, m, work, c), ...fit.warnings];
+    if (mill) warnings.push(...millAdvice({ dIn, wocIn, docIn, requestedRpm: NaN, machine: m }));
+    if (drill) warnings.push(...drillAdvice({ dIn, depthIn: Number.isFinite(v.depth) ? toIn(v.depth, c.units) : NaN }));
+    if (mill && !v.chipAuto && chipIn > Math.max(sp.chipIn * chipLoadScale(dIn) * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), fp)} ${c.L.length} per tooth is a very heavy chip for this tool. Expect it to break.`);
+    const caution = toolCaution(v.material, v.toolType);
+    if (caution) warnings.push(caution);
 
     // ── what the cut adds ──
     let perPassMin = null, passes = 1, timePerPart = null;
@@ -100,7 +129,8 @@ export default register({
     }
     if (!drill) {
       const lenIn = Number.isFinite(v.length) ? toIn(v.length, c.units) : NaN;
-      if (lenIn > 0) { perPassMin = lathe ? turningTime({ length: lenIn, ipr: perRevIn, rpm }) : cutTime({ length: lenIn, feed: feedOut }); stats.push({ label: "Time per pass", value: perPassMin * 60, unit: "sec", places: 1 }); }
+      // t = L ÷ F at the feed the machine will actually run (turning too: T = L ÷ (f × N), Machinery's Handbook)
+      if (lenIn > 0) { perPassMin = cutTime({ length: lenIn, feed: feedOut }); stats.push({ label: "Time per pass", value: perPassMin * 60, unit: "sec", places: 1 }); }
       else next.push({ add: "Length of cut", get: "time per pass", input: "length" });
       const stockIn = Number.isFinite(v.stock) ? toIn(v.stock, c.units) : NaN;
       if (stockIn > 0 && docIn > 0) { passes = Math.ceil(stockIn / docIn - 1e-9); stats.push({ label: "Passes", value: passes, unit: "", places: 0 }); }
@@ -125,21 +155,27 @@ export default register({
       if (v.rate > 0) {
         const cost = (jobMin / 60) * v.rate;
         tables.push({ title: "Price (machine time only — add material and markup in Quote helper)", pro: true, columns: [{ key: "k", label: "" }, { key: "v", label: "", align: "right" }],
-          rows: [{ k: "Machine time", v: `${fmt(jobMin / 60, 2)} hr` }, { k: `At $${fmt(v.rate, 0)}/hr`, v: `$${fmt(cost, 2)}` }, { k: "Per part", v: `$${fmt(cost / v.qty, 2)}` }] });
+          rows: [{ k: "Machine time", v: `${fmt(jobMin / 60, 2)} hr` }, { k: `At ${money(v.rate)}/hr`, v: money(cost) }, { k: "Per part", v: money(cost / v.qty) }] });
       } else next.push({ add: "Shop rate", get: "price per part (Pro)", input: "rate" });
     }
 
-    if (!c.machine) next.push({ add: "Your machine (Shop)", get: "RPM and feed capped to its limits", href: "#/shop" });
+    // Shop is Pro: say so before the tap lands on a lock screen.
+    if (!m) next.push({ add: lathe ? "Your lathe (Shop)" : "Your machine (Shop)", get: c.settings?.pro ? "RPM and feed capped to its limits" : "RPM and feed capped to its limits (Pro)", href: "#/shop" });
 
+    // Explain lines in the units on screen: SFM and inches, or m/min and mm.
+    const inch = c.units === "in";
+    const spindleTail = fit.rpmCapped ? ` → machine max ${fmt(maxRpmOf(m), 0)}` : "";
+    const feedTail = fit.feedCapped ? ` → ${fmt(rpm, 0)} so the feed stays under the machine's max` : "";
     return {
-      primary: { label: `Feed · ${sp.material.name}`, value: fromIn(feedOut, c.units), unit: c.L.feed, places: 1, clamped: feedOut < feedIpm },
+      primary: { label: `Feed · ${sp.material.name}`, value: fromIn(feedOut, c.units), unit: c.L.feed, places: 1, clamped: fit.feedCapped },
       stats, warnings, next, tables,
       source: "feeds",
       explain: [
-        { title: "Spindle speed", formula: "RPM = (SFM × 12) ÷ (π × D)", plugged: `= (${fmt(baseSfm, 0)} × 12) ÷ (π × ${fmt(dIn, 4)}) = ${fmt(requestedRpm, 0)}${clamped ? ` → machine max ${fmt(rpm, 0)}` : ""}` },
-        mill ? { title: "Feed", formula: "IPM = RPM × flutes × chip load × thinning", plugged: `= ${fmt(rpm, 0)} × ${v.flutes} × ${fmt(chipIn, 4)} × ${fmt(thin, 2)} = ${fmt(feedIpm, 1)}` }
-             : { title: "Feed", formula: "IPM = RPM × feed per rev", plugged: `= ${fmt(rpm, 0)} × ${fmt(perRevIn, 4)} = ${fmt(feedIpm, 1)}` },
-        ...(timePerPart != null ? [{ title: "Time", formula: drill ? "t = holes × (depth + 0.3 D) ÷ IPM" : "t = passes × length ÷ feed", plugged: `= ${fmt(timePerPart, 2)} min per part` }] : []),
+        inch ? { title: "Spindle speed", formula: "RPM = (SFM × 12) ÷ (π × D)", plugged: `= (${fmt(baseSfm, 0)} × 12) ÷ (π × ${fmt(dIn, 4)} in) = ${fmt(requestedRpm, 0)}${spindleTail}${feedTail}` }
+          : { title: "Spindle speed", formula: "RPM = (m/min × 1000) ÷ (π × D)", plugged: `= (${fmt(fromSfm(baseSfm, "mm"), 1)} × 1000) ÷ (π × ${fmt(dIn * 25.4, 3)} mm) = ${fmt(requestedRpm, 0)}${spindleTail}${feedTail}` },
+        mill ? { title: "Feed", formula: `${c.L.feed} = RPM × flutes × chip load × thinning`, plugged: `= ${fmt(rpm, 0)} × ${v.flutes} × ${fmt(fromIn(chipIn, c.units), p)} ${c.L.length} × ${fmt(thin, 2)} = ${fmt(fromIn(feedOut, c.units), 1)} ${c.L.feed}` }
+             : { title: "Feed", formula: `${c.L.feed} = RPM × feed per rev`, plugged: `= ${fmt(rpm, 0)} × ${fmt(fromIn(iprIn, c.units), p)} ${c.L.feedRev} = ${fmt(fromIn(feedOut, c.units), 1)} ${c.L.feed}` },
+        ...(timePerPart != null ? [{ title: "Time", formula: drill ? `t = holes × (depth + 0.3 D) ÷ ${c.L.feed}` : "t = passes × length ÷ feed", plugged: `= ${fmt(timePerPart, 2)} min per part` }] : []),
       ],
       notes: ["Each line you fill in unlocks the next answer. Save the whole sheet with ⋯ → Save job once it's set."],
       historyLabel: `${v.op} · Ø${fmt(v.diameter, p)} · ${sp.material.name.split(" ")[0]}`,

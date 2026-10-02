@@ -29,11 +29,14 @@ export default register({
   pro: false,
   inputs: [
     { id: "mode", label: "I know", kind: "select", default: "runRise",
-      options: Object.entries(MODES).map(([value, [a, b]]) => ({ value, label: `${a} + ${b}` })) },
+      options: Object.entries(MODES).map(([value, [a, b]]) => ({ value, label: `${a} + ${b}` })),
+      hint: "Angle means angle A: at the end of the run, opposite the rise." },
     { id: "a", positive: true, kind: "number", default: "3", defaultMm: "30", ...slot(0) },
     { id: "b", positive: true, kind: "number", default: "4", defaultMm: "40", ...slot(1) },
   ],
   compute(v, c) {
+    // A leg as long as the hypotenuse leaves nothing for the other leg — say so, not "angle out of range".
+    if ((v.mode === "runHyp" || v.mode === "riseHyp") && v.a >= v.b) throw new Error(`Hypotenuse has to be longer than the ${v.mode === "runHyp" ? "run" : "rise"}`);
     const r = solveRightTriangle(v.mode, v.a, v.b);
     if (![r.run, r.rise, r.hypotenuse, r.angle].every(Number.isFinite) || r.hypotenuse <= 0) throw new Error("Those values don't make a right triangle");
     if (r.angle <= 0 || r.angle >= 90) throw new Error("Angle must be between 0° and 90°");
@@ -51,7 +54,7 @@ export default register({
       ],
       source: "geometry",
       explain: [
-        { title: "Right triangle", formula: "hyp² = run² + rise²   tan A = rise ÷ run   sin A = rise ÷ hyp   cos A = run ÷ hyp", plugged: `${la} = ${fmt(v.a, p)}, ${lb} = ${fmt(v.b, isAngle(v.mode, 1) ? 3 : p)}` },
+        { title: "Right triangle", formula: "hyp² = run² + rise²   tan A = rise ÷ run   sin A = rise ÷ hyp   cos A = run ÷ hyp", plugged: `${la} = ${fmt(v.a, p)} ${c.L.length}, ${lb} = ${isAngle(v.mode, 1) ? `${fmt(v.b, 3)}°` : `${fmt(v.b, p)} ${c.L.length}`}` },
       ],
       historyLabel: `${la.split(" ")[0]} ${fmt(v.a, p)} · ${lb.split(" ")[0]} ${fmt(v.b, p)}`,
     };

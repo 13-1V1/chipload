@@ -51,7 +51,15 @@ export function closestInSet(value, setArray) {
   return closest;
 }
 
-/** Closest stock wire to the best size, from the inch or mm kit. */
+/** Closest wire sold in a best-size set (inch by TPI, mm by ISO pitch). `pitch` in the set's unit. */
 export function stockWire(pitch, units = "in") {
   return closestInSet(bestWire(pitch), units === "in" ? WIRE_SET_INCH : WIRE_SET_MM);
+}
+
+/**
+ * Sanity window for a pitch diameter: between the basic external minor (D − 1.226869 P, ASME B1.1 / ISO 68-1)
+ * and the major diameter. A solved or typed PD outside it can't belong to the named thread.
+ */
+export function pitchDiameterWindow(major, pitch) {
+  return { min: major - 1.2268693 * pitch, max: major };
 }

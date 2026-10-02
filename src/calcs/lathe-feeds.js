@@ -5,9 +5,13 @@
 
 import { register } from "../app/registry.js";
 import { rpmFromSfm, sfmFromRpm } from "../core/feeds.js";
-import { materialOptions, materialSpeeds } from "../data/materials-library.js";
+import { materialOptions, materialSpeeds, toolCaution } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
+import { machineFor, fitToMachine, maxRpmOf, maxFeedIpmOf, spindleSanity } from "./_machine.js";
+
+// Beyond this most lathes can't turn (same line spindleSanity draws for "lathe").
+const LATHE_SANE_RPM = 6000;
 
 export default register({
   id: "lathe-feeds",
@@ -26,35 +30,58 @@ export default register({
     { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType).sfm * 1.2, c.units), hint: "Blank = library value × 1.2 (turning runs a bit faster)." },
     { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(raw.cut === "finish" ? 0.004 : 0.012, c.units), hint: "Blank = 0.012 rough / 0.004 finish." },
     { id: "length", positive: true, advanced: true, label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
+    { id: "minDia", positive: true, advanced: true, label: "Smallest diameter this cut reaches", kind: "length", default: "", optional: true, placeholder: "optional — sets the G50", hint: "Facing toward center? Enter how far in you go. Blank = the work diameter." },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
+    const inch = c.units === "in";
     const dIn = toIn(v.diameter, c.units);
     const sfm = toSfm(v.sfm, c.units);
     const iprIn = toIn(v.ipr, c.units);
     const requestedRpm = rpmFromSfm(sfm, dIn);
-    const maxRpm = c.machine?.maxRpm > 0 ? c.machine.maxRpm : Infinity;
-    const rpm = Math.min(requestedRpm, maxRpm);
-    const clamped = rpm < requestedRpm;
-    const ipm = rpm * iprIn;
+    const m = machineFor(c, "lathe");
+    const fit = fitToMachine(m, requestedRpm, iprIn, c);
+    const { rpm, feedIpm: ipm } = fit;
+    const slowed = fit.rpmCapped || fit.feedCapped;
     const time = Number.isFinite(v.length) ? toIn(v.length, c.units) / ipm : null;
+    // G50 is a job cap: the speed G96 needs at the smallest diameter this cut reaches, never above the
+    // machine's top speed. It is not the machine's top speed itself — that would make the clamp do nothing.
+    const smallIn = Number.isFinite(v.minDia) ? Math.min(dIn, toIn(v.minDia, c.units)) : dIn;
+    const jobCap = Math.ceil(rpmFromSfm(sfm, smallIn) / 100) * 100;
+    const g50 = Math.min(jobCap, maxRpmOf(m), Math.floor(maxFeedIpmOf(m) / iprIn));
+    // With no machine, a cap beyond any lathe isn't advice; the chuck's rating is the number to use.
+    const g50Wild = !m && g50 > LATHE_SANE_RPM;
+    const caution = toolCaution(v.material, v.toolType);
+    const sanity = spindleSanity(requestedRpm, m, "lathe", c);
     return {
-      primary: { label: clamped ? "Spindle (machine max)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped },
+      primary: { label: fit.rpmCapped ? "Spindle (machine max)" : fit.feedCapped ? "Spindle (slowed for max feed)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped: slowed },
       stats: [
-        { label: "Feed", value: fromIn(ipm, c.units), unit: c.L.feed, places: 1 },
+        { label: "Feed", value: fromIn(ipm, c.units), unit: c.L.feed, places: 1, clamped: fit.feedCapped },
         { label: "G96 S (constant surface speed)", value: v.sfm, unit: c.L.speed, places: 0 },
-        { label: "G50 / max RPM to set", value: Number.isFinite(maxRpm) ? maxRpm : Math.ceil(requestedRpm / 100) * 100, unit: "RPM", places: 0 },
-        ...(clamped ? [{ label: "Actual surface speed", value: fromSfm(sfmFromRpm(rpm, dIn), c.units), unit: c.L.speed, places: 0 }] : []),
+        g50Wild
+          ? { label: "G50 / max RPM to set", text: "your chuck's rated max" }
+          : { label: "G50 / max RPM to set", value: g50, unit: "RPM", places: 0, clamped: g50 < jobCap },
+        ...(slowed ? [{ label: "Actual surface speed", value: fromSfm(sfmFromRpm(rpm, dIn), c.units), unit: c.L.speed, places: 0, clamped: true }] : []),
         ...(time != null ? [{ label: "Time per pass", value: time * 60, unit: "sec", places: 1 }] : []),
       ],
-      warnings: clamped ? [`${c.machine.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(requestedRpm, 0)} at Ø${fmt(v.diameter, p)}. Surface speed will be low — feed per rev still holds.`] : [],
-      source: "feeds",
-      explain: [
-        { title: "Spindle speed", formula: "RPM = (SFM × 12) ÷ (π × D)", plugged: `= (${fmt(sfm, 0)} × 12) ÷ (π × ${fmt(dIn, 4)}) = ${fmt(requestedRpm, 0)}` },
-        { title: "Feed", formula: "IPM = RPM × IPR", plugged: `= ${fmt(rpm, 0)} × ${fmt(iprIn, 4)} = ${fmt(ipm, 1)}` },
+      warnings: [
+        ...fit.warnings,
+        ...sanity,
+        ...(g50Wild && !sanity.length ? [`G96 would ask for ${fmt(jobCap, 0)} RPM at Ø${fmt(fromIn(smallIn, c.units), p)} ${c.L.length}. Set G50 to your chuck's rated max (or lower), not that.`] : []),
+        ...(caution ? [caution] : []),
       ],
+      source: "feeds",
+      explain: inch
+        ? [
+          { title: "Spindle speed", formula: "RPM = (SFM × 12) ÷ (π × D)", plugged: `= (${fmt(sfm, 0)} SFM × 12) ÷ (π × ${fmt(dIn, 4)} in) = ${fmt(requestedRpm, 0)} RPM` },
+          { title: "Feed", formula: "IPM = RPM × IPR", plugged: `= ${fmt(rpm, 0)} RPM × ${fmt(iprIn, 4)} IPR = ${fmt(ipm, 1)} IPM` },
+        ]
+        : [
+          { title: "Spindle speed", formula: "RPM = (m/min × 1000) ÷ (π × D)", plugged: `= (${fmt(v.sfm, 1)} m/min × 1000) ÷ (π × ${fmt(v.diameter, p)} mm) = ${fmt(requestedRpm, 0)} RPM` },
+          { title: "Feed", formula: "mm/min = RPM × mm/rev", plugged: `= ${fmt(rpm, 0)} RPM × ${fmt(v.ipr, 3)} mm/rev = ${fmt(fromIn(ipm, c.units), 1)} mm/min` },
+        ],
       notes: ["Under G96 the control changes RPM as the diameter changes. Set a G50 (Fanuc) or G96 S… with a max RPM so a facing cut doesn't run away toward center."],
-      historyLabel: `Ø${fmt(v.diameter, p)} · ${materialSpeeds(v.material).material.name} · ${v.cut}`,
+      historyLabel: `Ø${fmt(v.diameter, p)} ${c.L.length} · ${materialSpeeds(v.material).material.name} · ${v.cut}`,
     };
   },
 });

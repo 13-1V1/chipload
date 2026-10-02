@@ -37,6 +37,10 @@ export default register({
   compute(v) {
     const t = parseAcme(v.thread);
     const g = acmeGeometry({ major: t.major, tpi: t.tpi });
+    // The screw's root has to stay a real diameter: D − P − clearance > 0 (ASME B1.5 sizes stay well inside it).
+    if (!(g.externalMinor > 0)) throw new Error(`${t.tpi} TPI is too coarse for a ${fmt(t.major, 4)} in Acme — the screw would have no core. Check the thread`);
+    // B1.5's coarsest pitch for its diameter is 1/4-16 (P = D/4); coarser is almost always a typo.
+    const warnings = g.pitch > t.major * 0.25 + 1e-9 ? [`${t.label} is coarser than any ASME B1.5 standard size (1/4-16 is P = D ÷ 4). Check the diameter and TPI.`] : [];
     const lead = g.pitch * v.starts;
     const leadAngle = Math.atan(lead / (Math.PI * g.pitchDiameter)) * 180 / Math.PI;
     const allowance = g.allowance[v.cls];
@@ -54,7 +58,8 @@ export default register({
         { label: `External PD max (${v.cls})`, value: g.pitchDiameter - allowance, unit: "in", places: 4 },
         { label: "Flat at crest", value: g.crestFlat, unit: "in", places: 4 },
       ],
-      source: "threadGeometry",
+      warnings,
+      source: "acme",
       explain: [
         { title: "ASME B1.5 general purpose Acme", formula: "depth = 0.5P   PD = D − 0.5P   minor(int) = D − P   clearance 0.020 (≤10 TPI) / 0.010", plugged: `P = ${fmt(g.pitch, 4)}, D = ${fmt(t.major, 4)}` },
         { title: "Allowance", formula: `${v.cls}: ${v.cls === "2G" ? "0.008" : v.cls === "3G" ? "0.006" : "0.004"} √D`, plugged: `= ${fmt(allowance, 4)} in` },

@@ -30,6 +30,9 @@ brennanmmeyer@gmail.com
   --answer-space: var(--answer-h); /* room the page saves for it: render.js measures the real bar and overwrites this */
   /* the gesture / button bar Android draws over the bottom edge; tests can set it to stand in for a phone */
   --inset-bottom: env(safe-area-inset-bottom, 0px);
+  /* turned sideways, a camera cutout or the 3-button nav bar sits on a side edge */
+  --edge-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  --edge-right: max(var(--gutter), env(safe-area-inset-right, 0px));
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -80,7 +83,7 @@ a { color: var(--link); }
 .topbar {
   position: sticky; top: 0; z-index: 5;
   display: flex; align-items: center; gap: 8px;
-  min-height: var(--tap); padding: env(safe-area-inset-top) var(--gutter) 0;
+  min-height: var(--tap); padding: env(safe-area-inset-top) var(--edge-right) 0 var(--edge-left);
   background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .topbar h1 { font-size: 1.125rem; font-weight: 600; margin: 0; flex: 1; letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -93,7 +96,7 @@ a { color: var(--link); }
 .icon-btn svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .icon-btn[aria-pressed="true"] { color: var(--scribe); }
 
-main { flex: 1; padding: var(--gutter); padding-bottom: calc(var(--answer-space) + var(--gutter)); }
+main { flex: 1; padding: var(--gutter) var(--edge-right) calc(var(--answer-space) + var(--gutter)) var(--edge-left); }
 main.no-answer { padding-bottom: calc(var(--gutter) + var(--inset-bottom)); }
 
 /* ── Home ─────────────────────────────────────────────────────── */
@@ -204,7 +207,7 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
 .answer {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
   min-height: var(--answer-h);
-  padding: 10px var(--gutter) calc(10px + var(--inset-bottom));
+  padding: 10px var(--edge-right) calc(10px + var(--inset-bottom)) var(--edge-left);
   background: var(--card);
   border-top: 1px solid var(--line);
   display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; column-gap: 4px;
@@ -217,14 +220,34 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
     repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 8px) 0 0 / 8px 5px no-repeat repeat-x;
 }
 .answer .lbl { grid-column: 1 / -1; font-size: 0.75rem; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
-.answer .big { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.answer .val { font-family: var(--mono); font-weight: 600; font-size: clamp(1.75rem, 8vw, 2.5rem); color: var(--scribe); font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The number is the last thing to give way: the unit drops under it, then render.js shrinks the
+   number's font until it fits. It never ends in "…" — "#…" in place of "#7" hid the answer. */
+.answer .big { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
+.answer .val { flex: none; max-width: 100%; font-family: var(--mono); font-weight: 600; font-size: clamp(1.75rem, 8vw, 2.5rem); color: var(--scribe); font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; overflow: hidden; }
+/* a piece ("-1.1502", "0.0003 –") never breaks inside: it wraps only at the spaces between pieces */
+.answer .val .nw { white-space: nowrap; }
+/* too wide even wrapped at 16 px (glove mode, 320 px): the number gets the whole row, its label
+   stays right under it, and copy / star / ⋯ drop to a row of their own (render.js fitAnswer adds .wide) */
+.answer.wide .big { grid-column: 1 / -1; }
+.answer.wide .lbl { grid-row: 2; }
+.answer.wide .icon-btn { grid-row: 3; }
+.answer.wide #answerCopy { grid-column: 2; }
+.answer.wide #answerFav { grid-column: 3; }
+.answer.wide #answerMore { grid-column: 4; }
+/* typing with the pad open: the label row goes (as sideways) so the three-row bar stays short enough
+   for the field being typed in to show whole above it (320 x 568, glove) */
+.answer.up.wide:not(.msg) .lbl { display: none; }
 .answer .val.warn-c { color: var(--warn); }
 .answer .unit { font-family: var(--mono); color: var(--text-2); font-size: 1rem; }
 .answer .empty-msg { color: var(--text-3); font-size: 1rem; }
 .answer .icon-btn { width: var(--tap); height: var(--tap); }
-.answer.up { bottom: var(--pad-h, 0px); }
-.copied { position: fixed; left: 50%; bottom: calc(var(--answer-space) + 12px + var(--pad-h, 0px)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 0.875rem; z-index: 7; animation: fade 1.6s forwards; }
+/* on the open pad: the pad already pads for the gesture bar, so it isn't counted twice */
+.answer.up { bottom: var(--pad-h, 0px); padding-bottom: 10px; }
+/* a short phone upright with the pad open: the top bar scrolls away so the field being typed in has room */
+@media (orientation: portrait) and (max-height: 720px) {
+  :root.pad-open .topbar { position: static; }
+}
+.copied { position: fixed; left: calc(50% + (env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) / 2); bottom: calc(var(--answer-space) + 12px + var(--pad-h, 0px)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 0.875rem; z-index: 7; animation: fade 1.6s forwards; }
 @keyframes fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 /* a toast with a way back (Undo): stays longer, and the button is a full touch target */
 .copied.has-action { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 16px; animation-duration: 5.9s; }
@@ -317,12 +340,15 @@ pre.code { margin: 0; padding: 12px 14px; font-size: 0.875rem; line-height: 1.5;
 .radio::before { content: ""; position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; border: 2px solid var(--text-2); box-sizing: border-box; }
 .radio[aria-checked="true"]::before { border-color: var(--scribe); }
 .radio[aria-checked="true"]::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--scribe); }
-.menu { position: fixed; right: var(--gutter); bottom: calc(var(--answer-space) + 8px + var(--pad-h, 0px)); z-index: 9; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.4); min-width: 200px; overflow: hidden; }
+/* never taller than the room above the answer bar (sideways in glove mode it was 290 px): it scrolls instead */
+.menu { position: fixed; right: var(--edge-right); bottom: calc(var(--answer-space) + 8px + var(--pad-h, 0px)); z-index: 9; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.4); min-width: 200px; overflow: hidden auto; overscroll-behavior: contain;
+  max-height: calc(100vh - var(--answer-space) - var(--pad-h, 0px) - 16px - env(safe-area-inset-top, 0px));
+  max-height: calc(100dvh - var(--answer-space) - var(--pad-h, 0px) - 16px - env(safe-area-inset-top, 0px)); }
 .menu button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--tap); padding: 0 16px; border: 0; background: transparent; color: var(--text); text-align: left; }
 .menu button + button { border-top: 1px solid var(--line); }
 .menu button:active { background: var(--card-2); }
 .menu button svg { width: 22px; height: 22px; stroke: var(--text-2); fill: none; stroke-width: 1.75; }
-.sheet { position: fixed; left: 0; right: 0; bottom: calc(var(--answer-space) + var(--pad-h, 0px)); z-index: 9; background: var(--card); border-top: 1px solid var(--line); padding: 12px var(--gutter); display: flex; gap: 8px; align-items: center; }
+.sheet { position: fixed; left: 0; right: 0; bottom: calc(var(--answer-space) + var(--pad-h, 0px)); z-index: 9; background: var(--card); border-top: 1px solid var(--line); padding: 12px var(--edge-right) 12px var(--edge-left); display: flex; gap: 8px; align-items: center; }
 .sheet input { flex: 1; min-width: 0; }
 /* ── Print: a setup sheet, black on white ─────────────────────── */
 /* The screen's fields and answer bar are swapped for .print-block: tool name, answer, and every input as text. */
@@ -399,7 +425,7 @@ table.chart td.long { font-family: var(--sans); padding-top: 8px; padding-bottom
   .numpad button { min-height: 0; }
   :root.pad-open .topbar { padding-right: calc(var(--pad-w) + var(--gutter)); }
   :root.pad-open main { max-width: none; margin: 0; padding-right: calc(var(--pad-w) + var(--gutter)); }
-  :root.pad-open .answer, :root.pad-open .sheet { right: var(--pad-w); }
+  :root.pad-open .answer, :root.pad-open .sheet { right: var(--pad-w); padding-right: var(--gutter); } /* the pad covers the right edge */
   :root.pad-open .menu { right: calc(var(--pad-w) + var(--gutter)); }
   :root.pad-open .copied { left: calc((100% - var(--pad-w)) / 2); }
   .answer { padding-top: 8px; padding-bottom: calc(6px + var(--inset-bottom)); }

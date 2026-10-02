@@ -32,32 +32,53 @@ export default register({
     if (mm > 500) throw new Error("ISO 286 here covers sizes up to 500 mm (19.7 in)");
     const [h, s] = v.fit === "custom" ? [v.hole, v.shaft] : v.fit.split("/");
     const f = isoFit(mm, h, s);
-    const L = (x) => (c.units === "mm" ? x : x / 25.4);
-    const p = c.units === "mm" ? 3 : 4;
+    const inch = c.units === "in";
+    const L = (x) => (inch ? x / 25.4 : x);
+    // mm limits are whole microns, exact at 3 places. Inch limits round inward (max down, min up), the ISO 370
+    // practice for converted limits, so a shown limit never sits outside the ISO one. A zone narrower than
+    // 0.0001 in that would round shut gets a fifth place.
+    const limits = (feat) => {
+      if (!inch) return { min: feat.min, max: feat.max, places: 3 };
+      for (const q of [4, 5]) {
+        const s = 10 ** q;
+        const min = Math.ceil(L(feat.min) * s - 1e-6) / s, max = Math.floor(L(feat.max) * s + 1e-6) / s;
+        if (min <= max || q === 5) return { min, max, places: q };
+      }
+    };
+    const hl = limits(f.hole), sl = limits(f.shaft);
+    const p = inch ? 4 : 3;
+    const lp = Math.max(hl.places, sl.places);
     const rows = [
-      { what: `Hole ${f.hole.spec}`, min: L(f.hole.min), max: L(f.hole.max), tol: L(f.hole.tolerance) },
-      { what: `Shaft ${f.shaft.spec}`, min: L(f.shaft.min), max: L(f.shaft.max), tol: L(f.shaft.tolerance) },
+      { what: `Hole ${f.hole.spec}`, min: hl.min, max: hl.max, tol: L(f.hole.tolerance) },
+      { what: `Shaft ${f.shaft.spec}`, min: sl.min, max: sl.max, tol: L(f.shaft.tolerance) },
     ];
     const um = (x) => { const n = Math.round(x * 1e4) / 10; return `${n > 0 ? "+" : ""}${fmt(n, 1)}`; };
     const kindLabel = { clearance: "Clearance", interference: "Interference", transition: "Transition" }[f.kind];
     return {
       primary: { label: `${h}/${s} · ${kindLabel} fit`, text: f.kind === "interference" ? `${fmt(L(-f.maxClearance), p)} – ${fmt(L(-f.minClearance), p)} tight` : `${fmt(L(f.minClearance), p)} – ${fmt(L(f.maxClearance), p)}`, unit: c.L.length },
       stats: [
-        { label: `Hole ${f.hole.spec}`, text: `${fmt(L(f.hole.min), p)} – ${fmt(L(f.hole.max), p)}` },
-        { label: `Shaft ${f.shaft.spec}`, text: `${fmt(L(f.shaft.min), p)} – ${fmt(L(f.shaft.max), p)}` },
+        { label: `Hole ${f.hole.spec}`, text: `${fmt(hl.min, hl.places)} – ${fmt(hl.max, hl.places)}` },
+        { label: `Shaft ${f.shaft.spec}`, text: `${fmt(sl.min, sl.places)} – ${fmt(sl.max, sl.places)}` },
         { label: "Max clearance", value: L(f.maxClearance), unit: c.L.length, places: p },
         { label: "Min clearance (− = interference)", value: L(f.minClearance), unit: c.L.length, places: p, clamped: f.minClearance < 0 },
         { label: "Hole tolerance", value: L(f.hole.tolerance), unit: c.L.length, places: p },
         { label: "Shaft tolerance", value: L(f.shaft.tolerance), unit: c.L.length, places: p },
       ],
-      tables: [{ title: "Limits", columns: [{ key: "what", label: "" }, { key: "min", label: "Min", align: "right", places: p }, { key: "max", label: "Max", align: "right", places: p }, { key: "tol", label: "Tol", align: "right", places: p }], rows }],
-      source: "geometry",
+      tables: [{ title: "Limits", columns: [{ key: "what", label: "" }, { key: "min", label: "Min", align: "right", places: lp }, { key: "max", label: "Max", align: "right", places: lp }, { key: "tol", label: "Tol", align: "right", places: p }], rows }],
+      source: "fits",
       explain: [{
         title: "ISO 286-1 tables",
         formula: "limit = nominal + deviation.   A hole letter sets its lower deviation, a shaft letter a–h its upper, k–z its lower; the grade number (IT) sets the width.",
-        plugged: `D = ${fmt(mm, 3)} mm: ${f.hole.spec} = ${um(f.hole.upper)} / ${um(f.hole.lower)} µm, ${f.shaft.spec} = ${um(f.shaft.upper)} / ${um(f.shaft.lower)} µm`,
-      }],
-      notes: ["Looked up from the ISO 286 tables. Inch sizes are converted to mm for the lookup, then back."],
+        plugged: `${inch ? `D = ${fmt(v.nominal, 4)} in = ` : "D = "}${fmt(mm, 3)} mm: ${f.hole.spec} = ${um(f.hole.upper)} / ${um(f.hole.lower)} µm, ${f.shaft.spec} = ${um(f.shaft.upper)} / ${um(f.shaft.lower)} µm`,
+      },
+      ...(inch ? [{
+        title: "Back to inches",
+        formula: "limit (in) = limit (mm) ÷ 25.4, rounded inward: max down, min up",
+        plugged: `${f.hole.spec} ${fmt(L(f.hole.min), 6)} – ${fmt(L(f.hole.max), 6)} in → ${fmt(hl.min, hl.places)} – ${fmt(hl.max, hl.places)} in; ${f.shaft.spec} ${fmt(L(f.shaft.min), 6)} – ${fmt(L(f.shaft.max), 6)} in → ${fmt(sl.min, sl.places)} – ${fmt(sl.max, sl.places)} in`,
+      }] : [])],
+      notes: [inch
+        ? "Looked up from the ISO 286 tables in mm, then converted back. Inch limits are rounded inward to 0.0001 in so they stay inside the ISO limits."
+        : "Looked up from the ISO 286 tables."],
       historyLabel: `${fmt(v.nominal, p)} ${c.L.length} ${h}/${s}`,
     };
   },

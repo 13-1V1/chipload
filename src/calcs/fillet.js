@@ -32,7 +32,7 @@ export default register({
         { label: "Corner to arc (gap removed)", value: f.cornerToCenter - v.radius, unit: c.L.length, places: p },
       ],
       source: "geometry",
-      explain: [{ title: "Fillet geometry", formula: "t = r ÷ tan(θ/2)     d = r ÷ sin(θ/2)     sweep = 180° − θ", plugged: `r ${fmt(v.radius, p)}, θ ${fmt(v.angle, 2)}° → t ${fmt(f.tangentDistance, p)}` }],
+      explain: [{ title: "Fillet geometry", formula: "t = r ÷ tan(θ/2)     d = r ÷ sin(θ/2)     sweep = 180° − θ", plugged: `r ${fmt(v.radius, p)} ${c.L.length}, θ ${fmt(v.angle, 2)}° → t ${fmt(f.tangentDistance, p)} ${c.L.length}` }],
       notes: ["Program the line to the tangent point, then G02/G03 to the other tangent point with R = fillet radius."],
       historyLabel: `R${fmt(v.radius, p)} at ${fmt(v.angle, 1)}°`,
     };

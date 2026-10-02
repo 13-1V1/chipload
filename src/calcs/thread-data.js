@@ -4,11 +4,19 @@
 // Thread data lookup. Free: basic geometry and tap drill. Pro: class-of-fit limits (estimate).
 
 import { register } from "../app/registry.js";
-import { basicThreadGeometry, unToleranceEnvelope, lookupUnThread, lookupMetricThread } from "../core/thread.js";
+import { basicThreadGeometry, unToleranceEnvelope, lookupUnThread, lookupMetricThread, baseSeries } from "../core/thread.js";
 import { lookupTapDrillUN, lookupTapDrillMetric, tapDrillByPercent } from "../core/tapdrill.js";
-import { nearestDrillInch, nearestDrillMm } from "../core/drills.js";
+import { nearestDrillInch, nearestDrillMm, DRILL_MAX_IN, DRILL_MAX_MM } from "../core/drills.js";
 import { fmt } from "../core/format.js";
 import { threadFromSpec, threadPrefill, COMMON_THREADS } from "./_util.js";
+
+/** A size with no chart row: the nearest drill to the 75% hole, or the size to bore once it is past the drill chart
+ * (4-4 UNC, M64x2), the same cut-off Tap drill uses. */
+function figuredTapDrill(t, nat) {
+  const hole = tapDrillByPercent(nat.major, nat.pitch, 75);
+  if (t.isUn ? hole > DRILL_MAX_IN + 1 / 64 : hole > DRILL_MAX_MM + 0.5) return `Bore to ${fmt(hole, t.isUn ? 4 : 2)} ${nat.u} · past the drill chart`;
+  return `${(t.isUn ? nearestDrillInch(hole) : nearestDrillMm(hole)).label} · figured`;
+}
 
 export default register({
   id: "thread-data",
@@ -31,6 +39,10 @@ export default register({
     const series = t.isUn ? lookupUnThread(t.major, t.tpi) : lookupMetricThread(t.major, t.pitch);
     const tap = t.isUn ? lookupTapDrillUN(t.major, t.tpi) : lookupTapDrillMetric(t.major, t.pitch);
     const tables = [];
+    const warnings = t.caution ? [t.caution] : [];
+    // "1/2-13 UNF" names a series the size isn't in: say so instead of quietly using the table's
+    const typed = baseSeries(t.suppliedSeries);
+    if (series && typed && typed !== "UN" && !series.endsWith(` ${typed}`)) warnings.push(`You wrote ${t.suppliedSeries}, but ${t.label} is ${series.replace(/^\S+ /, "")}. Check the callout.`);
     if (t.isUn) {
       const env = unToleranceEnvelope({ major: nat.major, pitch: nat.pitch });
       tables.push({
@@ -48,22 +60,25 @@ export default register({
       primary: { label: `Basic pitch diameter · ${series || t.label}`, value: g.pitchDiameter, unit: nat.u, places: nat.p },
       stats: [
         { label: "Major diameter", value: g.major, unit: nat.u, places: nat.p },
-        { label: t.isUn ? "Threads per inch" : "Pitch", value: t.isUn ? t.tpi : t.pitch, unit: t.isUn ? "TPI" : "mm", places: t.isUn ? 0 : 3 },
+        // 2-4.5 and 2-1/4-4.5 UNC are standard: keep the half thread (fmt drops a trailing zero, so 20 stays "20")
+        { label: t.isUn ? "Threads per inch" : "Pitch", value: t.isUn ? t.tpi : t.pitch, unit: t.isUn ? "TPI" : "mm", places: t.isUn ? (Number.isInteger(t.tpi) ? 0 : 2) : 3 },
         { label: "Minor dia (internal)", value: g.internalMinor, unit: nat.u, places: nat.p },
         { label: "Minor dia (external)", value: g.externalMinor, unit: nat.u, places: nat.p },
         { label: "Thread depth (ext)", value: g.threadDepthExternal, unit: nat.u, places: nat.p },
         { label: t.isUn ? "Pitch" : "TPI equivalent", value: t.isUn ? nat.pitch : t.tpi, unit: t.isUn ? "in" : "TPI", places: t.isUn ? 4 : 2 },
-        { label: "Tap drill (75%)", text: tap ? `${t.isUn ? tap.label : `${tap.size} mm`} · ${tap.percent}%` : `${(t.isUn ? nearestDrillInch(tapDrillByPercent(nat.major, nat.pitch, 75)) : nearestDrillMm(tapDrillByPercent(nat.major, nat.pitch, 75))).label} · figured` },
-        { label: "Series", text: series || "non-standard" },
+        { label: "Tap drill (75%)", text: tap ? `${t.isUn ? tap.label : `${tap.size} mm`} · ${tap.percent}%` : figuredTapDrill(t, nat) },
+        { label: "Series", text: series || (typed ? `${t.suppliedSeries} special (not a standard-series size)` : "non-standard") },
       ],
+      warnings,
       tables,
       source: "threadGeometry",
       explain: [
         { title: "60° thread basics", formula: "H = 0.866 P   PD = D − 0.6495 P   minor (int) = D − 1.0825 P   minor (ext) = D − 1.2269 P", plugged: `P = ${fmt(nat.pitch, nat.p)} ${nat.u}, D = ${fmt(nat.major, nat.p)} ${nat.u}` },
       ],
       notes: [
-        ...(t.suppliedSeries === "UNJ" ? ["UNJ (ASME B1.15): same basic diameters as UN, but the external root must have a 0.15011P–0.18042P radius and the internal minor is held larger to clear it. Use UNJ-specific taps and gauges."] : []),
-        "Class limits come from the ASME B1.1 tolerance formulas, rounded the way the published tables are. Standard-series threads match the tables; for a special, check the standard before you accept parts on it.",
+        ...(/^UNR/.test(t.suppliedSeries || "") ? ["UNR (ASME B1.1): an external thread with a mandatory rounded root. Same sizes, classes and limits as UN; the root radius is checked separately."] : []),
+        ...(/^UNJ/.test(t.suppliedSeries || "") ? ["UNJ (ASME B1.15): same basic diameters as UN, but the external root must have a 0.15011P–0.18042P radius and the internal minor is held larger to clear it. Use UNJ-specific taps and gauges."] : []),
+        "Class limits come from the ASME B1.1 tolerance formulas, rounded the way the published tables are, with the few hand-adjusted table values used as printed. Standard-series threads match the tables; for a special, check the standard before you accept parts on it.",
       ],
       historyLabel: series || t.label,
     };

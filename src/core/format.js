@@ -12,15 +12,32 @@ export function fmt(value, places = 3) {
   return out === "-0" ? "0" : out;
 }
 
-/** Parse "3/8", "1 1/4", "-0,5", "0.375", "1,200" → number. NaN on failure. */
+/** Decimal places that show `sig` significant figures of `value` (0 for zero or whole-number magnitudes, at most 12). */
+export function sigPlaces(value, sig = 4) {
+  const v = Math.abs(Number(value));
+  if (!Number.isFinite(v) || v === 0) return 0;
+  return Math.max(0, Math.min(12, sig - 1 - Math.floor(Math.log10(v))));
+}
+
+/** Format to `sig` significant figures, never fewer than `minPlaces` decimals: 0.0000254 stays 0.0000254, not "0". */
+export function fmtSig(value, sig = 4, minPlaces = 0) {
+  return fmt(value, Math.max(minPlaces, sigPlaces(value, sig)));
+}
+
+// Plain decimal text only: "0x10", "0b11" and "Infinity" are not shop numbers, even though Number() reads them.
+const DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+
+/** Parse "3/8", "1 1/4", "1-1/4", "-0,5", "0.375", "1,200" → number. NaN on failure. */
 export function parseFraction(value) {
-  let text = String(value ?? "").trim();
+  // a typographic minus (U+2212, as printed in labels) is the same sign as "-"
+  let text = String(value ?? "").trim().replace(/−/g, "-");
   // "1,200" and "12,500.5" are thousands groups, the way they are written in a US shop.
   // Any other single comma is a decimal comma: "0,5", "1,25", "0,125".
   if (/^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(text)) text = text.replace(/,/g, "");
   else text = text.replace(/^([+-]?\d+),(\d+)$/, "$1.$2");
   if (!text) return NaN;
-  const match = text.match(/^([+-])?(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)$/);
+  // A mixed number is written "1 1/4" or, on prints and drill charts, "1-1/4".
+  const match = text.match(/^([+-])?(?:(\d+)(?:\s+|-))?(\d+)\s*\/\s*(\d+)$/);
   if (match) {
     const sign = match[1] === "-" ? -1 : 1;
     const whole = Number(match[2] || 0);
@@ -29,22 +46,32 @@ export function parseFraction(value) {
     if (!denominator) return NaN;
     return sign * (whole + numerator / denominator);
   }
+  if (!DECIMAL.test(text)) return NaN;
   const numeric = Number(text);
   return Number.isFinite(numeric) ? numeric : NaN;
 }
 
 // A length may carry its own unit, with or without a space: 10mm, 10 mm, 1/2", 0.5in, 2 inches.
-const UNIT_SUFFIX = /^(.*?)\s*(millimeters?|millimetres?|mm|inches|inch|in|["″”])?$/;
+const UNIT_SUFFIX = /^(.*?)\s*(millimeters?|millimetres?|mm|inches|inch|in|["″”])?$/i;
+
+/**
+ * Split a typed size into its number text and the unit typed with it: "8.5 mm" → { number: "8.5", unit: "mm" },
+ * '3/8"' → { number: "3/8", unit: "in" }, "0.201" → { number: "0.201", unit: null }. Null when nothing is left for the number.
+ */
+export function splitUnit(value) {
+  const m = String(value ?? "").trim().match(UNIT_SUFFIX);
+  if (!m || !m[1]) return null;
+  return { number: m[1], unit: m[2] ? (/^m/i.test(m[2]) ? "mm" : "in") : null };
+}
 
 /** Parse a length; an explicit mm / in / " suffix converts to `expectedUnit`. NaN on failure. */
 export function parseDimension(value, expectedUnit = "in") {
-  const m = String(value ?? "").trim().toLowerCase().match(UNIT_SUFFIX);
-  if (!m || !m[1]) return NaN;
-  const parsed = parseFraction(m[1]);
-  if (!Number.isFinite(parsed) || !m[2]) return parsed;
-  const suppliedMm = m[2].startsWith("m");
-  if (expectedUnit === "in" && suppliedMm) return parsed / 25.4;
-  if (expectedUnit === "mm" && !suppliedMm) return parsed * 25.4;
+  const s = splitUnit(value);
+  if (!s) return NaN;
+  const parsed = parseFraction(s.number);
+  if (!Number.isFinite(parsed) || !s.unit) return parsed;
+  if (expectedUnit === "in" && s.unit === "mm") return parsed / 25.4;
+  if (expectedUnit === "mm" && s.unit === "in") return parsed * 25.4;
   return parsed;
 }
 

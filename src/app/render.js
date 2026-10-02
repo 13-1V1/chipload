@@ -104,10 +104,11 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       const from = units; units = b.dataset.u;
       seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
       // Every typed number is re-expressed in the new system so it still means the same cut.
+      // raw is the truth: a hidden field (job sheet's "shown" list) changes there without touching the DOM.
       for (const input of def.inputs) {
         const el = fields[input.id];
         if (isChoice(input) || !el) continue;
-        el.value = raw[input.id] = convertInput(input, el.value, from, units, raw);
+        el.value = raw[input.id] = convertInput(input, String(raw[input.id] ?? ""), from, units, raw);
       }
       refreshUnits();
       recalc();
@@ -226,7 +227,8 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     const lock = document.createElement("div");
     lock.className = "lock";
     lock.innerHTML = `<div><b>Pro tool</b><br><span>${esc(def.short || "")}</span></div><a class="btn primary" href="#/pro">Unlock Pro</a>`;
-    calc.append(warnBox, lock, history);
+    // no Recent drawer: a locked tool records nothing, and must not show answers saved while Pro was on
+    calc.append(warnBox, lock);
   } else {
     calc.append(warnBox, stats, extras, explain, history);
   }
@@ -248,6 +250,57 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   const answerVal = answer.querySelector("#answerVal");
   const answerUnit = answer.querySelector("#answerUnit");
   const answerLbl = answer.querySelector("#answerLbl");
+  /**
+   * Show the whole answer ("0.0003 – 0.0016", "#7" in glove mode at 320 px): shrink the font a little,
+   * then let it wrap at its spaces at a readable size, and only then shrink further. Still too wide:
+   * the number takes the whole row and the buttons drop under it. A number is never broken inside —
+   * "-1.150" over "2" reads as a different, believable number. A unit wider than its room ("(0.4844 in)"
+   * beside three glove buttons) counts as not fitting too, so it never runs under the copy button.
+   */
+  function fitAnswer() {
+    const st = answerVal.style;
+    st.fontSize = st.whiteSpace = "";
+    answer.classList.remove("wide");
+    if (!answerVal.textContent || !answerVal.clientWidth) return;
+    const big = answerVal.parentElement;
+    const over = () => answerVal.scrollWidth > answerVal.clientWidth + 0.5;
+    const unitOver = () => answerUnit.offsetWidth > big.clientWidth + 0.5;
+    const unitBelow = () => !!answerUnit.textContent && answerUnit.getBoundingClientRect().bottom > answerVal.getBoundingClientRect().bottom + 2;
+    const base = parseFloat(getComputedStyle(answerVal).fontSize);
+    const shrinkTo = (floor, bad = over) => { for (let size = parseFloat(getComputedStyle(answerVal).fontSize); bad() && size > floor;) st.fontSize = `${(size = Math.max(floor, size - 1))}px`; };
+    const fit = (floor) => {
+      st.fontSize = st.whiteSpace = "";
+      shrinkTo(Math.max(18, base * 0.75)); // one line, a little smaller
+      if (!over()) return true;
+      st.fontSize = ""; st.whiteSpace = "normal"; // two lines at full size beat one line too small to read
+      shrinkTo(floor);
+      return !over();
+    };
+    if (fit(16) && !unitOver()) return;
+    answer.classList.add("wide"); // the whole row for the number; copy / star / ⋯ go under it
+    if (fit(16)) {
+      // keep the unit on the number's line when a little smaller does it: a whole row less, so the bar
+      // stays short enough for the field being typed in to show above it with the pad open
+      const kept = st.fontSize;
+      if (!st.whiteSpace) shrinkTo(Math.max(18, base * 0.75), unitBelow);
+      if (unitBelow()) st.fontSize = kept;
+      return;
+    }
+    fit(10); // one piece wider than the whole bar: smaller still, but whole
+  }
+  /** The answer's text, in pieces that stay whole when it wraps: "8.862 –" / "8.994", never a dash on its own line. */
+  function setAnswerText(text) {
+    const pieces = [];
+    for (const word of String(text).split(" ")) {
+      if (pieces.length && /^[–—±×·=-]$/.test(word)) pieces[pieces.length - 1] += ` ${word}`;
+      else pieces.push(word);
+    }
+    answerVal.innerHTML = pieces.map((p) => `<span class="nw">${esc(p)}</span>`).join(" ");
+  }
+  // the room changes with glove mode, turning the phone, and the number font arriving late
+  const fitWatch = new ResizeObserver(() => fitAnswer());
+  fitWatch.observe(answer.querySelector(".big"));
+  document.fonts?.ready.then(() => { if (answerVal.isConnected) fitAnswer(); });
   const favBtn = answer.querySelector("#answerFav");
   favBtn.addEventListener("click", () => {
     const on = toggleFavorite(def.id);
@@ -304,7 +357,11 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     const nameEl = sheet.querySelector("#jobName");
     nameEl.focus(); nameEl.select();
     sheet.querySelector("#jobCancel").addEventListener("click", closeSheet);
-    const save = () => { jobs.add({ calcId: def.id, name: nameEl.value.trim() || def.title, raw: { ...raw }, units, primary: lastPrimaryText }); closeSheet(); toast("Job saved"); };
+    const save = () => {
+      const saved = jobs.add({ calcId: def.id, name: nameEl.value.trim() || def.title, raw: { ...raw }, units, primary: lastPrimaryText });
+      closeSheet();
+      toast(saved === false ? "Couldn't save — phone storage is full or blocked" : "Job saved");
+    };
     sheet.querySelector("#jobSave").addEventListener("click", save);
     nameEl.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(); });
   }
@@ -328,7 +385,9 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   }
 
   function ctx() {
-    return { units, L: UNIT_LABEL[units], settings: getSettings(), machine: activeMachine(), fmt };
+    // Machine profiles are part of Pro Shop: without Pro there is no way to see or turn one off, so none applies.
+    const s = getSettings();
+    return { units, L: UNIT_LABEL[units], settings: s, machine: s.pro ? activeMachine() : null, fmt };
   }
 
   let historyTimer = null;
@@ -343,7 +402,9 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       if (typeof input.as === "function") unitLabels[input.id].textContent = unitFor(input, units, raw);
       if (input.kind === "select" && typeof input.options === "function") syncOptions(input, el, c);
       if (el.tagName === "INPUT") {
-        el.placeholder = placeholder[input.id] ?? (NUMERIC_KINDS.has(input.kind) ? "" : el.placeholder);
+        // a locked tool's worked-out values are part of its answer: say "auto" without the number
+        const ph = locked && /^auto /.test(placeholder[input.id] ?? "") ? "auto" : placeholder[input.id];
+        el.placeholder = ph ?? (NUMERIC_KINDS.has(input.kind) ? "" : el.placeholder);
         el.classList.toggle("bad", invalid.has(input.id) && String(raw[input.id]).trim() !== "");
       }
     }
@@ -381,7 +442,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   function renderEmpty(msg) {
     answerVal.textContent = ""; answerUnit.textContent = "";
     answerLbl.innerHTML = `<span class="empty-msg">${esc(msg)}</span>`;
-    answer.classList.add("msg");
+    answer.classList.add("msg"); answer.classList.remove("wide");
     lastPrimaryText = ""; lastPrimaryLabel = "";
     stats.innerHTML = ""; warnBox.innerHTML = ""; extras.innerHTML = "";
     explain.querySelector(".body").innerHTML = "";
@@ -394,15 +455,18 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     if (locked) {
       answerVal.textContent = "Pro";
       answerUnit.textContent = "";
-      answerLbl.innerHTML = `<a href="#/pro" style="color:var(--text-2)">Unlock to see ${esc((p.label || "the answer").toLowerCase())}</a>`;
+      fitAnswer();
+      // a fixed label: some tools' labels carry part of the answer ("Position (OUT)", "1.67× thinning")
+      answerLbl.innerHTML = `<a href="#/pro" style="color:var(--text-2)">Unlock Pro to see the answer</a>`;
       lastPrimaryText = ""; lastPrimaryLabel = "";
       warnBox.innerHTML = "";
       return;
     }
     const text = Number.isFinite(p.value) ? fmt(p.value, p.places ?? 4) : String(p.text ?? "—");
-    answerVal.textContent = text;
+    setAnswerText(text);
     answerVal.classList.toggle("warn-c", !!p.clamped);
     answerUnit.textContent = p.unit || "";
+    fitAnswer();
     answerLbl.textContent = p.label || def.title;
     lastPrimaryText = `${text}${p.unit ? " " + p.unit : ""}`;
     lastPrimaryLabel = p.label || def.title;
@@ -462,6 +526,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       // Progressive forms keep optional fields hidden until asked for: remember it as shown, then redraw.
       if (fieldWraps[id].hidden && "shown" in raw) {
         raw.shown = [...new Set([...String(raw.shown || "").split(",").filter(Boolean), id])].join(",");
+        if (fields.shown) fields.shown.value = raw.shown;
         recalc();
       }
       if (more && more.contains(el)) more.open = true;
@@ -494,6 +559,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   }
 
   function renderHistory() {
+    if (locked) return;
     const list = loadHistory(def.id);
     const body = history.querySelector(".body");
     if (!list.length) { body.innerHTML = `<div class="empty">Results you calculate show up here.</div>`; return; }
@@ -516,7 +582,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   recalc();
 
   return {
-    destroy() { clearTimeout(historyTimer); window.removeEventListener("beforeprint", fillPrintBlock); closeNumpad(); closeMenu(); closeSheet(); },
+    destroy() { clearTimeout(historyTimer); fitWatch.disconnect(); window.removeEventListener("beforeprint", fillPrintBlock); closeNumpad(); closeMenu(); closeSheet(); },
     toggleHelp,
     hasHelp: !!helpText,
   };

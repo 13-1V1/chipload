@@ -26,9 +26,13 @@ export function ballNoseStepover({ radius, scallopHeight }) {
   return 2 * Math.sqrt(Math.max(0, 2 * radius * scallopHeight - scallopHeight * scallopHeight));
 }
 
-/** Chip thinning from a lead (approach) angle κ: programmed fz = target chip ÷ sin κ. 45° face mill → 1.414×; high-feed 12° → 4.8×. */
-export function leadAngleThinningFactor(leadAngleDeg) {
-  const s = Math.sin(leadAngleDeg * Math.PI / 180);
+/**
+ * Chip thinning from the entering angle κr — the cutting edge measured from the work face (feed direction),
+ * 90° = square shoulder. Sandvik Coromant: hex = fz × sin κr, so programmed fz = target chip ÷ sin κr.
+ * 45° face mill → 1.414×; high-feed 12° → 4.8×. A US catalog "15° lead" (from the axis) is κr = 75° → 1.035×.
+ */
+export function leadAngleThinningFactor(enteringAngleDeg) {
+  const s = Math.sin(enteringAngleDeg * Math.PI / 180);
   return s > 0 ? 1 / s : Infinity;
 }
 

@@ -2,32 +2,33 @@
 // brennanmmeyer@gmail.com
 
 // Socket head cap screw counterbore and clearance chart.
-// Source: ASME B18.3 (head dimensions), ASME B18.2.8 (clearance holes: close / normal / loose),
-// ISO 4762 (metric heads), ISO 273 (metric clearance, fine / medium). Standard counterbore = head + clearance.
+// Source: ASME B18.3 (head dimensions), ASME B18.2.8-1999 inch clearance holes (close / normal / loose,
+// the minimum hole for each fit), ISO 4762 (metric heads), ISO 273 (metric clearance, fine / medium / coarse).
+// Standard counterbore = head + clearance. Drill decimals are the ASME B94.11M sizes, the same as data/drills.js.
 
 /** Inch: size, head dia, head height, counterbore dia (label, in), clearance close/normal/loose (label, in) */
 export const SHCS_INCH = Object.freeze([
-  { size: "#0", head: 0.096, height: 0.060, cbore: ['1/8"', 0.125], close: ["#51", 0.067], normal: ["#48", 0.076], loose: ["#44", 0.086] },
-  { size: "#1", head: 0.118, height: 0.073, cbore: ['5/32"', 0.15625], close: ["#46", 0.081], normal: ["#43", 0.089], loose: ["#38", 0.101] },
-  { size: "#2", head: 0.140, height: 0.086, cbore: ['3/16"', 0.1875], close: ["#42", 0.0935], normal: ["#38", 0.1015], loose: ["#32", 0.116] },
+  { size: "#0", head: 0.096, height: 0.060, cbore: ['1/8"', 0.125], close: ["#51", 0.067], normal: ["#48", 0.076], loose: ['3/32"', 0.09375] },
+  { size: "#1", head: 0.118, height: 0.073, cbore: ['5/32"', 0.15625], close: ["#46", 0.081], normal: ["#43", 0.089], loose: ["#37", 0.104] },
+  { size: "#2", head: 0.140, height: 0.086, cbore: ['3/16"', 0.1875], close: ['3/32"', 0.09375], normal: ["#38", 0.1015], loose: ["#32", 0.116] },
   { size: "#3", head: 0.161, height: 0.099, cbore: ['7/32"', 0.21875], close: ["#36", 0.1065], normal: ["#32", 0.116], loose: ["#30", 0.1285] },
   { size: "#4", head: 0.183, height: 0.112, cbore: ['7/32"', 0.21875], close: ["#31", 0.120], normal: ["#30", 0.1285], loose: ["#27", 0.144] },
-  { size: "#5", head: 0.205, height: 0.125, cbore: ['1/4"', 0.25], close: ["#29", 0.136], normal: ["#25", 0.1495], loose: ["#22", 0.157] },
-  { size: "#6", head: 0.226, height: 0.138, cbore: ['9/32"', 0.28125], close: ["#26", 0.147], normal: ["#20", 0.161], loose: ["#17", 0.173] },
-  { size: "#8", head: 0.270, height: 0.164, cbore: ['5/16"', 0.3125], close: ["#17", 0.173], normal: ["#13", 0.185], loose: ["#8", 0.199] },
-  { size: "#10", head: 0.312, height: 0.190, cbore: ['3/8"', 0.375], close: ["#9", 0.196], normal: ["#7", 0.201], loose: ["#2", 0.221] },
-  { size: "1/4", head: 0.375, height: 0.250, cbore: ['7/16"', 0.4375], close: ["F", 0.257], normal: ['9/32"', 0.28125], loose: ['19/64"', 0.296875] },
-  { size: "5/16", head: 0.469, height: 0.3125, cbore: ['17/32"', 0.53125], close: ["P", 0.323], normal: ['11/32"', 0.34375], loose: ['23/64"', 0.359375] },
-  { size: "3/8", head: 0.562, height: 0.375, cbore: ['5/8"', 0.625], close: ["W", 0.386], normal: ['13/32"', 0.40625], loose: ['27/64"', 0.421875] },
+  { size: "#5", head: 0.205, height: 0.125, cbore: ['1/4"', 0.25], close: ['9/64"', 0.140625], normal: ['5/32"', 0.15625], loose: ['11/64"', 0.171875] },
+  { size: "#6", head: 0.226, height: 0.138, cbore: ['9/32"', 0.28125], close: ["#23", 0.154], normal: ["#18", 0.1695], loose: ["#13", 0.185] },
+  { size: "#8", head: 0.270, height: 0.164, cbore: ['5/16"', 0.3125], close: ["#15", 0.180], normal: ["#9", 0.196], loose: ["#3", 0.213] },
+  { size: "#10", head: 0.312, height: 0.190, cbore: ['3/8"', 0.375], close: ["#5", 0.2055], normal: ["#2", 0.221], loose: ["B", 0.238] },
+  { size: "1/4", head: 0.375, height: 0.250, cbore: ['7/16"', 0.4375], close: ['17/64"', 0.265625], normal: ['9/32"', 0.28125], loose: ['19/64"', 0.296875] },
+  { size: "5/16", head: 0.469, height: 0.3125, cbore: ['17/32"', 0.53125], close: ['21/64"', 0.328125], normal: ['11/32"', 0.34375], loose: ['23/64"', 0.359375] },
+  { size: "3/8", head: 0.562, height: 0.375, cbore: ['5/8"', 0.625], close: ['25/64"', 0.390625], normal: ['13/32"', 0.40625], loose: ['27/64"', 0.421875] },
   { size: "7/16", head: 0.656, height: 0.4375, cbore: ['23/32"', 0.71875], close: ['29/64"', 0.453125], normal: ['15/32"', 0.46875], loose: ['31/64"', 0.484375] },
-  { size: "1/2", head: 0.750, height: 0.500, cbore: ['13/16"', 0.8125], close: ['33/64"', 0.515625], normal: ['17/32"', 0.53125], loose: ['9/16"', 0.5625] },
-  { size: "5/8", head: 0.938, height: 0.625, cbore: ['1"', 1.0], close: ['41/64"', 0.640625], normal: ['21/32"', 0.65625], loose: ['11/16"', 0.6875] },
-  { size: "3/4", head: 1.125, height: 0.750, cbore: ['1-3/16"', 1.1875], close: ['49/64"', 0.765625], normal: ['13/16"', 0.8125], loose: ['27/32"', 0.84375] },
-  { size: "7/8", head: 1.312, height: 0.875, cbore: ['1-3/8"', 1.375], close: ['57/64"', 0.890625], normal: ['15/16"', 0.9375], loose: ['31/32"', 0.96875] },
-  { size: "1", head: 1.500, height: 1.000, cbore: ['1-5/8"', 1.625], close: ['1-1/64"', 1.015625], normal: ['1-3/32"', 1.09375], loose: ['1-5/32"', 1.15625] },
+  { size: "1/2", head: 0.750, height: 0.500, cbore: ['13/16"', 0.8125], close: ['17/32"', 0.53125], normal: ['9/16"', 0.5625], loose: ['39/64"', 0.609375] },
+  { size: "5/8", head: 0.938, height: 0.625, cbore: ['1"', 1.0], close: ['21/32"', 0.65625], normal: ['11/16"', 0.6875], loose: ['47/64"', 0.734375] },
+  { size: "3/4", head: 1.125, height: 0.750, cbore: ['1-3/16"', 1.1875], close: ['25/32"', 0.78125], normal: ['13/16"', 0.8125], loose: ['29/32"', 0.90625] },
+  { size: "7/8", head: 1.312, height: 0.875, cbore: ['1-3/8"', 1.375], close: ['29/32"', 0.90625], normal: ['15/16"', 0.9375], loose: ['1-1/32"', 1.03125] },
+  { size: "1", head: 1.500, height: 1.000, cbore: ['1-5/8"', 1.625], close: ['1-1/32"', 1.03125], normal: ['1-3/32"', 1.09375], loose: ['1-5/32"', 1.15625] },
 ]);
 
-/** Metric (mm): size, head dia, head height, counterbore dia, clearance fine/medium/coarse */
+/** Metric (mm): size, head dia, head height, counterbore dia, clearance fine/medium/coarse (ISO 273) */
 export const SHCS_METRIC = Object.freeze([
   { size: "M2", head: 3.8, height: 2.0, cbore: 4.5, fine: 2.2, medium: 2.4, coarse: 2.6 },
   { size: "M2.5", head: 4.5, height: 2.5, cbore: 5.5, fine: 2.7, medium: 2.9, coarse: 3.1 },

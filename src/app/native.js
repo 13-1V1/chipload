@@ -19,6 +19,12 @@ export const isNative = () => Capacitor.isNativePlatform();
 // where "Save as PDF" lives. A WebView has no window.print of its own.
 const Print = registerPlugin("Print");
 
+// The app's own share-a-file plugin (android/.../ShareFilePlugin.java): sends the type the tool declared.
+// @capacitor/share takes no type and guesses one from the extension, and Android's table files .nc as
+// NetCDF science data (application/x-netcdf), so text editors and G-code viewers drop off the share sheet.
+const ShareFile = registerPlugin("ShareFile");
+const unimplemented = (e) => e?.code === "UNIMPLEMENTED" || /not implemented/i.test(String(e?.message ?? e));
+
 export function initNative() {
   if (!isNative()) return;
 
@@ -45,8 +51,10 @@ export function initNative() {
   App.getLaunchUrl().then((launch) => { if (launch?.url) openUrl(launch.url); }).catch(() => { /* no launch URL */ });
 
   window.chiploadNative = {
-    async saveFile(name, text, mime) {
+    async saveFile(name, text, mime = "text/plain") {
       const r = await Filesystem.writeFile({ path: name, data: text, directory: Directory.Cache, encoding: Encoding.UTF8 });
+      try { await ShareFile.share({ url: r.uri, type: mime, title: `Save ${name}` }); return; }
+      catch (e) { if (!unimplemented(e)) throw e; } // ShareFilePlugin not registered in this APK: fall back to the guess
       await Share.share({ title: name, url: r.uri, dialogTitle: `Save ${name}` });
     },
     async share({ title, text, url }) {

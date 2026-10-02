@@ -9,17 +9,53 @@ import { NPT_TABLE } from "../../src/data/npt.js";
 import { nearestDrillInch } from "../../src/core/drills.js";
 import { drillPointLength } from "../../src/calcs/drill-point.js";
 
-// ISO 965: M10x1.5-6g PD 8.862–8.994, major 9.732–9.968; 6H PD 9.026–9.206, minor 8.376–8.676
-test("M10x1.5 6g/6H limits land within 0.010 of the published tables", () => {
+// ISO 965-2: M10x1.5-6g PD 8.862–8.994, major 9.732–9.968; 6H PD 9.026–9.206, minor 8.376–8.676.
+// Built from the ISO 965-1 tables (es(g) 32, Td 236, Td2 132, TD2 180, TD1 300 µm), so held to half a µm.
+test("M10x1.5 6g/6H limits match ISO 965-2 to the micron", () => {
   const e = metricToleranceEnvelope({ major: 10, pitch: 1.5 });
-  near(e.external.pdMax, 8.994, 0.002, "6g PD max");
-  near(e.external.pdMin, 8.862, 0.006, "6g PD min");
-  near(e.external.majorMax, 9.968, 0.002, "6g major max");
-  near(e.external.majorMin, 9.732, 0.010, "6g major min");
-  near(e.internal.pdMin, 9.026, 0.002, "6H PD min");
-  near(e.internal.pdMax, 9.206, 0.010, "6H PD max");
-  near(e.internal.minorMin, 8.376, 0.002, "6H minor min");
-  near(e.internal.minorMax, 8.676, 0.010, "6H minor max");
+  near(e.external.pdMax, 8.994, 5e-4, "6g PD max");
+  near(e.external.pdMin, 8.862, 5e-4, "6g PD min");
+  near(e.external.majorMax, 9.968, 5e-4, "6g major max");
+  near(e.external.majorMin, 9.732, 5e-4, "6g major min");
+  near(e.internal.pdMin, 9.026, 5e-4, "6H PD min");
+  near(e.internal.pdMax, 9.206, 5e-4, "6H PD max");
+  near(e.internal.minorMin, 8.376, 5e-4, "6H minor min");
+  near(e.internal.minorMax, 8.676, 5e-4, "6H minor max");
+});
+
+// ISO 965-2 6g / 6H, mm (Optimas ISO metric tolerances, ASMC 6H chart, Willrich metric gauge chart):
+// M20x2.5 6H minor 17.294–17.744, PD 18.376–18.600; M36x4 6g major 35.465–35.940, PD 33.118–33.342;
+// M12x1.75 6H PD 10.863–11.063, minor 10.106–10.441; M8x1.25 6g PD 7.042–7.160; M48x5 6g PD 44.431–44.681;
+// M3 6g PD 2.580–2.655; M12x1.25 6H PD 11.188–11.368; M6 6H minor max 5.153.
+test("ISO 965-2 6g / 6H limits across the size range", () => {
+  const rows = [
+    [20, 2.5, "internal", "minorMin", 17.294], [20, 2.5, "internal", "minorMax", 17.744], [20, 2.5, "internal", "pdMax", 18.600],
+    [36, 4, "external", "majorMin", 35.465], [36, 4, "external", "majorMax", 35.940], [36, 4, "external", "pdMin", 33.118], [36, 4, "external", "pdMax", 33.342],
+    [12, 1.75, "internal", "pdMax", 11.063], [12, 1.75, "internal", "minorMin", 10.106], [12, 1.75, "internal", "minorMax", 10.441],
+    [8, 1.25, "external", "pdMin", 7.042], [8, 1.25, "external", "pdMax", 7.160], [48, 5, "external", "pdMin", 44.431], [48, 5, "external", "pdMax", 44.681],
+    [3, 0.5, "external", "pdMin", 2.580], [3, 0.5, "external", "pdMax", 2.655], [12, 1.25, "internal", "pdMax", 11.368], [6, 1, "internal", "minorMax", 5.153],
+  ];
+  for (const [major, pitch, side, key, want] of rows) near(metricToleranceEnvelope({ major, pitch })[side][key], want, 5e-4, `M${major}x${pitch} ${side} ${key}`);
+});
+
+// ISO 965-1 §13.4.2: TD2 grade 7 = 1.7 × Td2(6), not 1.25 × TD2(6). Table 5, 5.6–11.2 mm, P 1.5: TD2(7) = 224 µm;
+// Table 3, P 1.5: TD1(7) = 375 µm. So M10x1.5-7H PD 9.026–9.250, minor 8.376–8.751.
+test("grade 7 internal uses the ISO 965-1 table (7H)", () => {
+  const e = metricToleranceEnvelope({ major: 10, pitch: 1.5, intGrade: 7 });
+  near(e.internal.pdMax, 9.250, 5e-4, "7H PD max");
+  near(e.internal.minorMax, 8.751, 5e-4, "7H minor max");
+  near(e.tolerances.TD2, 224, 0, "TD2(7)");
+});
+
+// ISO 965-1 Tables 3 and 5 define no grade-6 internal tolerance for 0.25 mm pitch (M1x0.25 comes in 5H);
+// Table 4 has no Td grade 8 under 0.8 mm pitch. Outside 0.2–8 mm pitch the standard gives nothing.
+test("classes ISO 965-1 doesn't define come back empty with the reason", () => {
+  const m1 = metricToleranceEnvelope({ major: 1, pitch: 0.25 });
+  assert.equal(m1.internal, null);
+  assert.match(m1.undefinedReasons.join(" "), /6H/);
+  near(metricToleranceEnvelope({ major: 1, pitch: 0.25, intGrade: 5 }).internal.tolPd, 0.056, 1e-9, "5H TD2 = 56 µm");
+  assert.equal(metricToleranceEnvelope({ major: 5, pitch: 0.5, extGrade: 8 }).external, null);
+  assert.throws(() => metricToleranceEnvelope({ major: 10, pitch: 0.1 }), /0\.2 to 8 mm/);
 });
 
 test("M6x1 6g allowance is 0.026 and 4h has none", () => {
@@ -37,13 +73,20 @@ test("1/2-10 Acme basic geometry", () => {
   near(g.allowance["2G"], 0.008 * Math.sqrt(0.5), 1e-12);
 });
 
-// ASME B18.29.1 suggested STI drills: 1/4-20 → 17/64, 3/8-16 → 25/64, 1/2-13 → 33/64, 10-32 → #7; Heli-Coil M10x1.5 → 10.4
+// ASME B18.29.1 suggested STI drills: 1/4-20 → 17/64, 3/8-16 → 25/64, 1/2-13 → 33/64, 10-32 → #7.
+// Heli-Coil metric drilling data (Vargus Heli-Coil PDF p.3), steel / aluminum: M10x1.5 → 10.5 / 10.5,
+// M3x0.5 → 3.2 / 3.15, M24x3 → 24.75; STI minor min M24x3 = 24.649 (= D + 0.2165P).
 test("STI drills come from the B18.29.1 table, with an estimate fallback", () => {
   assert.equal(stiTapDrill(0.25, 1 / 20, { isUn: true, tpi: 20 }).label, '17/64"');
   assert.equal(stiTapDrill(0.375, 1 / 16, { isUn: true, tpi: 16 }).label, '25/64"');
   assert.equal(stiTapDrill(0.5, 1 / 13, { isUn: true, tpi: 13 }).label, '33/64"');
   assert.equal(stiTapDrill(0.19, 1 / 32, { isUn: true, tpi: 32 }).label, "#7");
-  assert.equal(stiTapDrill(10, 1.5, { isUn: false }).size, 10.4);
+  assert.equal(stiTapDrill(10, 1.5, { isUn: false }).size, 10.5);
+  const m3 = stiTapDrill(3, 0.5, { isUn: false });
+  assert.equal(m3.size, 3.2);
+  assert.equal(m3.alt, 3.15);
+  assert.equal(stiTapDrill(24, 3, { isUn: false }).size, 24.75);
+  near(stiTapDrill(24, 3, { isUn: false }).minMinor, 24.649, 0.001);
   const est = stiTapDrill(1.25, 1 / 7, { isUn: true, tpi: 7 });
   assert.equal(est.source, "estimate");
   near(est.size, 1.25 + 0.25 / 7, 1e-12);

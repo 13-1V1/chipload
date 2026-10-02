@@ -1,0 +1,189 @@
+// Created by: Brennan Meyer with use of Claude Code 10/02/2026 Santa Clarita, CA
+// brennanmmeyer@gmail.com
+
+// Reference-team calculators run the way the app runs them: hardness headline, true position at MMC/LMC,
+// thermal limits in °F and °C, inch fit limits rounded inward, and each tool's Source line.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import "../../src/calcs/index.js";
+import { getCalc } from "../../src/app/registry.js";
+import { buildValues, defaultRaw, invalidReason, convertInput } from "../../src/app/values.js";
+import { near } from "../helpers.mjs";
+import { fmt } from "../../src/core/format.js";
+import { UNIT_LABEL } from "../../src/app/settings.js";
+import { CALCULATION_SOURCES } from "../../src/data/sources.js";
+
+const ctxFor = (units) => ({ units, L: UNIT_LABEL[units], settings: { units, pro: true }, machine: null, fmt });
+const run = (id, over = {}, units = "in") => {
+  const def = getCalc(id), ctx = ctxFor(units);
+  const built = buildValues(def, defaultRaw(def, over, units), ctx);
+  return { ...built, out: built.invalid.size ? null : def.compute(built.values, ctx) };
+};
+
+// ASTM E140 Table 2: HRB 90 = HV 185 = HB 185. Table 1: HRC 62 = HV 746 (no Brinell over HRC 60); HB 200 = HRB 93.
+test("hardness headline is a scale that has a value, never 'off scale'", () => {
+  const p = (scale, value) => run("hardness", { scale, value: String(value) }).out.primary;
+  assert.deepEqual([p("hrb", 90).label, p("hrb", 90).text, p("hrb", 90).unit], ["Brinell", "185", "HB"]);
+  assert.deepEqual([p("hrc", 62).label, p("hrc", 62).text, p("hrc", 62).unit], ["Vickers", "746", "HV"]);
+  assert.deepEqual([p("hrc", 40).label, p("hrc", 40).text], ["Brinell", "371"]);
+  assert.deepEqual([p("hb", 200).label, p("hb", 200).text], ["Rockwell B", "93"]);
+  assert.deepEqual([p("hv", 150).label, p("hv", 150).text], ["Rockwell B", "80"]);
+  assert.deepEqual([p("hv", 392).label, p("hv", 392).text], ["Rockwell C", "40"]);
+  for (const [scale, value] of [["hrb", 60], ["hrb", 100], ["hb", 120], ["hv", 900], ["hrc", 68], ["hrc", 20]]) {
+    assert.doesNotMatch(p(scale, value).text, /off scale/, `${scale} ${value}`);
+  }
+  assert.throws(() => run("hardness", { scale: "hrb", value: "50" }), /HRB 55–100/);
+  const out = run("hardness", { scale: "hrc", value: "40" }).out;
+  assert.equal(out.source, "hardness");
+  assert.match(out.explain.map((e) => e.title).join(" "), /A370/);
+});
+
+// E140 Table 2 tops out at HRB 100 = HB 240 (A370: 116 ksi); Table 1 passes it at HRC 23 = HV 254 = HB 243 (117 ksi).
+test("hardness: HV 241 never reads softer than HV 240, and the seam says why it's rough", () => {
+  const stat = (out, label) => out.stats.find((s) => s.label.startsWith(label)).text;
+  const a = run("hardness", { scale: "hv", value: "240" }).out, b = run("hardness", { scale: "hv", value: "241" }).out;
+  assert.ok(Number(stat(b, "Brinell")) >= Number(stat(a, "Brinell")), `${stat(b, "Brinell")} < ${stat(a, "Brinell")}`);
+  assert.ok(parseFloat(stat(b, "Approx. tensile")) >= parseFloat(stat(a, "Approx. tensile")));
+  for (const [scale, value] of [["hv", 241], ["hb", 230], ["hrb", 99], ["hrc", 21]]) {
+    assert.match(run("hardness", { scale, value: String(value) }).out.notes.join(" "), /disagree by up to 14 HB/, `${scale} ${value}`);
+  }
+  assert.doesNotMatch(run("hardness", { scale: "hrc", value: "40" }).out.notes.join(" "), /disagree/);
+});
+
+test("true position: an oversize hole can't pass on unlimited bonus", () => {
+  // Ø.250–.255 hole measured .300 with a .0424 position error: bonus stops at .005, part is out on size and position
+  const out = run("true-position", { dx: "0.015", dy: "0.015", tol: "0.010", mmc: "mmc", mmcSize: "0.250", lmc: "0.255", actual: "0.300" }).out;
+  assert.match(out.primary.label, /OUT/);
+  assert.equal(out.primary.clamped, true);
+  near(out.stats.find((s) => s.label === "Bonus tolerance").value, 0.005, 1e-12);
+  assert.match(out.warnings.join(" "), /bigger than its LMC size/);
+  // position fine, size past LMC: still a reject
+  const past = run("true-position", { mmc: "mmc", lmc: "0.255", actual: "0.256" }).out;
+  assert.equal(past.primary.label, "Position OK, size OUT");
+  // pin: Ø.245–.250 pin measured .240 is under LMC — out on size, bonus capped at .005
+  const pin = run("true-position", { mmc: "mmc", feature: "pin", lmc: "0.245", actual: "0.240" }).out;
+  assert.equal(pin.primary.label, "Position OK, size OUT");
+  near(pin.stats.find((s) => s.label === "Bonus tolerance").value, 0.005, 1e-12);
+});
+
+test("true position: hole and pin both start inside their limits, with LMC left for the user", () => {
+  for (const units of ["in", "mm"]) {
+    for (const feature of ["hole", "pin"]) {
+      const b = run("true-position", { mmc: "mmc", feature }, units);
+      assert.equal(b.out.primary.label, "Position (in tolerance)", `${units} ${feature}`);
+      assert.deepEqual(b.out.warnings, [], `${units} ${feature}`);
+      assert.equal(b.values.actualAuto, true, "a blank actual is taken as MMC");
+      assert.equal(b.out.stats.find((s) => s.label === "Bonus tolerance").value, 0);
+      assert.match(b.out.notes.join(" "), /enter LMC to check/);
+      // typing MMC well over the old LMC default never raises an LMC error the user didn't cause
+      assert.ok(run("true-position", { mmc: "mmc", feature, mmcSize: units === "in" ? "0.500" : "12" }, units).out, `${units} ${feature} big MMC`);
+    }
+  }
+  // every default case passes in mm too, not only in inches
+  assert.equal(run("true-position", {}, "mm").out.primary.label, "Position (in tolerance)");
+});
+
+test("true position: saved jobs from before LMC existed reopen with what was typed", () => {
+  // A pin job kept its measured size in "actual" and had no LMC: bonus = .250 − .2405 = .0095 (ASME Y14.5 pin bonus)
+  const pin = run("true-position", { dx: "0.003", dy: "0.004", tol: "0.010", mmc: "mmc", feature: "pin", mmcSize: "0.250", actual: "0.2405" });
+  assert.equal(pin.values.actual, 0.2405);
+  near(pin.out.stats.find((s) => s.label === "Bonus tolerance").value, 0.0095, 1e-12);
+  assert.equal(pin.out.primary.label, "Position (in tolerance)");
+  // A hole job at MMC .500, measured .506: no LMC to trip on, bonus .006, with a note that size wasn't checked
+  const hole = run("true-position", { dx: "0.003", dy: "0.004", tol: "0.010", mmc: "mmc", feature: "hole", mmcSize: "0.500", actual: "0.506" });
+  near(hole.out.stats.find((s) => s.label === "Bonus tolerance").value, 0.006, 1e-12);
+  assert.equal(hole.out.stats.find((s) => s.label === "Size").text, "Not checked (no LMC)");
+  assert.match(hole.out.notes.join(" "), /enter LMC to check/);
+});
+
+test("true position: a miss under one display digit never reads 'out by 0'", () => {
+  const out = run("true-position", { dx: "0.003", dy: "0.00401", tol: "0.010" }).out;
+  assert.equal(out.primary.label, "Position (OUT)");
+  const w = out.warnings.join(" ");
+  assert.doesNotMatch(w, /by 0\b(?!\.)/);
+  assert.match(w, /Out of position by (0\.0000\d+ in|less than)/);
+  assert.notEqual(fmt(out.primary.value, out.primary.places), fmt(out.stats[0].value, out.stats[0].places), "position and allowed differ on screen");
+  const mm = run("true-position", { dx: "0.076", dy: "0.102", tol: "0.254" }, "mm").out;
+  assert.match(mm.warnings.join(" "), /Out of position by 0\.000\d+ mm/);
+});
+
+// 0.08 mm = 0.0031496 in (÷ 25.4). A part exactly on the line must give the same verdict after a unit switch.
+test("true position: a unit switch never flips the verdict of a part on the line", () => {
+  const def = getCalc("true-position");
+  const switched = (over, from, to) => {
+    const raw = defaultRaw(def, over, from), out = {};
+    for (const i of def.inputs) out[i.id] = convertInput(i, raw[i.id], from, to, raw);
+    return out;
+  };
+  const cases = [
+    { dx: "0.08", dy: "0.06", tol: "0.2" }, // TP exactly 0.2 mm; four-figure inches made it OUT by 0.0000004
+    { dx: "0.08", dy: "0.06", tol: "0.15", mmc: "mmc", mmcSize: "6.00", lmc: "6.05", actual: "6.05" }, // bonus 0.05 fills the gap
+    { dx: "0.03", dy: "0.04", tol: "0.08", mmc: "mmc", feature: "pin", mmcSize: "12.7", lmc: "12.68", actual: "12.68" },
+  ];
+  for (const c of cases) {
+    const mm = run("true-position", c, "mm").out;
+    assert.equal(mm.primary.label, "Position (in tolerance)", JSON.stringify(c));
+    const inch = switched(c, "mm", "in");
+    if (c.dx === "0.08") assert.equal(inch.dx, "0.0031496");
+    assert.equal(run("true-position", inch, "in").out.primary.label, "Position (in tolerance)", JSON.stringify(inch));
+    // ...and straight back gives the typed mm text again
+    assert.deepEqual(Object.fromEntries(Object.entries(switched(inch, "in", "mm")).filter(([k]) => k in c)), c);
+  }
+  // inch → mm is exact (×25.4): 0.003, 0.004 on a 0.010 zone is exactly on the line in both
+  const onLine = { dx: "0.003", dy: "0.004", tol: "0.010" };
+  assert.equal(run("true-position", onLine).out.primary.label, "Position (in tolerance)");
+  const mmText = switched(onLine, "in", "mm");
+  assert.deepEqual([mmText.dx, mmText.dy, mmText.tol], ["0.0762", "0.1016", "0.254"]);
+  assert.equal(run("true-position", mmText, "mm").out.primary.label, "Position (in tolerance)");
+});
+
+// Absolute zero: −459.67 °F = −273.15 °C (exact, SI Brochure 9th ed. §2.3.1)
+test("thermal refuses a temperature below absolute zero in either unit", () => {
+  // The field check (values.js) or compute() may refuse it; either way the user gets a reason in their unit.
+  const refused = (over, units) => {
+    const def = getCalc("thermal"), ctx = ctxFor(units);
+    const b = buildValues(def, defaultRaw(def, over, units), ctx);
+    if (b.invalid.size) { const id = [...b.invalid][0]; return invalidReason(def.inputs.find((i) => i.id === id), b.values[id], b.raw[id], b.raw, units); }
+    try { def.compute(b.values, ctx); return null; } catch (e) { return e.message; }
+  };
+  assert.match(refused({ from: "-400", to: "20" }, "mm"), /absolute zero \(−?-?273\.15 °C\)/);
+  assert.match(refused({ from: "68", to: "4000" }, "mm"), /2760 °C/);
+  assert.match(refused({ from: "-470" }, "in"), /459\.67 °F/);
+  // compute() is a backstop on its own, in the active unit
+  const def = getCalc("thermal");
+  assert.throws(() => def.compute({ material: "steel", length: 250, from: -400, to: 20 }, ctxFor("mm")), /below absolute zero \(−273\.15 °C\)/);
+  assert.throws(() => def.compute({ material: "steel", length: 10, from: 68, to: 6000 }, ctxFor("in")), /5000 °F/);
+  assert.ok(run("thermal", { from: "-196", to: "20" }, "mm").out, "liquid nitrogen shrink fit still works");
+  const out = run("thermal", {}, "mm").out;
+  assert.equal(out.source, "thermal");
+  assert.match(out.explain[0].plugged, / mm × .* °C = .* mm$/);
+});
+
+// ISO 370 practice for converted toleranced limits: round inward (max down, min up), so the inch limits stay
+// inside the ISO zone. 1 in g6 = 25.380–25.393 mm = 0.999213–0.999724 in → 0.9993–0.9997 (nearest would give 0.9992).
+test("fits: inch limits round inward so they never sit outside the ISO limit", () => {
+  const out = run("fits", { nominal: "1", fit: "H7/g6" }).out;
+  assert.equal(out.stats.find((s) => s.label === "Shaft g6").text, "0.9993 – 0.9997");
+  assert.equal(out.stats.find((s) => s.label === "Hole H7").text, "1 – 1.0008");
+  assert.equal(out.source, "fits");
+  assert.match(out.explain.map((e) => e.plugged).join(" "), /in → /);
+  // 1/4 in k6: 6.35 mm k6 = +10/+1 µm → 0.250039–0.250394 in → min rounds up to 0.2501
+  const k6 = run("fits", { nominal: "0.25", fit: "H7/k6" }).out;
+  assert.match(k6.stats.find((s) => s.label === "Shaft k6").text, /^0\.2501 – /);
+  // mm stays exact
+  assert.equal(run("fits", { nominal: "25", fit: "H7/g6" }, "mm").out.stats.find((s) => s.label === "Shaft g6").text, "24.98 – 24.993");
+  assert.throws(() => run("fits", { nominal: "25", fit: "custom", hole: "K11", shaft: "h11" }, "mm"), /no K11 hole over 3 mm/);
+});
+
+test("source lines name the standard each tool uses", () => {
+  for (const key of ["hardness", "thermal", "fits", "sti", "acme", "npt"]) {
+    assert.ok(CALCULATION_SOURCES[key]?.source && CALCULATION_SOURCES[key]?.confidence, key);
+  }
+  assert.match(CALCULATION_SOURCES.acme.source, /B1\.5/); assert.match(CALCULATION_SOURCES.acme.source, /29/);
+  assert.match(CALCULATION_SOURCES.npt.source, /B1\.20\.1/);
+  assert.match(CALCULATION_SOURCES.sti.source, /B18\.29\.1/);
+  assert.match(CALCULATION_SOURCES.hardness.confidence, /Approximate/);
+  assert.doesNotMatch(CALCULATION_SOURCES.tapDrill.source, /explicitly selected/);
+  for (const id of ["hardness", "material-weight", "thermal", "fits", "true-position"]) assert.ok(CALCULATION_SOURCES[run(id).out.source], id);
+});

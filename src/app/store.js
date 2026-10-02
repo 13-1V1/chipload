@@ -12,8 +12,9 @@ function read(key, fallback) {
   try { const raw = localStorage.getItem(P + key); return raw == null ? fallback : JSON.parse(raw); }
   catch { return fallback; }
 }
+/** true when the value was stored; false when storage is full or blocked (the caller tells the user). */
 function write(key, value) {
-  try { localStorage.setItem(P + key, JSON.stringify(value)); } catch { /* storage full or blocked */ }
+  try { localStorage.setItem(P + key, JSON.stringify(value)); return true; } catch { return false; }
 }
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const readArray = (key) => { const v = read(key, []); return Array.isArray(v) ? v : []; };
@@ -28,7 +29,7 @@ export function loadInputs(calcId) {
   if (isObj(v.values)) for (const [k, x] of Object.entries(v.values)) if (typeof x === "string" || typeof x === "number") values[k] = String(x);
   return { values, units: v.units === "mm" ? "mm" : v.units === "in" ? "in" : undefined, more: v.more === true };
 }
-export function saveInputs(calcId, state) { write(`inputs.${calcId}`, state); }
+export function saveInputs(calcId, state) { return write(`inputs.${calcId}`, state); }
 
 export function loadHistory(calcId) {
   return readObjects(`history.${calcId}`).filter((e) => isObj(e.raw)).map((e) => ({ ...e, label: String(e.label ?? ""), primary: String(e.primary ?? ""), units: e.units === "mm" ? "mm" : "in" }));
@@ -36,7 +37,7 @@ export function loadHistory(calcId) {
 export function pushHistory(calcId, entry) {
   const list = loadHistory(calcId).filter((e) => e.key !== entry.key);
   list.unshift({ ...entry, at: Date.now() });
-  write(`history.${calcId}`, list.slice(0, HISTORY_MAX));
+  return write(`history.${calcId}`, list.slice(0, HISTORY_MAX));
 }
 
 export function loadFavorites() { return readStrings("favorites"); }
@@ -55,7 +56,8 @@ export function pushRecent(calcId) {
 
 /** Generic named value (flags, an id). Prefer loadList / loadStrings when you expect an array. */
 export function loadBlob(name, fallback) { return read(`blob.${name}`, fallback); }
-export function saveBlob(name, value) { write(`blob.${name}`, value); }
+/** true when stored, false when storage is full or blocked. */
+export function saveBlob(name, value) { return write(`blob.${name}`, value); }
 /** Array of plain objects (machines, tools, jobs); anything else in storage reads as empty. */
 export function loadList(name) { return readObjects(`blob.${name}`); }
 /** Array of strings (ids). */

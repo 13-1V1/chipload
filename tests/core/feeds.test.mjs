@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { radialChipThinningFactor, calculateSpeedsFeeds, chipLoadScale, rpmFromSfm, sfmFromRpm } from "../../src/core/feeds.js";
+import { radialChipThinningFactor, radialChipThinningRaw, chipLoadScale, rpmFromSfm, sfmFromRpm } from "../../src/core/feeds.js";
 
 // Machinery's Handbook: 1/2" tool at 100 SFM → 764 RPM
 test("RPM from SFM matches handbook", () => {
@@ -12,39 +12,38 @@ test("RPM from SFM matches handbook", () => {
   near(sfmFromRpm(rpmFromSfm(100, 0.5), 0.5), 100, 1e-9);
 });
 
-// Library chip loads are for a 3/8 in tool: a 1/8 tool takes a third, nothing under 0.25× or over 1.5×.
-test("chip load scales with tool diameter, inside limits", () => {
+// Library chip loads are for a 3/8 in tool and scale with diameter, all the way down to micro end mills.
+// Harvey Tool speeds & feeds chart SF_74000 (miniature 2-flute end mills, series 740xx/741xx), slotting IPT:
+//   wrought aluminum     0.015 → .00019, 0.031 → .00039, 0.062 → .00068, 0.375 → .00413
+//   low-carbon steel     0.015 → .00007, 0.031 → .00013, 0.062 → .00023, 0.375 → .00142
+// Their ratio to the 3/8 in value is the scale a micro tool should get. The app may sit a little under
+// (safe: a lighter chip), never more than 5% over. The old 0.25× floor gave 3–6× these at 0.015–0.031 in.
+test("chip load scales with diameter down to micro end mills (Harvey Tool SF_74000)", () => {
+  const harvey = {
+    aluminum: { 0.015: 0.00019, 0.031: 0.00039, 0.062: 0.00068, 0.375: 0.00413 },
+    lowCarbonSteel: { 0.015: 0.00007, 0.031: 0.00013, 0.062: 0.00023, 0.375: 0.00142 },
+  };
+  for (const [material, row] of Object.entries(harvey)) {
+    for (const d of [0.015, 0.031, 0.062]) {
+      const published = row[d] / row[0.375];
+      const scale = chipLoadScale(d);
+      assert.ok(scale <= published * 1.05 && scale >= published * 0.8, `${material} ${d} in: scale ${scale.toFixed(4)} vs Harvey ${published.toFixed(4)}`);
+    }
+  }
   near(chipLoadScale(0.375), 1);
   near(chipLoadScale(0.125), 1 / 3, 1e-12);
-  near(chipLoadScale(0.03), 0.25);
   near(chipLoadScale(2), 1.5);
-  near(calculateSpeedsFeeds({ units: "in", diameter: 0.125, flutes: 2, sfm: 300, chipLoadIn: 0.003 }).chipScale, chipLoadScale(0.125));
 });
 
+// Sandvik Coromant milling formulas: hex = fz × √(1 − (1 − 2ae/D)²) for ae < D/2, so the factor is
+// D ÷ (2 √(ae (D − ae))). It grows without limit as ae → 0; the app holds it at a cap.
 test("radial chip thinning factor", () => {
   near(radialChipThinningFactor(0.5, 0.25), 1);
   near(radialChipThinningFactor(0.5, 0.05), 5 / 3, 1e-12);
   near(radialChipThinningFactor(12.7, 1.27), 5 / 3, 1e-12);
-});
-
-test("3/8 4-flute at 400 SFM, 0.003 chip load → 4074 RPM, 48.9 IPM", () => {
-  const r = calculateSpeedsFeeds({ units: "in", diameter: 0.375, flutes: 4, sfm: 400, chipLoadIn: 0.003 });
-  near(r.rpm, 4074.4, 0.1);
-  near(r.feed, 48.89, 0.01);
-});
-
-test("inch and metric inputs agree", () => {
-  const inch = calculateSpeedsFeeds({ units: "in", diameter: 0.5, flutes: 4, sfm: 400, chipLoadIn: 0.003, widthOfCut: 0.05, depthOfCut: 0.1 });
-  const metric = calculateSpeedsFeeds({ units: "mm", diameter: 12.7, flutes: 4, sfm: 400, chipLoadIn: 0.003, widthOfCut: 1.27, depthOfCut: 2.54 });
-  near(metric.rpm, inch.rpm);
-  near(metric.feed, inch.feed * 25.4, 1e-8);
-  near(metric.mrr, inch.mrr * 25.4 ** 3, 1e-5);
-});
-
-test("machine RPM and feed caps clamp and flag", () => {
-  const r = calculateSpeedsFeeds({ units: "in", diameter: 0.5, flutes: 4, sfm: 800, chipLoadIn: 0.003, maxRpm: 2000, maxFeed: 10 });
-  assert.equal(r.rpm, 2000);
-  assert.equal(r.feed, 10);
-  assert.equal(r.limitedByRpm, true);
-  assert.equal(r.limitedByFeed, true);
+  near(radialChipThinningRaw(0.5, 0.005), 5.0252, 0.0001);
+  near(radialChipThinningFactor(0.5, 0.005), 2.5);
+  near(radialChipThinningFactor(0.5, 0.005, 5), 5);
+  near(radialChipThinningRaw(0.5, 0.3), 1);
+  near(radialChipThinningFactor(0.5, NaN), 1, 0, "no width given");
 });

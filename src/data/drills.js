@@ -51,16 +51,26 @@ function buildInchChart() {
 
 export const DRILL_CHART_INCH = Object.freeze(buildInchChart());
 
-/** Metric drill series in mm, ascending: 0.05 steps to 3, 0.1 to 10, common sizes to 14, then every 0.5 to 60. */
+/**
+ * Metric drill series in mm, ascending. ISO 235 / BS 328 (DIN 338 jobbers): 0.05 steps to 3, every 0.1 from
+ * 3.0 to 13.9, every 0.25 from 14 to 25; then 0.5 steps to 60. Kept as extras: the quarter sizes from 10 to 14
+ * that shops stock for tap drills, and the in-between sizes the Heli-Coil metric chart calls for.
+ */
 export const DRILL_CHART_MM = Object.freeze((() => {
   const out = new Set();
-  for (let i = 6; i <= 60; i++) out.add(Math.round(i * 5) / 100);            // 0.30 … 3.00 by 0.05
-  for (let i = 30; i <= 100; i++) out.add(Math.round(i) / 10);               // 3.0 … 10.0 by 0.1
-  for (const v of [10.2, 10.25, 10.5, 10.75, 10.8, 11.0, 11.2, 11.25, 11.5, 11.75, 11.8, 12.0, 12.25, 12.5, 12.75, 13.0, 13.25, 13.5, 13.75, 14.0]) out.add(v);
-  for (let i = 29; i <= 120; i++) out.add(i / 2);                            // 14.5 … 60.0 by 0.5
+  for (let i = 4; i <= 60; i++) out.add(Math.round(i * 5) / 100);            // 0.20 … 3.00 by 0.05
+  for (let i = 30; i <= 140; i++) out.add(i / 10);                           // 3.0 … 14.0 by 0.1
+  for (let i = 56; i <= 100; i++) out.add(i / 4);                            // 14.00 … 25.00 by 0.25
+  for (let i = 51; i <= 120; i++) out.add(i / 2);                            // 25.5 … 60.0 by 0.5
+  for (const v of [10.25, 10.75, 11.25, 11.75, 12.25, 12.75, 13.25, 13.75]) out.add(v);
+  for (const v of [3.15, 4.25, 6.25, 7.25, 8.25, 27.75]) out.add(v);         // Heli-Coil metric chart drills
   return [...out].sort((a, b) => a - b);
 })());
 
-/** Standard thread-wire sets. Inch set per common 3-wire kits; mm set per DIN 2269 style kits. */
-export const WIRE_SET_INCH = Object.freeze([0.010, 0.012, 0.014, 0.016, 0.018, 0.020, 0.022, 0.024, 0.025, 0.026, 0.028, 0.030, 0.032, 0.035, 0.040, 0.045, 0.050, 0.055, 0.060, 0.063, 0.070, 0.080, 0.090, 0.100]);
-export const WIRE_SET_MM = Object.freeze([0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.80, 2.00]);
+/**
+ * 60° thread-measuring wires as sold: one best-size wire per pitch, W = 0.57735 P (Pratt & Whitney / Thread Check
+ * wire charts; Machinery's Handbook three-wire method). Inch: every UN pitch, 80 to 4 TPI (20 TPI = .02887).
+ * mm: every ISO 261 pitch, 0.2 to 6 mm, to 0.0001 mm (1.5 mm = 0.8660, 1 mm = 0.5774). DIN 2269 metric sets use their own near-best series.
+ */
+export const WIRE_SET_INCH = Object.freeze([0.00722, 0.00802, 0.00902, 0.01031, 0.01203, 0.01312, 0.01443, 0.01604, 0.01804, 0.02062, 0.02138, 0.02406, 0.02887, 0.03208, 0.03608, 0.04124, 0.04441, 0.04811, 0.0502, 0.05249, 0.05774, 0.06415, 0.07217, 0.08248, 0.09623, 0.11547, 0.1283, 0.14434]);
+export const WIRE_SET_MM = Object.freeze([0.1155, 0.1443, 0.1732, 0.2021, 0.2309, 0.2598, 0.2887, 0.3464, 0.4041, 0.433, 0.4619, 0.5774, 0.7217, 0.866, 1.0104, 1.1547, 1.4434, 1.7321, 2.0207, 2.3094, 2.5981, 2.8868, 3.1754, 3.4641]);

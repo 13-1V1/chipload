@@ -8,51 +8,26 @@
 
 /**
  * Library chip loads are listed for a 3/8 in tool. Smaller tools take less, bigger ones more:
- * scale by diameter ÷ 0.375, held between 0.25× and 1.5×.
+ * scale by diameter ÷ 0.375, straight down to micro end mills, held at 1.5× on the big end.
+ * Published miniature charts stay proportional to diameter down to 0.015 in (Harvey Tool SF_74000:
+ * 6061 slotting 0.00413 IPT at 3/8, 0.00039 at 1/32, 0.00019 at 0.015), so there is no floor.
  */
 export function chipLoadScale(diameterIn) {
-  return Math.max(0.25, Math.min(1.5, diameterIn / 0.375));
+  return Math.max(0, Math.min(1.5, diameterIn / 0.375));
 }
 
-/** Dimensionless chip-thinning multiplier; 1 when at or beyond half-diameter engagement. */
-export function radialChipThinningFactor(diameter, radialEngagement, maxFactor = 2.5) {
+/** Radial thinning before any cap: D ÷ (2 √(ae (D − ae))) under half-diameter engagement, else 1. */
+export function radialChipThinningRaw(diameter, radialEngagement) {
   if (!(diameter > 0) || !(radialEngagement > 0) || radialEngagement >= diameter / 2) return 1;
-  const denominator = 2 * Math.sqrt(radialEngagement * (diameter - radialEngagement));
-  if (!(denominator > 0)) return 1;
-  return Math.max(1, Math.min(diameter / denominator, maxFactor));
+  return diameter / (2 * Math.sqrt(radialEngagement * (diameter - radialEngagement)));
 }
 
 /**
- * @param {object} p
- * @param {"in"|"mm"} p.units   unit of diameter / widthOfCut / depthOfCut / maxFeed
- * @param {number} p.diameter
- * @param {number} p.flutes
- * @param {number} p.sfm         surface speed in ft/min (always)
- * @param {number} p.chipLoadIn  chip load per tooth in inches, referenced to a 3/8" tool
- * @param {number} [p.widthOfCut] radial engagement (enables chip thinning + MRR)
- * @param {number} [p.depthOfCut] axial depth (enables MRR)
- * @param {number} [p.maxRpm]     machine spindle cap
- * @param {number} [p.maxFeed]    machine feed cap, in `units`/min
+ * Dimensionless chip-thinning multiplier, capped at `maxFactor`; 1 at or beyond half-diameter engagement.
+ * No width given (blank / NaN) also gives 1 — a typed 0 is not a cut, so calculators reject it.
  */
-export function calculateSpeedsFeeds({
-  units = "in", diameter, flutes, sfm, chipLoadIn,
-  widthOfCut = NaN, depthOfCut = NaN, maxRpm = Infinity, maxFeed = Infinity,
-}) {
-  const diameterIn = units === "in" ? diameter : diameter / 25.4;
-  const chipScale = chipLoadScale(diameterIn);
-  const thinningFactor = radialChipThinningFactor(diameter, widthOfCut);
-  const programmedChipIn = chipLoadIn * chipScale * thinningFactor;
-  const requestedRpm = (sfm * 12) / (Math.PI * diameterIn);
-  const rpm = Math.min(requestedRpm, Number.isFinite(maxRpm) && maxRpm > 0 ? maxRpm : Infinity);
-  const requestedFeedIPM = rpm * flutes * programmedChipIn;
-  const requestedFeed = units === "in" ? requestedFeedIPM : requestedFeedIPM * 25.4;
-  const feed = Math.min(requestedFeed, Number.isFinite(maxFeed) && maxFeed > 0 ? maxFeed : Infinity);
-  const mrr = widthOfCut > 0 && depthOfCut > 0 ? widthOfCut * depthOfCut * feed : null;
-  return {
-    requestedRpm, rpm, requestedFeed, feed, chipScale, thinningFactor, programmedChipIn, mrr,
-    limitedByRpm: rpm < requestedRpm,
-    limitedByFeed: feed < requestedFeed,
-  };
+export function radialChipThinningFactor(diameter, radialEngagement, maxFactor = 2.5) {
+  return Math.min(radialChipThinningRaw(diameter, radialEngagement), maxFactor);
 }
 
 /** RPM from surface speed. `diameterIn` in inches. */

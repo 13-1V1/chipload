@@ -1,7 +1,8 @@
 // Created by: Brennan Meyer with use of Claude Code 09/30/2026 Santa Clarita, CA
 // brennanmmeyer@gmail.com
 
-// GD&T symbols with plain-English meanings. Source: ASME Y14.5-2018 (symbol set and definitions, paraphrased).
+// GD&T symbols with plain-English meanings. Source: ASME Y14.5-2018 (symbol set and definitions, paraphrased);
+// the surface texture check mark is ASME Y14.36. The common symbols, not every one in the standard.
 
 export const GDT_SYMBOLS = Object.freeze([
   { sym: "—", name: "Straightness", type: "Form", datum: "No", meaning: "A line element or axis stays within a band or cylinder. No bow." },
@@ -36,9 +37,20 @@ export const GDT_SYMBOLS = Object.freeze([
   { sym: "⌴", name: "Counterbore / spotface", type: "Symbol", datum: "", meaning: "Flat-bottom enlargement of a hole. Spotface = shallow counterbore for a seat." },
   { sym: "⌵", name: "Countersink", type: "Symbol", datum: "", meaning: "Conical enlargement; the number after ⌵ is the surface diameter and included angle." },
   { sym: "↧", name: "Depth", type: "Symbol", datum: "", meaning: "Depth of the hole or feature that follows." },
-  { sym: "▽ ▽▽ ▽▽▽", name: "Surface texture", type: "Symbol", datum: "", meaning: "Roughness callout; Ra value in µin or µm, sometimes with lay and waviness." },
+  { sym: "□", name: "Square", type: "Symbol", datum: "", meaning: "The size that follows is a square, the same on both sides." },
+  { sym: "⌳", name: "Slope", type: "Symbol", datum: "", meaning: "Flat taper: rise over run, like 1:20." },
+  { sym: "⌲", name: "Conical taper", type: "Symbol", datum: "", meaning: "Taper on a cone: change in diameter over length, like 0.25:12." },
+  { sym: "⌒ over the number", name: "Arc length", type: "Symbol", datum: "", meaning: "The dimension is measured along the arc, not straight across." },
+  { sym: "4X", name: "Number of places", type: "Symbol", datum: "", meaning: "The callout applies to that many identical features (4X = four holes)." },
+  { sym: "○— on the dimension line", name: "Origin of dimension", type: "Symbol", datum: "", meaning: "Measure from the end with the small circle. Matters when the two surfaces aren't parallel." },
+  { sym: "√ (with Ra)", name: "Surface texture (ASME Y14.36)", type: "Symbol", datum: "", meaning: "Check mark with the roughness limit: Ra in µin on US prints, µm on metric. Old prints may show ▽ triangles — those are DIN/ISO finish grades, not Ra numbers." },
   { sym: "( )", name: "Reference dimension", type: "Symbol", datum: "", meaning: "For information only — not inspected." },
   { sym: "▭", name: "Basic dimension", type: "Symbol", datum: "", meaning: "Theoretically exact. Tolerance comes from the feature control frame, not the dimension." },
-  { sym: "ALL OVER", name: "All over", type: "Symbol", datum: "", meaning: "The profile tolerance applies to every surface of the part." },
-  { sym: "⟷", name: "Between", type: "Symbol", datum: "", meaning: "Tolerance applies only between the two named points." },
+  { sym: "○ on the leader bend", name: "All around", type: "Symbol", datum: "", meaning: "The profile tolerance applies all the way around the outline shown in that view." },
+  { sym: "◎ on the leader bend", name: "All over (ALL OVER)", type: "Symbol", datum: "", meaning: "The profile tolerance applies to every surface of the part. Older prints write ALL OVER." },
+  { sym: "⟷", name: "Between", type: "Symbol", datum: "", meaning: "Tolerance applies only between the two named points, A ⟷ B." },
+  { sym: "→ (A → B)", name: "From-to (2018)", type: "Symbol", datum: "", meaning: "Profile tolerance runs from the first named point to the second, in that direction." },
+  { sym: "△", name: "Dynamic profile (2018)", type: "Modifier", datum: "", meaning: "Controls the shape of the profile but lets its size float. Form only, not size." },
+  { sym: "▷", name: "Translation", type: "Modifier", datum: "", meaning: "The datum feature simulator may slide to fit the part instead of staying put at its basic location." },
+  { sym: "A1 with a movable target", name: "Movable datum target", type: "Datum", datum: "", meaning: "A target the fixture moves in or out to touch the part (a V-block or clamp), not a fixed point." },
 ]);

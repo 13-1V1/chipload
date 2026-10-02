@@ -5,49 +5,81 @@
 
 import { fmt, gcodeNumber } from "./format.js";
 
+/**
+ * A polar angle as a person reads it, 0 to under 360 (600° → 240°, −60° → 300°). Only for showing:
+ * X/Y come from the raw angle. Float dust next to 360 reads as 0, not 360.
+ */
+export function wrapDegrees(a) {
+  const w = ((a % 360) + 360) % 360;
+  return 360 - w < 1e-9 ? 0 : w;
+}
+
+const hole = (index, angle, radius, centerX, centerY) => {
+  const radians = angle * Math.PI / 180;
+  return { index: index + 1, angleDeg: wrapDegrees(angle), x: centerX + radius * Math.cos(radians), y: centerY + radius * Math.sin(radians) };
+};
+
 /** Evenly spaced holes. Angles in degrees, CCW positive from +X unless direction "cw". */
 export function boltCircleCoordinates(diameter, holes, startDegrees = 0, direction = "ccw", centerX = 0, centerY = 0) {
-  const radius = diameter / 2;
   const step = 360 / holes;
   const sign = direction === "cw" ? -1 : 1;
-  return Array.from({ length: holes }, (_, index) => {
-    const angleDeg = startDegrees + sign * index * step;
-    const radians = angleDeg * Math.PI / 180;
-    return { index: index + 1, angleDeg, x: centerX + radius * Math.cos(radians), y: centerY + radius * Math.sin(radians) };
-  });
+  return Array.from({ length: holes }, (_, index) => hole(index, startDegrees + sign * index * step, diameter / 2, centerX, centerY));
 }
 
 /** Partial bolt circle: `holes` spread across `sweepDegrees` inclusive of both ends. */
 export function partialBoltCircleCoordinates(diameter, holes, startDegrees, sweepDegrees, direction = "ccw", centerX = 0, centerY = 0) {
-  const radius = diameter / 2;
   const step = holes > 1 ? sweepDegrees / (holes - 1) : 0;
   const sign = direction === "cw" ? -1 : 1;
-  return Array.from({ length: holes }, (_, index) => {
-    const angleDeg = startDegrees + sign * index * step;
-    const radians = angleDeg * Math.PI / 180;
-    return { index: index + 1, angleDeg, x: centerX + radius * Math.cos(radians), y: centerY + radius * Math.sin(radians) };
-  });
+  return Array.from({ length: holes }, (_, index) => hole(index, startDegrees + sign * index * step, diameter / 2, centerX, centerY));
 }
 
 /** Controls whose own dialect is not Fanuc-style: G54, G43 H and G81 mean something else there, or nothing. */
 const OTHER_DIALECT = Object.freeze({ siemens: "Siemens", heidenhain: "Heidenhain", okuma: "Okuma" });
 export const usesOtherDialect = (controller) => OTHER_DIALECT[String(controller).toLowerCase()] || null;
 
+/** Places on the F word: 4 in inch, 3 in mm — what Haas and Fanuc take, and the same as the length words. */
+const feedPlaces = (units) => (units === "in" ? 4 : 3);
+
+/**
+ * A drilling feed this slow per minute is almost always a feed per rev typed in the per-minute box (the
+ * slowest real drilling feeds, tiny drills, still come to about 1 IPM). Under 0.1 IPM / 2.5 mm/min: say so.
+ * @returns {string|null}
+ */
+export function boltFeedCaution(feed, spindle, units = "in") {
+  const unit = units === "in" ? "IPM" : "mm/min";
+  if (!(feed > 0) || feed >= (units === "in" ? 0.1 : 2.5)) return null;
+  const perRev = units === "in" ? "in/rev" : "mm/rev";
+  return `Feed ${fmt(feed, 4)} ${unit} is a crawl for a drill. It looks like a feed per rev (${perRev}). Feed here is per minute: ${fmt(feed, 4)} × ${fmt(spindle, 0)} RPM = ${fmt(feed * spindle, units === "in" ? 2 : 0)} ${unit}.`;
+}
+
 /**
  * Things that would make the drill cycle wrong or unsafe. Empty array = OK to post.
  * Z must be below the R plane (a positive "depth" drills air), and Safe Z must not be below R:
  * G98 lifts the tool back to Safe Z between holes.
  */
-export function boltGcodeProblems({ mode = "positions", z, r, safeZ, feed, peck, spindle }) {
+export function boltGcodeProblems({ mode = "positions", units = "in", z, r, safeZ, feed, peck, spindle }) {
   const out = [];
+  const u = units === "in" ? "in" : "mm";
   if (mode === "drill" || mode === "peck") {
-    if (!(z < r)) out.push(`Hole depth Z (${fmt(z, 4)}) has to be below the R plane (${fmt(r, 4)}). Depth is a negative number, like -0.5.`);
+    if (!(z < r)) out.push(`Hole depth Z (${fmt(z, 4)} ${u}) has to be below the R plane (${fmt(r, 4)} ${u}). Depth is a negative number, like ${units === "in" ? "-0.5 in" : "-12 mm"}.`);
     if (!(feed > 0)) out.push("Feed has to be more than zero.");
+    // The control alarms on F0, so the number as posted has to be above zero, not just the number typed.
+    else if (!(Number(gcodeNumber(feed, feedPlaces(units))) > 0)) out.push(`Feed ${fmt(feed, 6)} ${units === "in" ? "IPM" : "mm/min"} posts as F0 and the control would alarm. Feed is per minute: feed per rev × RPM.`);
     if (!(spindle > 0)) out.push("Spindle speed has to be more than zero.");
     if (mode === "peck" && !(peck > 0)) out.push("Peck depth (Q) has to be more than zero.");
-    if (!(safeZ >= r)) out.push(`Safe Z (${fmt(safeZ, 4)}) has to be at or above the R plane (${fmt(r, 4)}). The tool lifts to Safe Z between holes.`);
+    if (!(safeZ >= r)) out.push(`Safe Z (${fmt(safeZ, 4)} ${u}) has to be at or above the R plane (${fmt(r, 4)} ${u}). The tool lifts to Safe Z between holes.`);
   }
   return out;
+}
+
+/**
+ * Send Z home before M30 so the spindle is up out of the way for the operator and the next tool.
+ * Haas and LinuxCNC: G53 (machine coordinates, one block) Z0 is home. Fanuc, Mazak EIA and the rest:
+ * G91 G28 Z0 straight up to the reference point (no stop on the way), then back to G90.
+ */
+export function zHome(controller) {
+  const ctl = String(controller ?? "").toLowerCase();
+  return ctl === "haas" || ctl === "linuxcnc" ? ["G53 G0 Z0.0"] : ["G91 G28 Z0.0", "G90"];
 }
 
 /**
@@ -84,19 +116,21 @@ export function buildBoltGcode(coords, {
     out.push(`(CHECK TOOL ${t} AND OFFSET ${workOffset})`);
     out.push("(CHECK THE DEPTHS BEFORE YOU RUN)");
     out.push("(SINGLE-BLOCK THE FIRST HOLE)");
-    out.push(`${unitCode} G17 G40 G49 G80 G90`);
+    // G94: the F word is per minute only under G94, and a tapping program (G95) can leave per-rev on.
+    out.push(`${unitCode} G17 G40 G49 G80 G90 G94`);
     out.push(`T${t} M6`);
     out.push(`${workOffset} G0 ${xy(coords[0])}`);
     out.push(`S${Math.round(spindle)} M3`);
     out.push(`G43 H${t} Z${n(safeZ)}`);
     if (coolant === "flood") out.push("M8");
     const peckWord = mode === "peck" ? ` Q${n(peck)}` : "";
-    out.push(`${mode === "peck" ? "G83" : "G81"} G98 ${xy(coords[0])} Z${n(z)} R${n(r)}${peckWord} F${gcodeNumber(feed, 2)}`);
+    out.push(`${mode === "peck" ? "G83" : "G81"} G98 ${xy(coords[0])} Z${n(z)} R${n(r)}${peckWord} F${gcodeNumber(feed, feedPlaces(units))}`);
     for (let i = 1; i < coords.length; i += 1) out.push(xy(coords[i]));
     out.push("G80");
     out.push(`G0 Z${n(safeZ)}`);
     if (coolant === "flood") out.push("M9");
     out.push("M5");
+    out.push(...zHome(controller));
   }
   out.push("M30", "%");
   return out.join("\n");

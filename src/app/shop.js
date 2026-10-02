@@ -4,32 +4,40 @@
 // Shop screens: machine profiles, tool library, saved jobs. Pro. Everything stays in localStorage.
 // Deleting is one tap (no "are you sure?" to fumble with gloves on) and always comes with Undo.
 
-import { loadBlob, saveBlob, loadList } from "./store.js";
+import { loadBlob, saveBlob, loadList, loadInputs } from "./store.js";
 import { getSettings } from "./settings.js";
 import { navigate } from "./router.js";
 import { getCalc } from "./registry.js";
 import { attachNumpad, closeNumpad } from "./numpad.js";
 import { fmt, parseFraction } from "../core/format.js";
 import { toast } from "./ui.js";
+import { readMachineLimits, readFlutes, toolFeedsParams, jobParams } from "./shop-forms.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10);
+// Every write says whether it landed (store.js); a "Saved" that didn't save loses the user's work later.
+const SAVE_FAILED = "Couldn't save — the phone's storage is full or blocked. Nothing was changed.";
+const TOOL_TYPE_TEXT = { hss: "HSS", carbide: "carbide", coated: "coated carbide" };
 
 export const machines = {
   all: () => loadList("machines").map((m) => ({ ...m, id: String(m.id ?? ""), name: String(m.name ?? "Machine"), type: m.type === "lathe" ? "lathe" : "mill", maxRpm: Number(m.maxRpm) || 0, maxFeed: Number(m.maxFeed) || 0, controller: String(m.controller ?? "other"), units: m.units === "mm" ? "mm" : "in" })),
+  /** true when stored */
   save: (list) => saveBlob("machines", list),
   activeId: () => loadBlob("activeMachine", null),
   setActive: (id) => saveBlob("activeMachine", id),
 };
 export const tools = {
   all: () => loadList("tools").map((t) => ({ ...t, id: String(t.id ?? ""), name: String(t.name ?? "Tool"), kind: t.kind === "drill" ? "drill" : "endmill", diameter: Number(t.diameter) || 0, flutes: Math.max(1, Math.round(Number(t.flutes) || 2)), toolType: ["hss", "carbide", "coated"].includes(t.toolType) ? t.toolType : "carbide", note: String(t.note ?? ""), units: t.units === "mm" ? "mm" : "in" })),
+  /** true when stored */
   save: (list) => saveBlob("tools", list),
 };
 export const jobs = {
   all: () => loadList("jobs").filter((j) => typeof j.calcId === "string" && j.raw && typeof j.raw === "object").map((j) => ({ ...j, id: String(j.id ?? ""), name: String(j.name ?? "Job"), primary: String(j.primary ?? ""), at: Number(j.at) || 0, units: j.units === "mm" ? "mm" : "in" })),
+  /** true when stored */
   save: (list) => saveBlob("jobs", list),
-  add(job) { const list = jobs.all(); list.unshift({ id: uid(), at: Date.now(), ...job }); jobs.save(list.slice(0, 200)); },
-  remove(id) { jobs.save(jobs.all().filter((j) => j.id !== id)); },
+  /** true when stored; false means the job was not kept (storage full or blocked). */
+  add(job) { const list = jobs.all(); list.unshift({ id: uid(), at: Date.now(), ...job }); return jobs.save(list.slice(0, 200)); },
+  remove(id) { return jobs.save(jobs.all().filter((j) => j.id !== id)); },
 };
 
 const TABS = [["machines", "Machines"], ["tools", "Tools"], ["jobs", "Jobs"]];
@@ -62,14 +70,17 @@ function renderMachines(body) {
   body.innerHTML = `
     ${list.length ? `<ul class="list">${list.map((m) => `<li><div class="setting">
         <button type="button" class="radio" role="radio" aria-checked="${m.id === active}" data-activate="${esc(m.id)}" aria-label="Use ${esc(m.name)}"></button>
-        <span class="t"><b>${esc(m.name)}</b><span class="sub">${esc(m.type)} · max ${fmt(m.maxRpm, 0)} RPM · ${fmt(m.maxFeed, 0)} ${m.units === "mm" ? "mm/min" : "IPM"} · ${esc(m.controller)}</span></span>
+        <span class="t"><b>${esc(m.name)}</b><span class="sub">${esc(m.type)} · ${m.maxRpm > 0 ? `max ${fmt(m.maxRpm, 0)} RPM` : "no RPM limit"} · ${m.maxFeed > 0 ? `max ${fmt(m.maxFeed, 1)} ${m.units === "mm" ? "mm/min" : "IPM"}` : "no feed limit"} · ${esc(m.controller)}</span></span>
         <button type="button" class="btn small" data-edit="${esc(m.id)}">Edit</button></div></li>`).join("")}</ul>
-      <p class="hint" style="margin:10px 0 0">The selected machine caps RPM and feed in every speeds & feeds tool. Pick none to turn that off.</p>`
+      <p class="hint" style="margin:10px 0 0">The selected machine caps RPM and feed: a mill in the end-mill tools, a lathe in the lathe tools, either one for drilling and tapping. Pick none to turn that off.</p>`
       : `<div class="empty">No machines yet. Add your mill or lathe and the speeds & feeds tools will respect its limits.</div>`}
     <div style="height:12px"></div>
     <button type="button" class="btn primary block" id="add">Add machine</button>
     <div id="form"></div>`;
-  body.querySelectorAll("[data-activate]").forEach((b) => b.addEventListener("click", () => { machines.setActive(active === b.dataset.activate ? null : b.dataset.activate); renderMachines(body); }));
+  body.querySelectorAll("[data-activate]").forEach((b) => b.addEventListener("click", () => {
+    if (!machines.setActive(active === b.dataset.activate ? null : b.dataset.activate)) toast(SAVE_FAILED);
+    renderMachines(body);
+  }));
   body.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => machineForm(body, list.find((m) => m.id === b.dataset.edit))));
   body.querySelector("#add").addEventListener("click", () => machineForm(body, null));
 }
@@ -82,8 +93,8 @@ function machineForm(body, m) {
     <h2 class="sec" style="margin:0">${isNew ? "New machine" : "Edit machine"}</h2>
     ${field("Name", `<input class="input" id="mName" type="text" enterkeyhint="done" value="${esc(m.name)}" placeholder="Haas VF-2" autocapitalize="words">`)}
     ${field("Type", seg("mType", [["mill", "Mill"], ["lathe", "Lathe"]], m.type))}
-    ${field("Max spindle", `<input class="input" id="mRpm" type="text" value="${esc(m.maxRpm)}" data-numpad="1">`, "RPM")}
-    ${field("Max feed", `<input class="input" id="mFeed" type="text" value="${esc(m.maxFeed)}" data-numpad="1">`, m.units === "mm" ? "mm/min" : "IPM")}
+    ${field("Max spindle", `<input class="input" id="mRpm" type="text" value="${esc(m.maxRpm || "")}" placeholder="blank = no limit" data-numpad="1">`, "RPM")}
+    ${field("Max feed", `<input class="input" id="mFeed" type="text" value="${esc(m.maxFeed || "")}" placeholder="blank = no limit" data-numpad="1">`, m.units === "mm" ? "mm/min" : "IPM")}
     ${field("Controller", `<select class="input" id="mCtl">${["fanuc", "haas", "mazak", "siemens", "heidenhain", "okuma", "linuxcnc", "other"].map((c) => `<option value="${c}" ${c === m.controller ? "selected" : ""}>${c[0].toUpperCase() + c.slice(1)}</option>`).join("")}</select>`)}
     <div class="dl-row"><button type="button" class="btn primary" id="save">Save</button>${isNew ? "" : `<button type="button" class="btn" id="del">Delete</button>`}<button type="button" class="btn" id="cancel">Cancel</button></div>
   </div>`;
@@ -92,17 +103,24 @@ function machineForm(body, m) {
   host.querySelector("#cancel").addEventListener("click", () => { closeNumpad(); host.innerHTML = ""; });
   host.querySelector("#del")?.addEventListener("click", () => {
     const before = machines.all(), wasActive = machines.activeId() === m.id;
-    machines.save(before.filter((x) => x.id !== m.id));
+    if (!machines.save(before.filter((x) => x.id !== m.id))) { toast(SAVE_FAILED); return; }
     if (wasActive) machines.setActive(null);
     closeNumpad();
     renderMachines(body);
-    toast(`Deleted ${m.name}`, { action: "Undo", onAction: () => { machines.save(before); if (wasActive) machines.setActive(m.id); if (body.isConnected) renderMachines(body); } });
+    toast(`Deleted ${m.name}`, { action: "Undo", onAction: () => {
+      if (!machines.save(before)) toast(SAVE_FAILED);
+      else if (wasActive) machines.setActive(m.id);
+      if (body.isConnected) renderMachines(body);
+    } });
   });
   host.querySelector("#save").addEventListener("click", () => {
-    const rec = { ...m, name: host.querySelector("#mName").value.trim() || "My machine", type: segValue(host, "mType"), maxRpm: parseFraction(host.querySelector("#mRpm").value) || 0, maxFeed: parseFraction(host.querySelector("#mFeed").value) || 0, controller: host.querySelector("#mCtl").value };
+    // Blank = no limit. Anything else must be a real top speed: a typo must not quietly switch the cap off.
+    const lim = readMachineLimits(host.querySelector("#mRpm").value, host.querySelector("#mFeed").value, m.units);
+    if (lim.error) { toast(lim.error); return; }
+    const rec = { ...m, name: host.querySelector("#mName").value.trim() || "My machine", type: segValue(host, "mType"), maxRpm: lim.maxRpm, maxFeed: lim.maxFeed, controller: host.querySelector("#mCtl").value };
     const list = machines.all().filter((x) => x.id !== m.id);
     list.push(rec);
-    machines.save(list);
+    if (!machines.save(list)) { toast(SAVE_FAILED); return; }
     if (isNew && !machines.activeId()) machines.setActive(rec.id);
     closeNumpad();
     toast("Saved");
@@ -116,7 +134,7 @@ function renderTools(body) {
   const list = tools.all();
   body.innerHTML = `
     ${list.length ? `<ul class="list">${list.map((t) => `<li><div class="setting">
-        <span class="t"><b>${esc(t.name)}</b><span class="sub">Ø${fmt(t.diameter, 4)} ${t.units} · ${t.flutes} FL · ${esc(t.toolType)}${t.note ? " · " + esc(t.note) : ""}</span></span>
+        <span class="t"><b>${esc(t.name)}</b><span class="sub">Ø${fmt(t.diameter, 4)} ${t.units} · ${t.flutes} FL · ${esc(TOOL_TYPE_TEXT[t.toolType])}${t.note ? " · " + esc(t.note) : ""}</span></span>
         <button type="button" class="btn small" data-use="${esc(t.id)}">Feeds</button>
         <button type="button" class="btn small" data-edit="${esc(t.id)}">Edit</button></div></li>`).join("")}</ul>`
       : `<div class="empty">No tools yet. Save the end mills and drills you reach for, then jump to speeds & feeds with one tap.</div>`}
@@ -125,7 +143,11 @@ function renderTools(body) {
     <div id="form"></div>`;
   body.querySelectorAll("[data-use]").forEach((b) => b.addEventListener("click", () => {
     const t = list.find((x) => x.id === b.dataset.use);
-    navigate(t.kind === "drill" ? "/calc/feeds-drill" : "/calc/feeds-mill", { diameter: String(t.diameter), flutes: String(t.flutes), toolType: t.toolType, units: t.units });
+    const id = t.kind === "drill" ? "feeds-drill" : "feeds-mill";
+    // Every field goes in the link: the overrides come up blank (this tool's table values), not the last tool's.
+    const { params, note } = toolFeedsParams(t, getCalc(id), loadInputs(id)?.values?.material);
+    navigate(`/calc/${id}`, params);
+    if (note) toast(note);
   }));
   body.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => toolForm(body, list.find((t) => t.id === b.dataset.edit))));
   body.querySelector("#add").addEventListener("click", () => toolForm(body, null));
@@ -141,7 +163,7 @@ function toolForm(body, t) {
     ${field("Kind", seg("tKind", [["endmill", "End mill"], ["drill", "Drill"]], t.kind))}
     ${field("Diameter", `<input class="input" id="tDia" type="text" value="${esc(t.diameter)}" data-numpad="1">`, t.units)}
     ${field("Flutes", `<input class="input" id="tFlutes" type="text" value="${esc(t.flutes)}" data-numpad="1">`)}
-    ${field("Material", seg("tType", [["hss", "HSS"], ["carbide", "Carbide"], ["coated", "Coated"]], t.toolType))}
+    ${field("Material", seg("tType", [["hss", "HSS"], ["carbide", "Carbide"], ["coated", "Coated carbide"]], t.toolType))}
     ${field("Note", `<input class="input" id="tNote" type="text" enterkeyhint="done" value="${esc(t.note)}" placeholder="AlTiN, 1.5 LOC, brand…">`)}
     <div class="dl-row"><button type="button" class="btn primary" id="save">Save</button>${isNew ? "" : `<button type="button" class="btn" id="del">Delete</button>`}<button type="button" class="btn" id="cancel">Cancel</button></div>
   </div>`;
@@ -150,18 +172,21 @@ function toolForm(body, t) {
   host.querySelector("#cancel").addEventListener("click", () => { closeNumpad(); host.innerHTML = ""; });
   host.querySelector("#del")?.addEventListener("click", () => {
     const before = tools.all();
-    tools.save(before.filter((x) => x.id !== t.id));
+    if (!tools.save(before.filter((x) => x.id !== t.id))) { toast(SAVE_FAILED); return; }
     closeNumpad();
     renderTools(body);
-    toast(`Deleted ${t.name}`, { action: "Undo", onAction: () => { tools.save(before); if (body.isConnected) renderTools(body); } });
+    toast(`Deleted ${t.name}`, { action: "Undo", onAction: () => { if (!tools.save(before)) toast(SAVE_FAILED); if (body.isConnected) renderTools(body); } });
   });
   host.querySelector("#save").addEventListener("click", () => {
     const dia = parseFraction(host.querySelector("#tDia").value);
     if (!(dia > 0)) { toast("Enter a diameter"); return; }
-    const rec = { ...t, name: host.querySelector("#tName").value.trim() || `Ø${fmt(dia, 4)} tool`, kind: segValue(host, "tKind"), diameter: dia, flutes: Math.max(1, Math.round(parseFraction(host.querySelector("#tFlutes").value) || 2)), toolType: segValue(host, "tType"), note: host.querySelector("#tNote").value.trim() };
+    const kind = segValue(host, "tKind");
+    const fl = readFlutes(host.querySelector("#tFlutes").value, kind);
+    if (fl.error) { toast(fl.error); return; }
+    const rec = { ...t, name: host.querySelector("#tName").value.trim() || `Ø${fmt(dia, 4)} tool`, kind, diameter: dia, flutes: fl.flutes, toolType: segValue(host, "tType"), note: host.querySelector("#tNote").value.trim() };
     const list = tools.all().filter((x) => x.id !== t.id);
     list.push(rec);
-    tools.save(list);
+    if (!tools.save(list)) { toast(SAVE_FAILED); return; }
     closeNumpad();
     toast("Saved");
     renderTools(body);
@@ -181,13 +206,13 @@ function renderJobs(body) {
     const j = list.find((x) => x.id === b.dataset.open);
     // Every field goes in the link, blank ones too: a blank ("use the table value") must not pick up
     // whatever was last typed in that tool.
-    navigate(`/calc/${j.calcId}`, { ...Object.fromEntries(Object.entries(j.raw).map(([k, v]) => [k, String(v ?? "")])), units: j.units });
+    navigate(`/calc/${j.calcId}`, jobParams(j, getCalc(j.calcId)));
   }));
   body.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
     const before = jobs.all(), gone = before.find((j) => j.id === b.dataset.del);
-    jobs.remove(b.dataset.del);
+    if (!jobs.remove(b.dataset.del)) { toast(SAVE_FAILED); return; }
     renderJobs(body);
-    toast(`Deleted ${gone?.name || "job"}`, { action: "Undo", onAction: () => { jobs.save(before); if (body.isConnected) renderJobs(body); } });
+    toast(`Deleted ${gone?.name || "job"}`, { action: "Undo", onAction: () => { if (!jobs.save(before)) toast(SAVE_FAILED); if (body.isConnected) renderJobs(body); } });
   }));
 }
 

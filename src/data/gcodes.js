@@ -3,6 +3,8 @@
 
 // Common G and M codes, Fanuc / Haas dialect. Source: Fanuc 0i operator manual and
 // Haas mill/lathe programming manuals (public). Controllers differ — the note column flags the big ones.
+// Where a lathe reads a code differently, the meaning says "Mill: … · Lathe: …". Lathe means Fanuc lathe
+// G-code system A (the Fanuc default) and Haas lathes; on Fanuc systems B and C, G90/G91 are abs/inc again.
 
 export const G_CODES = Object.freeze([
   ["G00", "Rapid positioning", "Motion", ""],
@@ -19,7 +21,7 @@ export const G_CODES = Object.freeze([
   ["G19", "YZ plane select", "Plane", ""],
   ["G20", "Inch units", "Units", ""],
   ["G21", "Metric units", "Units", ""],
-  ["G28", "Return to machine home via reference point", "", "G91 G28 Z0 is the safe form"],
+  ["G28", "Return to machine home via reference point", "", "Mill: G91 G28 Z0 · Lathe: G28 U0 W0"],
   ["G30", "Return to 2nd reference point", "", ""],
   ["G31", "Skip / probe move", "", ""],
   ["G40", "Cutter compensation off", "Comp", ""],
@@ -46,8 +48,9 @@ export const G_CODES = Object.freeze([
   ["G70", "Finish cycle (lathe)", "Cycle", "Lathe"],
   ["G71", "Rough turning cycle", "Cycle", "Lathe"],
   ["G72", "Rough facing cycle", "Cycle", "Lathe"],
-  ["G73", "High-speed peck drill (chip break)", "Cycle", "Mill"],
-  ["G74", "Left-hand tapping cycle", "Cycle", ""],
+  ["G73", "Mill: high-speed peck drill (chip break) · Lathe: pattern-repeat roughing cycle", "Cycle", ""],
+  ["G74", "Mill: left-hand tapping cycle · Lathe: face grooving / peck drill cycle", "Cycle", ""],
+  ["G75", "Lathe: OD/ID grooving cycle (pecks)", "Cycle", "Lathe"],
   ["G76", "Fine boring / threading cycle", "Cycle", "Mill: bore; lathe: thread"],
   ["G80", "Cancel canned cycle", "Cycle", ""],
   ["G81", "Drill cycle", "Cycle", "X Y Z R F"],
@@ -57,15 +60,15 @@ export const G_CODES = Object.freeze([
   ["G85", "Bore in, bore out", "Cycle", "Reaming"],
   ["G86", "Bore in, stop, rapid out", "Cycle", ""],
   ["G89", "Bore in, dwell, bore out", "Cycle", ""],
-  ["G90", "Absolute positioning", "Mode", ""],
-  ["G91", "Incremental positioning", "Mode", ""],
-  ["G92", "Set work coordinates / thread cycle (lathe)", "", ""],
-  ["G94", "Feed per minute", "Feed", "Mill default"],
-  ["G95", "Feed per revolution", "Feed", "Lathe: G99 on Fanuc"],
+  ["G90", "Mill: absolute positioning · Lathe: OD/ID turning cycle", "Mode / cycle", "Lathe: modal cycle, keeps running on later X/Z moves until G00/G01. Absolute is X Z, incremental is U W — don't put G90 in a lathe safety line."],
+  ["G91", "Mill: incremental positioning", "Mode", "Lathe: not used — write U and W for incremental moves"],
+  ["G92", "Mill: set work coordinates (old style) · Lathe: threading cycle", "", "Lathe coordinate set / max RPM is G50"],
+  ["G94", "Mill: feed per minute (default) · Lathe: end facing cycle", "Feed / cycle", "Lathe feed per minute is G98"],
+  ["G95", "Mill: feed per revolution", "Feed", "Lathe feed/rev is G99 (Fanuc A, Haas). Haas lathe G95 = live-tool face rigid tap"],
   ["G96", "Constant surface speed", "Speed", "Lathe, S = SFM"],
   ["G97", "Constant RPM", "Speed", ""],
-  ["G98", "Canned cycle return to initial Z", "Cycle", ""],
-  ["G99", "Canned cycle return to R plane", "Cycle", "Lathe Fanuc: feed/rev"],
+  ["G98", "Mill: canned cycle return to initial Z · Lathe: feed per minute", "Cycle / feed", ""],
+  ["G99", "Mill: canned cycle return to R plane · Lathe: feed per revolution (default)", "Cycle / feed", ""],
 ]);
 
 export const M_CODES = Object.freeze([
@@ -85,8 +88,8 @@ export const M_CODES = Object.freeze([
   ["M29", "Rigid tapping mode (Fanuc)", "Before G84"],
   ["M30", "Program end and rewind", ""],
   ["M41–M44", "Spindle gear range", "Lathe / older mills"],
-  ["M48", "Feed override enable", ""],
-  ["M49", "Feed override disable", ""],
+  ["M48", "Feed and speed override enable (LinuxCNC)", "Builder-set on Fanuc. Not Haas: there M48 checks the program matches the loaded pallet"],
+  ["M49", "Feed and speed override disable (LinuxCNC)", "Builder-set on Fanuc. Not Haas: there M49 sets pallet status (needs P/Q)"],
   ["M88", "Through-spindle coolant on (Haas)", ""],
   ["M89", "Through-spindle coolant off (Haas)", ""],
   ["M97", "Local subprogram call (Haas)", "P = line number"],

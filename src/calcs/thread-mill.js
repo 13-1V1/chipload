@@ -6,7 +6,10 @@
 import { register } from "../app/registry.js";
 import { threadMilling } from "../core/milling.js";
 import { fmt } from "../core/format.js";
+import { basicThreadGeometry } from "../core/thread.js";
+import { tapDrillByPercent } from "../core/tapdrill.js";
 import { threadFromSpec, threadPrefill, fromIn, toIn, COMMON_THREADS } from "./_util.js";
+import { machineFor, fitToMachine, spindleSanity } from "./_machine.js";
 
 export default register({
   id: "thread-mill",
@@ -21,7 +24,7 @@ export default register({
   inputs: [
     { id: "thread", suggest: COMMON_THREADS, label: "Thread", kind: "text", default: "1/2-13", placeholder: "1/2-13, M12x1.75" },
     { id: "side", label: "Thread is", kind: "segment", default: "internal", options: [{ value: "internal", label: "Internal" }, { value: "external", label: "External" }] },
-    { id: "cutter", label: "Thread mill diameter", kind: "length", default: "0.375", defaultMm: "10", min: 0.0001 },
+    { id: "cutter", label: "Thread mill diameter", kind: "length", default: "0.375", defaultMm: "9.5", min: 0.0001 },
     { id: "flutes", label: "Flutes", kind: "int", default: "3", min: 1 },
     { id: "rpm", label: "Spindle", kind: "int", default: "3000", unit: "RPM", min: 1 },
     { id: "chip", positive: true, label: "Chip load per tooth", kind: "length", default: "0.001", defaultMm: "0.025", min: 0 },
@@ -31,33 +34,52 @@ export default register({
     const majorIn = t.majorIn;
     const cutterIn = toIn(v.cutter, c.units);
     const chipIn = toIn(v.chip, c.units);
-    const surface = v.rpm * v.flutes * chipIn;
-    let centerline, pathDia;
-    if (v.side === "internal") {
-      const r = threadMilling({ majorDiameter: majorIn, cutterDiameter: cutterIn, rpm: v.rpm, flutes: v.flutes, chipLoad: chipIn });
-      centerline = r.centerlineFeed; pathDia = r.pathDiameter;
-    } else {
-      pathDia = majorIn + cutterIn;
-      centerline = surface * (pathDia / majorIn);
-    }
+    const internal = v.side === "internal";
     const p = c.units === "in" ? 4 : 3;
-    const warnings = [];
-    if (v.side === "internal" && cutterIn > majorIn * 0.75) warnings.push("Thread mill is over 75% of the hole size — expect deflection and a poor form. Use a smaller cutter.");
+    const len = (x) => `${fmt(fromIn(x, c.units), p)} ${c.L.length}`;
+    if (internal) {
+      // The cutter has to go down the drilled hole (about the 75% tap drill) before it can cut.
+      const holeIn = tapDrillByPercent(majorIn, t.pitchIn, 75);
+      if (cutterIn >= holeIn) throw new Error(`A ${len(cutterIn)} thread mill won't fit the ${len(holeIn)} tap-drill hole for ${t.label}. Use a smaller cutter`);
+    }
+    // Centerline feed per rev of the spindle. Feed comp uses the major diameter (the tool makers' convention):
+    // internal Fc = Fs × (D − d) ÷ D, external Fc = Fs × (D + d) ÷ D.
+    const perRevIn = internal
+      ? threadMilling({ majorDiameter: majorIn, cutterDiameter: cutterIn, rpm: 1, flutes: v.flutes, chipLoad: chipIn }).centerlineFeed
+      : v.flutes * chipIn * (majorIn + cutterIn) / majorIn;
+    const m = machineFor(c, "mill");
+    const fit = fitToMachine(m, v.rpm, perRevIn, c);
+    const rpm = fit.rpm;
+    const slowed = fit.rpmCapped || fit.feedCapped;
+    const surface = rpm * v.flutes * chipIn;
+    const centerline = fit.feedIpm;
+    // Tool-center path at full thread depth: internal the edge reaches the major (D − d); external it reaches
+    // the external minor (d3 = D − 1.2269 P, ASME B1.1 / ISO 68-1), so the path is d3 + d. D + d only touches the OD.
+    const pathDia = internal ? majorIn - cutterIn : basicThreadGeometry(majorIn, t.pitchIn).externalMinor + cutterIn;
+    const warnings = [...fit.warnings, ...spindleSanity(v.rpm, m, "mill", c)];
+    if (internal && cutterIn > majorIn * 0.75 * (1 + 1e-9)) warnings.push("Thread mill is over 75% of the hole size — expect deflection and a poor form. Use a smaller cutter.");
+    const F = (ipm) => `${fmt(fromIn(ipm, c.units), 2)} ${c.L.feed}`;
+    const N = (x) => fmt(fromIn(x, c.units), p);
     return {
-      primary: { label: "Program this feed (centerline)", value: fromIn(centerline, c.units), unit: c.L.feed, places: 2 },
+      primary: { label: "Program this feed (centerline)", value: fromIn(centerline, c.units), unit: c.L.feed, places: 2, clamped: fit.feedCapped },
       stats: [
+        ...(slowed ? [{ label: "Spindle (machine limit)", value: rpm, unit: "RPM", places: 0, clamped: true }, { label: "Wanted RPM", value: v.rpm, unit: "RPM", places: 0 }] : []),
         { label: "Surface (tooth) feed", value: fromIn(surface, c.units), unit: c.L.feed, places: 2 },
-        { label: "Helix path diameter", value: fromIn(pathDia, c.units), unit: c.L.length, places: p },
-        { label: "Feed per rev of helix", value: fromIn(centerline / v.rpm, c.units), unit: c.L.feedRev, places: 4 },
+        { label: "Helix path diameter (tool center, full depth)", value: fromIn(pathDia, c.units), unit: c.L.length, places: p },
+        ...(internal ? [] : [{ label: "Path where the tool first touches the OD", value: fromIn(majorIn + cutterIn, c.units), unit: c.L.length, places: p }]),
+        { label: "Feed per rev of helix", value: fromIn(centerline / rpm, c.units), unit: c.L.feedRev, places: 4 },
         { label: "Thread", text: `${t.label} · ${t.pitchLabel}` },
       ],
       warnings,
       source: "advanced",
       explain: [
-        { title: "Surface feed", formula: "Fs = RPM × flutes × chip", plugged: `= ${v.rpm} × ${v.flutes} × ${fmt(chipIn, 4)} = ${fmt(surface, 2)} IPM` },
-        v.side === "internal"
-          ? { title: "Internal comp", formula: "Fc = Fs × (Dmajor − Dcutter) ÷ Dmajor", plugged: `= ${fmt(surface, 2)} × (${fmt(majorIn, 4)} − ${fmt(cutterIn, 4)}) ÷ ${fmt(majorIn, 4)} = ${fmt(centerline, 2)} IPM` }
-          : { title: "External comp", formula: "Fc = Fs × (Dmajor + Dcutter) ÷ Dmajor", plugged: `= ${fmt(surface, 2)} × (${fmt(majorIn, 4)} + ${fmt(cutterIn, 4)}) ÷ ${fmt(majorIn, 4)} = ${fmt(centerline, 2)} IPM` },
+        { title: "Surface feed", formula: "Fs = RPM × flutes × chip", plugged: `= ${rpm} × ${v.flutes} × ${fmt(fromIn(chipIn, c.units), c.units === "in" ? 4 : 3)} = ${F(surface)}` },
+        internal
+          ? { title: "Internal comp (major diameter)", formula: "Fc = Fs × (Dmajor − Dcutter) ÷ Dmajor", plugged: `= ${fmt(fromIn(surface, c.units), 2)} × (${N(majorIn)} − ${N(cutterIn)}) ÷ ${N(majorIn)} = ${F(centerline)}` }
+          : { title: "External comp (major diameter)", formula: "Fc = Fs × (Dmajor + Dcutter) ÷ Dmajor", plugged: `= ${fmt(fromIn(surface, c.units), 2)} × (${N(majorIn)} + ${N(cutterIn)}) ÷ ${N(majorIn)} = ${F(centerline)}` },
+        internal
+          ? { title: "Helix path (full depth)", formula: "path = Dmajor − Dcutter", plugged: `= ${N(majorIn)} − ${N(cutterIn)} = ${len(pathDia)}` }
+          : { title: "Helix path (full depth)", formula: "path = external minor + Dcutter = (D − 1.2269 P) + Dcutter", plugged: `= ${N(pathDia - cutterIn)} + ${N(cutterIn)} = ${len(pathDia)}` },
       ],
       historyLabel: `${t.label} · ${v.side} · Ø${fmt(v.cutter, p)}`,
     };

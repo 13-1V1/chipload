@@ -263,10 +263,10 @@ mark("8. Free-tier walk: nothing Pro leaks, nothing free is locked");
   const free = [];
   for (const { id, view } of ids) {
     await go(page, `/calc/${id}`, "fr");
-    const s = await page.evaluate(() => ({ lock: !!document.querySelector(".lock"), val: document.querySelector("#answerVal")?.textContent, rows: document.querySelectorAll("#cbody tr").length, stats: document.querySelectorAll(".stat").length, code: document.querySelectorAll("pre.code").length }));
+    const s = await page.evaluate(() => ({ lock: !!document.querySelector(".lock"), val: document.querySelector("#answerVal")?.textContent, rows: document.querySelectorAll("#cbody tr").length, stats: document.querySelectorAll(".stat").length, code: document.querySelectorAll("pre.code").length, autoNums: [...document.querySelectorAll("main input.input")].filter((i) => /^auto \d/.test(i.placeholder)).length, recent: [...document.querySelectorAll("details.drawer summary")].some((x) => /Recent/.test(x.textContent)) }));
     free.push({ id, view, ...s });
   }
-  report.misc.push({ freeTier: free.filter((f) => !f.lock).map((f) => f.id), lockedCount: free.filter((f) => f.lock).length, proLeak: free.filter((f) => f.val === "Pro" && (f.stats > 0 || f.code > 0)).map((f) => f.id) });
+  report.misc.push({ freeTier: free.filter((f) => !f.lock).map((f) => f.id), lockedCount: free.filter((f) => f.lock).length, proLeak: free.filter((f) => f.val === "Pro" && (f.stats > 0 || f.code > 0 || f.autoNums > 0 || f.recent)).map((f) => f.id) });
   await ctx.close();
 }
 

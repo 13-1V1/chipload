@@ -38,11 +38,15 @@ export default register({
       source: "geometry",
       explain: [
         inch
-          ? { title: "Taper", formula: "TPF = 12 × (D − d) ÷ L     tan(θ/2) = (D − d) ÷ (2 L)", plugged: `= 12 × ${fmt(t.diameterChange, p)} ÷ ${fmt(v.length, p)} = ${fmt(t.taperPerFoot, 4)}; θ/2 = ${fmt(t.halfAngle, 4)}°` }
-          : { title: "Taper", formula: "ratio 1 : x,  x = L ÷ (D − d)     tan(θ/2) = (D − d) ÷ (2 L)", plugged: `x = ${fmt(v.length, p)} ÷ ${fmt(t.diameterChange, p)} = ${fmt(t.taperRatio, 3)}; θ/2 = ${fmt(t.halfAngle, 4)}°` },
+          ? { title: "Taper", formula: "TPF = 12 × (D − d) ÷ L     tan(θ/2) = (D − d) ÷ (2 L)", plugged: `= 12 × ${fmt(t.diameterChange, p)} in ÷ ${fmt(v.length, p)} in = ${fmt(t.taperPerFoot, 4)} in/ft; θ/2 = ${fmt(t.halfAngle, 4)}°` }
+          : { title: "Taper", formula: "ratio 1 : x,  x = L ÷ (D − d)     tan(θ/2) = (D − d) ÷ (2 L)", plugged: `x = ${fmt(v.length, p)} mm ÷ ${fmt(t.diameterChange, p)} mm = ${fmt(t.taperRatio, 3)}; θ/2 = ${fmt(t.halfAngle, 4)}°` },
       ],
-      notes: ["Set the compound rest to the half angle. Common tapers: Morse ≈ 0.6 in/ft (varies by size), Jacobs JT6 = 0.6761 in/ft, 7/24 (CAT/BT) = 3.5 in/ft."],
-      historyLabel: `${fmt(v.large, p)} → ${fmt(v.small, p)} over ${fmt(v.length, p)}`,
+      // Jacobs taper per foot: littlemachineshop.com "Dimensions of Standard Tapers" (JT6 0.6229, JT33 0.7619);
+      // ratio on diameter = 12 ÷ TPF, so 7/24 (3.5 in/ft) is 1 : 3.429.
+      notes: [inch
+        ? "Set the compound rest to the half angle. Common tapers: Morse ≈ 0.6 in/ft (varies by size), Jacobs JT6 = 0.6229 in/ft, JT33 = 0.7619 in/ft, 7/24 (CAT/BT) = 3.5 in/ft."
+        : "Set the compound rest to the half angle. Common tapers: Morse ≈ 1 : 20 (varies by size), Jacobs JT6 = 1 : 19.26, JT33 = 1 : 15.75, 7/24 (CAT/BT) = 1 : 3.429."],
+      historyLabel: `${fmt(v.large, p)} → ${fmt(v.small, p)} ${c.L.length} over ${fmt(v.length, p)} ${c.L.length}`,
     };
   },
 });

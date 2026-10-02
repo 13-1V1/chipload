@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { fmt, parseFraction, parseDimension, decimalToFraction } from "../../src/core/format.js";
+import { fmt, fmtSig, sigPlaces, parseFraction, parseDimension, splitUnit, decimalToFraction } from "../../src/core/format.js";
 
 test("fmt drops trailing zeros but keeps integers", () => {
   assert.equal(fmt(70, 0), "70");
@@ -60,6 +60,48 @@ test("parseDimension converts explicit unit suffixes", () => {
   near(parseDimension('0.5 in', "mm"), 12.7);
   near(parseDimension('1/2"', "in"), 0.5);
   assert.ok(Number.isNaN(parseDimension("1,2,3", "mm")));
+});
+
+// Prints, drill charts and decimalToFraction itself write a mixed number with a hyphen: 1-1/4 = 1.25 (ASME Y14.5 practice).
+test("parseFraction reads a hyphenated mixed number", () => {
+  near(parseFraction("1-1/4"), 1.25);
+  near(parseFraction("-1-1/4"), -1.25);
+  near(parseFraction("2-3/8"), 2.375);
+  near(parseDimension("1-1/4in", "mm"), 31.75, 1e-12);
+  near(parseFraction(decimalToFraction(1.25).text), 1.25, 0, "the app's own output reads back");
+  for (const bad of ["1/4-20", "1-20", "1--1/4", "1-/4"]) assert.ok(Number.isNaN(parseFraction(bad)), bad);
+});
+
+// Only decimal text is a shop number. Number() would read hex, binary and octal; a typographic minus (U+2212) is a minus.
+test("parseFraction refuses 0x / 0b / 0o and reads a typographic minus", () => {
+  for (const bad of ["0x10", "0b11", "0o7", "Infinity", "-Infinity", "1e400", "1 000"]) assert.ok(Number.isNaN(parseFraction(bad)), bad);
+  near(parseFraction("1e3"), 1000);
+  near(parseFraction("−0.5"), -0.5);
+  near(parseFraction("−1 1/4"), -1.25);
+  near(parseFraction("+.5"), 0.5);
+  near(parseFraction("5."), 5);
+});
+
+test("splitUnit separates a size from the unit typed with it", () => {
+  assert.deepEqual(splitUnit("8.5 mm"), { number: "8.5", unit: "mm" });
+  assert.deepEqual(splitUnit("8.5MM"), { number: "8.5", unit: "mm" });
+  assert.deepEqual(splitUnit('3/8"'), { number: "3/8", unit: "in" });
+  assert.deepEqual(splitUnit("13/64in"), { number: "13/64", unit: "in" });
+  assert.deepEqual(splitUnit("1 1/4 inches"), { number: "1 1/4", unit: "in" });
+  assert.deepEqual(splitUnit("0.201"), { number: "0.201", unit: null });
+  assert.equal(splitUnit("mm"), null);
+  assert.equal(splitUnit(""), null);
+});
+
+// 1 in = 0.0254 m exactly (NIST SP 811 App. B): 0.001 in = 0.0000254 m must not print as "0".
+test("fmtSig keeps significant figures on small numbers", () => {
+  assert.equal(fmtSig(0.001 * 0.0254, 4), "0.0000254");
+  assert.equal(fmtSig(0.00001, 4), "0.00001");
+  assert.equal(fmtSig(2760, 4), "2760");
+  assert.equal(fmtSig(-273.15, 5), "-273.15");
+  assert.equal(fmtSig(0, 4), "0");
+  assert.equal(sigPlaces(0.0127, 4), 5);
+  assert.equal(sigPlaces(1234.5, 4), 0);
 });
 
 test("decimalToFraction finds shop fractions to 1/64", () => {

@@ -10,6 +10,7 @@ import { ICONS } from "./icons.js";
 import { pushRecent } from "./store.js";
 import { helpSeen, markHelpSeen } from "./render.js";
 import { cellAttrs, fitTable } from "./tables.js";
+import { chartFilter } from "./chart-filter.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -42,21 +43,11 @@ export function mountChart(def, root, { params = {} } = {}) {
   const q = root.querySelector("#cq");
   const body = root.querySelector("#cbody");
   const cell = (r, c) => typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : String(r[c.key] ?? "");
-  const text = rows.map((r) => cols.map((c) => cell(r, c)).join(" ").toLowerCase());
+  const filter = chartFilter(rows.map((r) => cols.map((c) => cell(r, c))));
 
   function draw() {
-    const term = q.value.trim().toLowerCase();
-    const terms = term.split(/\s+/).filter(Boolean);
-    // Exact cell matches float to the top and get highlighted, then rows whose name starts with what was typed
-    // ("1/4" → the 1/4 bolt before #5, whose counterbore is 1/4"), then the rest in chart order.
-    const exact = [], leading = [], partial = [];
-    rows.forEach((r, i) => {
-      if (terms.length && !terms.every((t) => text[i].includes(t))) return;
-      const isExact = terms.length && cols.some((c) => terms.includes(cell(r, c).toLowerCase()));
-      const bucket = isExact ? exact : terms.length && cell(r, cols[0]).toLowerCase().startsWith(terms[0]) ? leading : partial;
-      bucket.push(`<tr${isExact ? ' class="hit"' : ""}>${cols.map((c) => `<td${cellAttrs(c)}>${esc(cell(r, c))}</td>`).join("")}</tr>`);
-    });
-    const html = exact.join("") + leading.join("") + partial.join("");
+    // G01 matches G1, "1/4-20" finds the 1/4 bolt, the row named what was typed comes first (chart-filter.js)
+    const html = filter(q.value).map(({ i, hit }) => `<tr${hit ? ' class="hit"' : ""}>${cols.map((c) => `<td${cellAttrs(c)}>${esc(cell(rows[i], c))}</td>`).join("")}</tr>`).join("");
     body.innerHTML = html || `<tr><td colspan="${cols.length}" class="empty">Nothing matches “${esc(q.value)}”.</td></tr>`;
     fitTable(root.querySelector(".table-wrap"), { keepStacked: true });
   }

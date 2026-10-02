@@ -4,28 +4,90 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { bandSawSpeed, tpiForThickness, bladeSpeedFromWheel, wheelRpmForSpeed } from "../../src/core/saw.js";
+import { bandSawSpeed, bladeForStock, bladeSpeedFromWheel, wheelRpmForSpeed } from "../../src/core/saw.js";
+import { MATERIALS, materialById } from "../../src/data/materials-library.js";
+import { SAW_CHART_FPM } from "../../src/data/saw.js";
 import { GLOSSARY } from "../../src/data/glossary.js";
 
-test("band saw speeds: steel slow, aluminum fast, unknown group falls back", () => {
-  const steel = bandSawSpeed("Carbon steel", 78);
-  assert.ok(steel.start >= 250 && steel.start <= 350, `steel ${steel.start}`);
-  const al = bandSawSpeed("Aluminum", 90);
-  assert.ok(al.start >= 1500, `aluminum ${al.start}`);
-  assert.ok(bandSawSpeed("Nope").start >= 200);
+const speed = (id, t = 4) => bandSawSpeed(materialById(id), t);
+
+// LENOX Guide to Band Sawing p.21, Bi-Metal Speed Chart (4 in annealed stock, flood fluid), FPM:
+// CDA 360 295, Be-Cu 160, Al bronze 865 150, 1018 270, 4140 225, 440C 70, T-15 60, A48 class 40 115.
+test("band saw speeds match the LENOX bi-metal chart at 4 in", () => {
+  assert.equal(speed("c360").start, 295);
+  assert.equal(speed("c172").start, 160);
+  assert.equal(speed("c954").start, 150);
+  assert.equal(speed("s1018").start, 270);
+  assert.equal(speed("s4140").start, 225);
+  assert.equal(speed("ss440c").start, 70);
+  assert.equal(speed("tT15").start, 60);
+  assert.equal(speed("ciG40").start, 115);
+  // every copper alloy sits in the chart's 150–295 FPM band (the old table said 800–1500)
+  for (const m of MATERIALS.filter((x) => x.group === "Copper alloys")) {
+    const s = speed(m.id).start;
+    assert.ok(s >= 150 && s <= 295, `${m.id} ${s}`);
+  }
 });
 
-// 1 in stock: 3–24 TPI usable, aim near 8 → pick 8 TPI; 1/8 in: aim 64 → finest common (32) with ≥3 teeth
-test("tooth pitch rule keeps 3–24 teeth in the cut", () => {
-  const one = tpiForThickness(1);
-  assert.equal(one.pick, 8);
-  assert.deepEqual(one.usable, [3, 4, 6, 8, 10, 14, 18, 24]);
-  const thin = tpiForThickness(0.125);
-  assert.equal(thin.pick, 32);
-  assert.ok(thin.teethInCut >= 3);
-  const thick = tpiForThickness(4);
-  assert.equal(thick.pick, 2);
-  assert.equal(tpiForThickness(0), null);
+// LENOX size adjustment: 1/4 in +15%, 3/4 in +12%, 1-1/4 in +10%, 8 in −12%.
+test("band saw speed follows the LENOX size adjustment", () => {
+  near(speed("s1018", 0.25).start, 270 * 1.15, 1);
+  near(speed("s1018", 0.75).start, 270 * 1.12, 1);
+  near(speed("s1018", 1.25).start, 270 * 1.10, 1);
+  near(speed("s1018", 8).start, 270 * 0.88, 1);
+  near(speed("s1018", 20).start, 270 * 0.88, 1); // held flat past the chart
+  // LENOX: no fluid runs 30–50% slower; the dry end of the range is half the chart speed
+  assert.equal(speed("s1018").min, 135);
+});
+
+// LENOX heat-treated adjustment: 30 HRC −25%, 40 HRC −45%; the table stops at 40 HRC.
+test("hardened rows are derated and flagged past the chart", () => {
+  assert.equal(speed("s4140ph").start, Math.round(225 * 0.75)); // 4140 pre-hard ~30 HRC → 169
+  const ar = speed("sAR400");                                    // AR400 ~43 HRC → A36 250 × 0.55
+  near(ar.start, 250 * 0.55, 1);
+  assert.equal(ar.beyondChart, true);
+  assert.equal(ar.bimetalUnsuitable, false);
+  near(speed("ss174h").start, 70 * 0.55, 1);                     // 17-4 H900 44 HRC
+  for (const id of ["tHard45", "tHard55", "ciWhite"]) assert.equal(speed(id).bimetalUnsuitable, true, id);
+  assert.equal(speed("s1018").hardPct, 0);
+});
+
+// Wood runs near 3,000 FPM (Highland Woodworking; LENOX wood blades are built for ~3,000 FPM).
+test("wood and families off the chart use a range", () => {
+  const oak = speed("oHardwood", 1);
+  assert.equal(oak.start, 3000);
+  assert.ok(oak.fastLimit > 3005, "a normal 3,000 FPM wood saw is not too fast");
+  assert.equal(speed("oPlywood").basis, "wood");
+  assert.ok(speed("al6061").start >= 1500, "aluminum stays fast");
+  assert.ok(bandSawSpeed({ id: "x", group: "Nope", rating: 50 }).start >= 200, "unknown group falls back");
+  // a chart group row with no mapping starts at the group's slowest chart speed
+  assert.equal(bandSawSpeed({ id: "x", group: "Copper alloys", rating: 100 }).start, 150);
+});
+
+test("every library row in a charted group has a LENOX chart speed", () => {
+  const charted = ["Copper alloys", "Carbon steel", "Alloy steel", "Tool steel", "Stainless", "Cast iron", "Titanium", "Nickel & superalloys"];
+  for (const m of MATERIALS.filter((x) => charted.includes(x.group))) assert.ok(SAW_CHART_FPM[m.id] > 0, `${m.id} has no saw speed`);
+});
+
+// USA Band Saw Blades Tooth Selection Guide p.23 (also the LENOX bi-metal tooth chart):
+// round 1/8 → 14/18, 1/4 → 10/14, 1/2 → 8/12, 1 → 5/8, 2 → 4/6, 4 → 3/4; flat 1-1/2 → 4/6;
+// tube wall 0.1 → 10/14, 1/4 → 5/8, 1/2 → 4/6.
+test("tooth pitch follows the maker's chart", () => {
+  const pitch = (t, shape) => bladeForStock(t, shape).pitch;
+  assert.equal(pitch(0.125, "round"), "14/18");
+  assert.equal(pitch(0.25, "round"), "10/14");
+  assert.equal(pitch(0.5, "round"), "8/12");
+  assert.equal(pitch(1, "round"), "5/8");
+  assert.equal(pitch(2, "round"), "4/6");
+  assert.equal(pitch(4, "round"), "3/4");
+  assert.equal(pitch(1.5, "flat"), "4/6");
+  assert.equal(pitch(0.1, "tube"), "10/14");
+  assert.equal(pitch(0.25, "tube"), "5/8");
+  assert.equal(pitch(0.5, "tube"), "4/6");
+  const one = bladeForStock(1, "round");
+  assert.equal(one.constant, 6);               // 5/8 averages 6.5 → nearest one-pitch blade 6 TPI
+  near(one.teethInCut, 6.5, 1e-9);             // 3–6 teeth in the cut, where the charts aim
+  assert.equal(bladeForStock(0, "round"), null);
 });
 
 // 14 in wheel at 60 RPM → π × 14 × 60 ÷ 12 = 219.9 FPM

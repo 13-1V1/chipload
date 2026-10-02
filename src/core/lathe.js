@@ -7,6 +7,12 @@
 
 import { degToRad } from "./format.js";
 
+/**
+ * Standard insert nose radii in inches, keyed by the text the nose-radius chips save (ANSI B212.4 radius
+ * codes 1–4 = 1/64, 1/32, 3/64, 1/16 in). The value is the true fraction: 1/32 is 0.03125, not 0.0312.
+ */
+export const NOSE_RADII_IN = Object.freeze({ "0.0156": 1 / 64, "0.0312": 1 / 32, "0.0469": 3 / 64, "0.0625": 1 / 16 });
+
 /** Straight turning or boring: minutes = length ÷ (feed/rev × RPM). */
 export function turningTime({ length, ipr, rpm }) {
   return length / (ipr * rpm);

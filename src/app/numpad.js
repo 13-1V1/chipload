@@ -36,6 +36,10 @@ function build() {
     if (k === "sp") b.setAttribute("aria-label", "space for mixed numbers like 1 1/4");
     if (k === "pm") b.setAttribute("aria-label", "change sign");
     b.addEventListener("pointerdown", (e) => { e.preventDefault(); press(k); });
+    // Enter / Space on a focused key (keyboard, switch access, a screen reader) arrive as a click with
+    // detail 0. A finger or mouse already typed on pointerdown, and its click (detail 1 or more) is
+    // skipped however long the key was held — a slow press with a glove must not type twice.
+    b.addEventListener("click", (e) => { if (e.detail === 0) press(k); });
     if (k === "bksp") {
       // hold backspace to clear the whole field — one gesture instead of ten taps with a glove on
       b.addEventListener("pointerdown", () => {
@@ -48,22 +52,32 @@ function build() {
     }
     el.append(b);
   }
+  el.addEventListener("focusout", closeIfFocusLeft);
   el.inert = true;
   document.body.append(el);
+}
+
+/**
+ * The text a key makes, or the same text when the key could only lead to something that isn't a number.
+ * The pad builds a decimal (-1.25), a fraction (-3/8) or a mixed number (-1 1/4) — what parseFraction reads.
+ */
+export function padText(v, k) {
+  if (k === "bksp") return v.slice(0, -1);
+  if (k === "pm") return v.startsWith("-") ? v.slice(1) : "-" + v;
+  // a space only after a whole number: "1 " on the way to "1 1/4"
+  if (k === "sp") return /^-?\d+$/.test(v) ? v + " " : v;
+  // a point only in a plain decimal: never in a fraction, a mixed number, or twice
+  if (k === ".") return /[\s/.]/.test(v) ? v : v + ".";
+  // a slash only right after a digit, once, and not in a decimal
+  if (k === "/") return /\d$/.test(v) && !/[/.]/.test(v) ? v + "/" : v;
+  return v + k;
 }
 
 function press(k) {
   if (k !== "bksp") cancelHold(); // another key means the backspace was let go
   if (!active) return;
-  let v = active.value;
-  if (k === "bksp") v = v.slice(0, -1);
-  else if (k === "sp") { if (v && !v.endsWith(" ") && !v.includes("/")) v += " "; }
-  else if (k === "pm") v = v.startsWith("-") ? v.slice(1) : "-" + v;
-  else if (k === "next") { onNext?.(active); return; }
-  else if (k === ".") { if (!v.split(/[\s/]/).pop().includes(".")) v += "."; }
-  else if (k === "/") { if (v && !v.includes("/") && !v.endsWith(" ")) v += "/"; }
-  else v += k;
-  active.value = v;
+  if (k === "next") { onNext?.(active); return; }
+  active.value = padText(active.value, k);
   onChange?.(active);
 }
 
@@ -157,6 +171,18 @@ export function attachNumpad(input, handlers = {}, scope = null) {
   // Hardware keyboards still work.
   input.addEventListener("input", () => wired.change?.(input));
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); next(input); } });
+  input.addEventListener("blur", closeIfFocusLeft);
+}
+
+/**
+ * Tab (or anything else that moves focus) away from the pad fields and the pad puts the pad away, so its
+ * keys can't keep typing into a field the user has left. Focus going nowhere (a tap on blank page) is
+ * left to the tap-outside rule below.
+ */
+function closeIfFocusLeft(e) {
+  const to = e.relatedTarget;
+  if (!to || !el || el.contains(to) || to.closest?.("[data-numpad]")) return;
+  closeNumpad();
 }
 
 // Tap outside any pad field or the pad → close. Acts on click (not pointerdown) so the layout doesn't

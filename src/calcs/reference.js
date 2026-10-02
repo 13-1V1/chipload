@@ -15,8 +15,8 @@ import { lenPlaces } from "./_util.js";
 register({
   id: "gdt",
   title: "GD&T symbols",
-  short: "Every Y14.5 symbol in plain English",
-  help: "Every GD&T symbol with what it means in plain words.",
+  short: "Common Y14.5 symbols in plain English",
+  help: "The GD&T and drawing symbols you'll meet on a print, with what each one means in plain words.",
   category: "reference",
   keywords: ["gd&t", "gdt", "symbol", "flatness", "position", "runout", "profile", "perpendicularity", "mmc", "datum", "y14.5", "feature control frame"],
   view: "chart",
@@ -24,7 +24,7 @@ register({
   placeholder: "Filter: runout, MMC, datum",
   columns: [{ key: "sym", label: "Sym" }, { key: "name", label: "Name", long: true }, { key: "type", label: "Type" }, { key: "meaning", label: "Means", long: true }],
   rows: () => GDT_SYMBOLS.map((s) => ({ ...s, meaning: s.datum ? `${s.meaning} Datum: ${s.datum}.` : s.meaning })),
-  note: "ASME Y14.5-2018, paraphrased. Form controls need no datum; orientation, location, and runout do.",
+  note: "ASME Y14.5-2018, paraphrased (surface texture is ASME Y14.36). Form controls need no datum; orientation, location, and runout do.",
 });
 
 register({
@@ -42,11 +42,13 @@ register({
     { key: "cbore", label: "Counterbore" }, { key: "close", label: "Close fit" }, { key: "normal", label: "Normal" }, { key: "loose", label: "Loose" },
   ],
   rows() {
-    const inch = SHCS_INCH.map((r) => ({ size: `${r.size} SHCS`, head: fmt(r.head, 3), depth: fmt(r.height, 3), cbore: `${r.cbore[0]} (${fmt(r.cbore[1], 4)})`, close: `${r.close[0]} ${fmt(r.close[1], 3)}`, normal: `${r.normal[0]} ${fmt(r.normal[1], 3)}`, loose: `${r.loose[0]} ${fmt(r.loose[1], 3)}` }));
+    // Drill decimals at 4 places, like the drill chart: #42 is 0.0935, not 0.093 (which reads as 3/32)
+    const hole = ([label, size]) => `${label} ${fmt(size, 4)}`;
+    const inch = SHCS_INCH.map((r) => ({ size: `${r.size} SHCS`, head: fmt(r.head, 3), depth: fmt(r.height, 3), cbore: `${r.cbore[0]} (${fmt(r.cbore[1], 4)})`, close: hole(r.close), normal: hole(r.normal), loose: hole(r.loose) }));
     const metric = SHCS_METRIC.map((r) => ({ size: `${r.size} SHCS`, head: `${r.head} mm`, depth: `${r.height} mm`, cbore: `${r.cbore} mm`, close: `${r.fine} mm`, normal: `${r.medium} mm`, loose: `${r.coarse} mm` }));
     return [...inch, ...metric];
   },
-  note: "Counterbore depth = head height (flush). Add 0.010–0.030 in if the head must sit below the surface. Inch clearances per ASME B18.2.8 (the B18.3 appendix lists a looser single value, e.g. #10 → 0.221); metric per ISO 273.",
+  note: "Counterbore depth = head height (flush). Add 0.010–0.030 in if the head must sit below the surface. Inch clearances per ASME B18.2.8 (close / normal / loose, smallest hole for each fit); use Normal for most bolt patterns. Metric per ISO 273 (fine / medium / coarse).",
 });
 
 register({
@@ -59,12 +61,24 @@ register({
   view: "chart",
   pro: true,
   placeholder: "Filter: 4140, stainless, titanium",
-  columns: [
-    { key: "name", label: "Material" }, { key: "rating", label: "Rating", align: "right" }, { key: "sfmHss", label: "SFM HSS", align: "right", places: 0 },
-    { key: "sfmCarbide", label: "SFM carbide", align: "right", places: 0 }, { key: "chip", label: "Chip 3/8\"", align: "right" }, { key: "density", label: "lb/in³", align: "right", places: 3 },
-  ],
-  rows: () => MATERIALS.map((m) => ({ name: `${m.name} · ${m.group}`, rating: `${m.rating}%`, sfmHss: m.sfmHss, sfmCarbide: m.sfmCarbide, chip: fmt(m.chipIn, 4), density: m.density })),
-  note: "Conservative starting points (low end of handbook ranges). Rating is vs. B1112 = 100%. Every speeds & feeds tool pulls from this list.",
+  // The library is stored in inch units; metric shows m/min, mm per tooth and g/cm³. Chip loads are for a 3/8" (9.5 mm) end mill.
+  columns: (ctx) => {
+    const mm = ctx?.units === "mm";
+    return [
+      { key: "name", label: "Material" }, { key: "rating", label: "Rating", align: "right" },
+      { key: "sfmHss", label: mm ? "m/min HSS" : "SFM HSS", align: "right", places: 0 }, { key: "sfmCarbide", label: mm ? "m/min carbide" : "SFM carbide", align: "right", places: 0 },
+      { key: "chip", label: mm ? "Chip mm/tooth (9.5 mm)" : "Chip in/tooth (3/8\")", align: "right" }, { key: "density", label: mm ? "g/cm³" : "lb/in³", align: "right", places: mm ? 2 : 3 },
+    ];
+  },
+  rows: (ctx) => {
+    const mm = ctx?.units === "mm";
+    return MATERIALS.map((m) => ({
+      name: `${m.name} · ${m.group}`, rating: `${m.rating}%`,
+      sfmHss: mm ? m.sfmHss * 0.3048 : m.sfmHss, sfmCarbide: mm ? m.sfmCarbide * 0.3048 : m.sfmCarbide,
+      chip: mm ? fmt(m.chipIn * 25.4, 3) : fmt(m.chipIn, 4), density: mm ? m.density * 27.68 : m.density,
+    }));
+  },
+  note: "Conservative starting points (low end of handbook ranges). Rating is vs. B1112 = 100%. Chip load is per tooth for a 3/8\" (9.5 mm) end mill; the speeds & feeds tools scale it to your tool. Every speeds & feeds tool pulls from this list.",
 });
 
 register({
@@ -82,18 +96,30 @@ register({
   ],
   compute(v) {
     const r = convertHardness(v.scale, v.value);
-    if (!r) throw new Error("Outside the E140 steel table (HRC 20–68, HRB 50–100, HB 93–654, HV 93–940)");
+    if (!r) throw new Error("Outside the steel conversion tables (HRC 20–68, HRB 55–100, HB 100–654, HV 100–940)");
     const txt = (x, d = 0) => (x == null ? "off scale" : fmt(x, d));
+    const scales = { hrc: ["Rockwell C", "HRC", 1], hrb: ["Rockwell B", "HRB", 1], hb: ["Brinell", "HB", 0], hv: ["Vickers", "HV", 0] };
+    // The headline is the first scale (not the one typed) that has a value: soft steel has no HRC, and E140 gives no HB over HRC 60
+    const order = { hrc: ["hb", "hv"], hrb: ["hb", "hv"], hb: ["hrc", "hrb", "hv"], hv: ["hrc", "hrb", "hb"] }[v.scale];
+    const head = order.find((k) => r[k] != null);
+    const [headLabel, headUnit, headPlaces] = scales[head];
     return {
-      primary: { label: v.scale === "hrc" ? "Brinell" : "Rockwell C", text: v.scale === "hrc" ? txt(r.hb) : txt(r.hrc, 1), unit: v.scale === "hrc" ? "HB" : "HRC" },
+      primary: { label: headLabel, text: fmt(r[head], headPlaces), unit: headUnit },
       stats: [
         { label: "Rockwell C", text: txt(r.hrc, 1) }, { label: "Rockwell B", text: txt(r.hrb, 1) },
         { label: "Brinell (3000 kgf)", text: txt(r.hb) }, { label: "Vickers", text: txt(r.hv) },
-        { label: "Approx. tensile (steel)", text: r.tensile == null ? "off scale" : `${fmt(r.tensile, 0)} ksi (${fmt(r.tensile * 6.895, 0)} MPa)` },
+        { label: "Approx. tensile (steel)", text: r.tensile == null ? "not listed (A370 covers HRB 65 to HRC 59)" : `${fmt(r.tensile, 0)} ksi (${fmt(r.tensile * 6.895, 0)} MPa)` },
       ],
-      source: "geometry",
-      explain: [{ title: "ASTM E140", formula: "Interpolated on Vickers between table rows (non-austenitic steel)", plugged: `${v.value} ${v.scale.toUpperCase()} → HV ${fmt(r.hv, 0)}` }],
-      notes: ["Valid for carbon and alloy steels. Aluminum, brass, and austenitic stainless need their own tables."],
+      source: "hardness",
+      explain: [
+        { title: "ASTM E140 Tables 1 and 2", formula: "Straight line between the two nearest published rows (non-austenitic steel)", plugged: `${v.value} ${scales[v.scale][1]} → ${headLabel} ${fmt(r[head], headPlaces)} ${headUnit}` },
+        { title: "ASTM A370 Tables 2 and 3", formula: "Approximate tensile strength for the same hardness", plugged: r.tensile == null ? "Not listed at this hardness" : `≈ ${fmt(r.tensile, 0)} ksi` },
+      ],
+      notes: [
+        ...(r.seam ? ["This reading sits where E140's Rockwell B and C tables meet, and they disagree by up to 14 HB (HRB 100 = 240 HB, but HRC 20 = 226 HB). Treat this conversion as about ±2 points, and test on the scale the print calls for."] : []),
+        "Valid for carbon and alloy steels. Aluminum, brass, and austenitic stainless need their own tables.",
+        "Conversions are approximate (E140, A370). Don't accept or reject parts on a converted number or the tensile figure — test on the scale the print calls for.",
+      ],
       historyLabel: `${v.value} ${v.scale.toUpperCase()}`,
     };
   },
@@ -146,7 +172,7 @@ register({
         { label: c.units === "in" ? "Per foot" : "Per meter", value: c.units === "in" ? lb / v.len * 12 : lb * 0.453592 / v.len * 1000, unit: c.units === "in" ? "lb/ft" : "kg/m", places: 3 },
         ...(cost != null ? [{ label: "Material cost", text: `$${fmt(cost, 2)}` }] : []),
       ],
-      source: "geometry",
+      source: "weight",
       explain: [{ title: "Weight", formula: "W = area × length × density", plugged: c.units === "in"
         ? `= ${fmt(area, p)} in² × ${fmt(v.len, p)} in × ${fmt(m.density, 3)} lb/in³ = ${fmt(lb, 3)} lb`
         : `= ${fmt(area, p)} mm² × ${fmt(v.len, p)} mm × ${fmt(m.density * 27.68, 3)} g/cm³ ÷ 1,000,000 = ${fmt(lb * 0.453592, 3)} kg` }],

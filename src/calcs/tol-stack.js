@@ -6,6 +6,7 @@
 import { register } from "../app/registry.js";
 import { toleranceStack } from "../core/tolstack.js";
 import { fmt, parseFraction } from "../core/format.js";
+import { convertedText, convertRemembering } from "../app/values.js";
 import { lenPlaces } from "./_util.js";
 
 /** Parse stack lines into [{nominal, tolerance}]. Negative nominal = dimension that subtracts. */
@@ -14,7 +15,10 @@ export function parseStackLines(text) {
   for (const line of String(text || "").split(/\n/)) {
     const t = line.trim();
     if (!t || t.startsWith("#")) continue;
-    const m = t.match(/^([+-]?[\d.\s\/]+?)\s*(?:±|\+\/?-|\+-|,|\s)\s*([\d.\/]+)\s*$/);
+    // "1 1/4" alone is one size with no tolerance, not 1 ± 1/4 — the same as "1.250" alone (ASME Y14.5: every dimension has a tolerance).
+    if (Number.isFinite(parseFraction(t))) throw new Error(`"${t}" has no tolerance. Write it as nominal ± tolerance, like ${t} ± 0.005.`);
+    // the nominal may be a mixed number written with a hyphen, the way prints write it: "1-1/4 ± .005"
+    const m = t.match(/^([+-]?(?:\d+-\d+\/\d+|[\d.\s\/]+?))\s*(?:±|\+\/?-|\+-|,|\s)\s*([\d.\/]+)\s*$/);
     if (!m) throw new Error(`Can't read "${t}". Use: nominal ± tolerance, one per line.`);
     const nominal = parseFraction(m[1].trim());
     const tolerance = parseFraction(m[2].trim());
@@ -24,13 +28,19 @@ export function parseStackLines(text) {
   return items;
 }
 
-/** The same stack written in the other unit system, so switching units doesn't turn 1.000 in into 1.000 mm. */
+/**
+ * The same stack written in the other unit system, so switching units doesn't turn 1.000 in into 1.000 mm.
+ * Tolerances keep four significant figures (±0.001 mm → ±0.00003937 in, never ±0), and flipping straight
+ * back gives the lines exactly as typed.
+ */
 export function convertStackLines(text, from, to) {
   if (from === to) return text;
-  let items;
-  try { items = parseStackLines(text); } catch { return text; } // leave unreadable text for the user to fix
-  const k = to === "mm" ? 25.4 : 1 / 25.4, places = to === "mm" ? 3 : 4;
-  return items.map((i) => `${fmt(i.nominal * k, places)} ± ${fmt(i.tolerance * k, places)}`).join("\n");
+  return convertRemembering("tol-stack", text, from, to, (t) => {
+    let items;
+    try { items = parseStackLines(t); } catch { return t; } // leave unreadable text for the user to fix
+    const k = to === "mm" ? 25.4 : 1 / 25.4;
+    return items.map((i) => `${convertedText(i.nominal * k, "length", to)} ± ${convertedText(i.tolerance * k, "length", to)}`).join("\n");
+  });
 }
 
 export default register({

@@ -4,9 +4,9 @@
 // Tapping feed. Pro. Rigid/synchronized tapping: feed = RPM × lead, with machine feed clamp.
 
 import { register } from "../app/registry.js";
-import { tappingFeed } from "../core/tapping.js";
 import { fmt } from "../core/format.js";
-import { threadFromSpec, threadPrefill, toIn, fromIn, COMMON_THREADS } from "./_util.js";
+import { threadFromSpec, threadPrefill, fromIn, COMMON_THREADS } from "./_util.js";
+import { machineFor, fitToMachine, spindleSanity } from "./_machine.js";
 
 export default register({
   id: "tapping-feed",
@@ -26,27 +26,27 @@ export default register({
   compute(v, c) {
     const t = threadFromSpec(v.thread);
     const leadIn = t.pitchIn;
-    const feedIpm = v.rpm * leadIn;
-    const maxFeedIpm = c.machine?.maxFeed > 0 ? toIn(c.machine.maxFeed, c.machine.units || "in") : Infinity;
-    const warnings = [];
-    let rpm = v.rpm;
-    if (feedIpm > maxFeedIpm) {
-      rpm = Math.floor(maxFeedIpm / leadIn);
-      warnings.push(`${c.machine.name} max feed is ${fmt(fromIn(maxFeedIpm, c.units), 1)} ${c.L.feed}. Tapping at ${v.rpm} RPM needs ${fmt(fromIn(feedIpm, c.units), 1)}. Drop to ${rpm} RPM.`);
-    }
-    if (rpm < 1) throw new Error(`${c.machine.name} can't feed fast enough to tap this thread at any speed — check its max feed in Shop`);
-    const feedOut = rpm * leadIn;
+    // The machine caps the spindle; if the feed is still over its max, the spindle slows so feed = RPM × lead holds.
+    const m = machineFor(c, "any");
+    const fit = fitToMachine(m, v.rpm, leadIn, c);
+    const rpm = fit.rpm;
+    if (rpm < 1) throw new Error(`${m.name} can't feed fast enough to tap this thread at any speed — check its max feed in Shop`);
+    const feedOut = fit.feedIpm;
+    const metric = c.units === "mm";
+    const timeLen = metric ? 25 / 25.4 : 1; // a round length in the user's units: 25 mm or 1 in
     return {
       primary: { label: `Feed at ${rpm} RPM`, value: fromIn(feedOut, c.units), unit: c.L.feed, places: 2, clamped: rpm !== v.rpm },
       stats: [
+        ...(rpm !== v.rpm ? [{ label: "Spindle (machine limit)", value: rpm, unit: "RPM", places: 0, clamped: true }, { label: "Wanted RPM", value: v.rpm, unit: "RPM", places: 0 }] : []),
         { label: "Lead (per rev)", value: fromIn(leadIn, c.units), unit: c.L.feedRev, places: 4 },
         { label: "G84 F word (per rev, G95)", value: fromIn(leadIn, c.units), unit: c.L.feedRev, places: 4 },
         { label: "Thread", text: `${t.label} · ${t.pitchLabel}` },
-        { label: "Time for 1 in of thread", value: 60 / (feedOut / 1), unit: "sec", places: 1 },
+        { label: metric ? "Time for 25 mm of thread" : "Time for 1 in of thread", value: 60 * timeLen / feedOut, unit: "sec", places: 1 },
       ],
-      warnings,
+      warnings: [...fit.warnings, ...spindleSanity(v.rpm, m, "any", c)],
       source: "advanced",
-      explain: [{ title: "Synchronized tapping", formula: "feed = RPM × lead   (lead = 1 ÷ TPI, or pitch for metric)", plugged: `= ${rpm} × ${fmt(leadIn, 4)} = ${fmt(feedOut, 2)} IPM` }],
+      explain: [{ title: "Synchronized tapping", formula: "feed = RPM × lead   (lead = 1 ÷ TPI, or pitch for metric)",
+        plugged: `= ${rpm} × ${fmt(fromIn(leadIn, c.units), 4)} ${c.L.length} = ${fmt(fromIn(feedOut, c.units), 2)} ${c.L.feed}` }],
       historyLabel: `${t.label} · ${v.rpm} RPM`,
     };
   },

@@ -22,10 +22,18 @@ export default register({
     { id: "x3", label: "Point 3 X", kind: "length", default: "-1", defaultMm: "-25" }, { id: "y3", label: "Point 3 Y", kind: "length", default: "0" },
   ],
   compute(v, c) {
-    const r = circleThrough3Points([v.x1, v.y1], [v.x2, v.y2], [v.x3, v.y3]);
-    if (!r) throw new Error("Those three points are on a straight line");
+    const pts = [[v.x1, v.y1], [v.x2, v.y2], [v.x3, v.y3]];
+    const same = [[0, 1], [0, 2], [1, 2]].find(([i, j]) => pts[i][0] === pts[j][0] && pts[i][1] === pts[j][1]);
+    if (same) throw new Error(`Point ${same[0] + 1} and point ${same[1] + 1} are the same. Touch three different spots on the circle.`);
+    const r = circleThrough3Points(...pts);
+    if (!r) throw new Error("Those three points are on a straight line. Touch three spots spread around the circle.");
     const p = lenPlaces(c.units);
+    // How much of the circle the points cover: under ~10° a tiny probing error moves the center a long way.
+    const span = Math.max(...[[0, 1], [0, 2], [1, 2]].map(([i, j]) => Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1])));
+    const cover = 2 * Math.asin(Math.min(1, span / r.diameter)) * 180 / Math.PI;
+    const warnings = cover < 10 ? [`The points cover only ${fmt(cover, 1)}° of this circle, so they are almost in a line. A small probing error moves the center a lot. Spread the points farther around the circle.`] : [];
     return {
+      warnings,
       primary: { label: "Center", text: `X${fmt(r.x, p)} Y${fmt(r.y, p)}`, unit: "" },
       stats: [
         { label: "Diameter", value: r.diameter, unit: c.L.length, places: p },

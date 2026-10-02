@@ -5,7 +5,7 @@
 
 import { register } from "../app/registry.js";
 import { stiTapDrill } from "../core/thread.js";
-import { nearestDrillsInch, nearestDrillsMm } from "../core/drills.js";
+import { drillsAtOrAboveInch, drillsAtOrAboveMm } from "../core/drills.js";
 import { fmt } from "../core/format.js";
 import { threadFromSpec, threadPrefill, COMMON_THREADS } from "./_util.js";
 
@@ -25,26 +25,36 @@ export default register({
   ],
   compute(v) {
     const t = threadFromSpec(v.thread);
-    const hit = t.isUn ? stiTapDrill(t.major, 1 / t.tpi, { isUn: true, tpi: t.tpi }) : stiTapDrill(t.major, t.pitch, { isUn: false });
+    const pitch = t.isUn ? 1 / t.tpi : t.pitch;
+    const hit = t.isUn ? stiTapDrill(t.major, pitch, { isUn: true, tpi: t.tpi }) : stiTapDrill(t.major, pitch, { isUn: false });
     const fromTable = hit.source === "table";
-    const sizeIn = t.isUn ? hit.size : hit.size / 25.4;
-    const near = t.isUn ? nearestDrillsInch(sizeIn) : nearestDrillsMm(hit.size);
+    const u = t.nativeUnits;
+    const places = t.isUn ? 4 : 2;
+    // An estimated hole must not be under the STI minor minimum, so take the first stock drill at or above it.
+    const around = (size) => (t.isUn ? drillsAtOrAboveInch(size) : drillsAtOrAboveMm(size));
+    const near = around(fromTable ? hit.size : hit.minMinor);
+    if (!near.nearest) throw new Error(`${t.label} STI needs a hole bigger than the drill chart — bore or thread-mill it, and use the insert maker's chart`);
     const chosen = fromTable && hit.label ? { label: hit.label, size: hit.size } : near.nearest;
-    const insertLengths = [1, 1.5, 2, 2.5, 3].map((k) => ({ k, len: k * t.majorIn }));
+    const insertLengths = [1, 1.5, 2, 2.5, 3].map((k) => ({ k, len: k * t.major }));
+    const metricChart = fromTable && !t.isUn;
     return {
-      primary: { label: `STI tap drill for ${t.label}${fromTable ? "" : " (estimate)"}`, text: chosen.label, unit: t.isUn ? `(${fmt(chosen.size, 4)} in)` : `(${fmt(chosen.size, 2)} mm)` },
+      primary: { label: `STI tap drill for ${t.label}${fromTable ? "" : " (estimate)"}`, text: chosen.label, ...(t.isUn ? { unit: `(${fmt(chosen.size, 4)} in)` } : {}) },
       stats: [
-        { label: fromTable ? "Chart value" : "Calculated drill", value: hit.size, unit: t.nativeUnits, places: t.isUn ? 4 : 2 },
-        { label: "Oversize vs. the plain major", value: chosen.size - t.major, unit: t.nativeUnits, places: t.isUn ? 4 : 2 },
+        fromTable
+          ? { label: metricChart ? "Chart value (steel, magnesium, plastic)" : "Chart value", value: hit.size, unit: u, places }
+          : { label: "STI minor diameter, min", value: hit.minMinor, unit: u, places },
+        ...(metricChart && hit.alt !== hit.size ? [{ label: "Chart value in aluminum", value: hit.alt, unit: u, places }] : []),
+        { label: "Oversize vs. the plain major", value: chosen.size - t.major, unit: u, places },
         ...(near.next && near.next.label !== chosen.label ? [{ label: "Next size up", text: `${near.next.label}` }] : []),
-        { label: "Insert lengths (× D)", text: insertLengths.map((i) => `${i.k}D=${fmt(i.len, 3)}`).join("  ") },
+        { label: "Insert lengths (× D)", text: insertLengths.map((i) => `${i.k}D = ${fmt(i.len, t.isUn ? 3 : 2)} ${u}`).join("  ") },
         { label: "STI tap", text: `${t.label} STI (a different tap from the plain one)` },
       ],
-      warnings: fromTable ? [] : ["Not in the published chart — estimated from D + 0.25P. Confirm with the insert maker before drilling."],
-      source: "tapDrill",
+      warnings: fromTable ? [] : [`${t.label} isn't in the insert chart here, so the drill is figured from the STI minor diameter. Confirm with the insert maker before drilling.`],
+      source: "sti",
       explain: [fromTable
-        ? { title: "ASME B18.29.1 suggested drill", formula: "Table lookup by thread size", plugged: `${t.label} → ${chosen.label}` }
-        : { title: "STI hole estimate", formula: "drill ≈ D + 0.25 P", plugged: `= ${fmt(t.majorIn, 4)} + 0.25 × ${fmt(t.pitchIn, 4)} = ${fmt(sizeIn, 4)} in → ${chosen.label}` }],
+        ? { title: t.isUn ? "ASME B18.29.1 suggested drill" : "Heli-Coil metric chart (ASME B18.29.2M hole)", formula: "Table lookup by thread size", plugged: `${t.label} → ${chosen.label}` }
+        : { title: "STI hole from the minor diameter", formula: "STI minor min = D + 0.2165 P;  drill = first stock size at or above it",
+            plugged: `= ${fmt(t.major, places)} + 0.2165 × ${fmt(pitch, places)} = ${fmt(hit.minMinor, places)} ${u} → ${chosen.label}` }],
       notes: ["Drill depth = insert length + point + ~1 extra thread. Tap with the STI tap, install the insert one-quarter to one-half turn below the surface, then break the tang."],
       historyLabel: `${t.label} STI → ${chosen.label}`,
     };

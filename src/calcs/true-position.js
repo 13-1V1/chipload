@@ -5,8 +5,24 @@
 
 import { register } from "../app/registry.js";
 import { truePosition } from "../core/inspect.js";
-import { fmt } from "../core/format.js";
+import { fmt, parseDimension } from "../core/format.js";
+import { convertRemembering } from "../app/values.js";
 import { lenPlaces } from "./_util.js";
+
+// A unit switch must not flip the verdict. The general rule writes a converted length to four figures
+// (0.08 mm → 0.00315 in), which can push a part sitting on the line just outside it. Here a length keeps
+// seven decimals in inches (off by under 0.0000001 in) and is exact in mm (inches × 25.4 always ends).
+function convertLength(text, from, to) {
+  if (from === to || String(text ?? "").trim() === "") return text;
+  return convertRemembering("length", text, from, to, (t) => {
+    const v = parseDimension(t, from);
+    if (!Number.isFinite(v)) return t;
+    const x = to === "mm" ? v * 25.4 : v / 25.4;
+    const most = to === "mm" ? 9 : 7;
+    for (let p = 0; p < most; p++) if (Math.abs(Number(x.toFixed(p)) - x) <= Math.abs(x) * 1e-12) return fmt(x, p);
+    return fmt(x, most);
+  });
+}
 
 export default register({
   id: "true-position",
@@ -16,36 +32,58 @@ export default register({
   category: "inspect",
   keywords: ["true position", "position", "gd&t", "mmc", "bonus", "tolerance zone", "cmm", "deviation", "y14.5"],
   pro: true,
+  // One "actual" and one "lmc" serve the hole and the pin, so saved jobs from before LMC existed reopen as typed.
+  // A blank actual is taken as MMC (in size for a hole and a pin, no bonus). A blank LMC means the size isn't
+  // checked on that side and the bonus isn't capped; a note says so.
   inputs: [
-    { id: "dx", label: "X deviation (actual − nominal)", kind: "length", default: "0.003", defaultMm: "0.08" },
-    { id: "dy", label: "Y deviation (actual − nominal)", kind: "length", default: "0.004", defaultMm: "0.10" },
-    { id: "tol", positive: true, label: "Position tolerance (diameter)", kind: "length", default: "0.010", defaultMm: "0.25", min: 0 },
+    { id: "dx", label: "X deviation (actual − nominal)", kind: "length", default: "0.003", defaultMm: "0.08", convert: convertLength },
+    { id: "dy", label: "Y deviation (actual − nominal)", kind: "length", default: "0.004", defaultMm: "0.10", convert: convertLength },
+    { id: "tol", positive: true, label: "Position tolerance (diameter)", kind: "length", default: "0.014", defaultMm: "0.35", min: 0, convert: convertLength },
     { id: "mmc", label: "Material condition", kind: "segment", default: "rfs", options: [{ value: "rfs", label: "RFS" }, { value: "mmc", label: "MMC (bonus)" }] },
     { id: "feature", label: "Feature", kind: "segment", default: "hole", options: [{ value: "hole", label: "Hole" }, { value: "pin", label: "Pin" }], showIf: (r) => r.mmc === "mmc" },
-    { id: "mmcSize", positive: true, label: "MMC size (hole min / pin max)", kind: "length", default: "0.250", defaultMm: "6.00", min: 0, showIf: (r) => r.mmc === "mmc" },
-    { id: "actual", positive: true, label: "Actual measured size", kind: "length", default: "0.253", defaultMm: "6.08", min: 0, showIf: (r) => r.mmc === "mmc" },
+    { id: "mmcSize", positive: true, label: (r) => (r.feature === "pin" ? "MMC size (largest pin allowed)" : "MMC size (smallest hole allowed)"), kind: "length", default: "0.250", defaultMm: "6.00", min: 0, convert: convertLength, showIf: (r) => r.mmc === "mmc" },
+    { id: "lmc", positive: true, optional: true, placeholder: "optional — checks size", label: (r) => (r.feature === "pin" ? "LMC size (smallest pin allowed)" : "LMC size (largest hole allowed)"), kind: "length", default: "", min: 0, convert: convertLength, showIf: (r) => r.mmc === "mmc" },
+    { id: "actual", positive: true, label: (r) => (r.feature === "pin" ? "Actual pin size" : "Actual hole size"), kind: "length", default: "", min: 0, convert: convertLength, auto: (r, c, vals) => vals.mmcSize, showIf: (r) => r.mmc === "mmc" },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
+    const u = c.L.length;
     const useMmc = v.mmc === "mmc";
-    const r = truePosition({ dx: v.dx, dy: v.dy, tolerance: v.tol, mmc: useMmc ? v.mmcSize : null, actualSize: useMmc ? v.actual : null, internal: v.feature === "hole" });
+    const hole = v.feature !== "pin";
+    const hasLmc = useMmc && Number.isFinite(v.lmc);
+    const actual = v.actual;
+    const r = truePosition({ dx: v.dx, dy: v.dy, tolerance: v.tol, mmc: useMmc ? v.mmcSize : null, lmc: hasLmc ? v.lmc : null, actualSize: useMmc ? actual : null, internal: hole });
+    const sizeTol = hasLmc ? Math.abs(v.lmc - v.mmcSize) : 0;
+    const underMmc = useMmc && (hole ? actual < v.mmcSize : actual > v.mmcSize);
+    // A miss smaller than the last shown digit gets more digits, never "out by 0"
+    const shownPlaces = (x) => { for (let q = p; q < p + 3; q++) if (Number(fmt(Math.abs(x), q)) > 0) return q; return p + 3; };
+    const pp = r.positionOk ? p : shownPlaces(r.margin);
+    const missText = Number(fmt(-r.margin, pp)) > 0 ? `${fmt(-r.margin, pp)} ${u}` : `less than ${fmt(10 ** -pp, pp)} ${u}`;
     const warnings = [];
-    if (useMmc && ((v.feature === "hole" && v.actual < v.mmcSize) || (v.feature === "pin" && v.actual > v.mmcSize))) warnings.push("Feature is outside its size limit on the MMC side — no bonus, and the size itself is out.");
-    if (!r.pass) warnings.push(`Out of position by ${fmt(-r.margin, p)}. ${useMmc ? "Even with bonus." : "Check if MMC applies — bonus may save it."}`);
+    if (underMmc) warnings.push(`${hole ? "Hole is smaller" : "Pin is bigger"} than its MMC size — out of size, so the part is rejected whatever its position. No bonus.`);
+    else if (hasLmc && !r.sizeOk) warnings.push(`${hole ? "Hole is bigger" : "Pin is smaller"} than its LMC size — out of size, so the part is rejected whatever its position. Bonus stops at the size tolerance, ${fmt(sizeTol, p)} ${u}.`);
+    if (!r.positionOk) warnings.push(`Out of position by ${missText}. ${useMmc ? "Even with bonus." : "Check if MMC applies — bonus may save it."}`);
+    const label = r.pass ? "Position (in tolerance)" : r.sizeOk ? "Position (OUT)" : r.positionOk ? "Position OK, size OUT" : "Position and size OUT";
     return {
-      primary: { label: r.pass ? "Position (in tolerance)" : "Position (OUT)", value: r.deviation, unit: c.L.length, places: p, clamped: !r.pass },
+      primary: { label, value: r.deviation, unit: u, places: pp, clamped: !r.pass },
       stats: [
-        { label: "Allowed (tol + bonus)", value: r.allowed, unit: c.L.length, places: p },
-        { label: "Margin", value: r.margin, unit: c.L.length, places: p, clamped: r.margin < 0 },
-        { label: "Radial error", value: r.radial, unit: c.L.length, places: p },
-        ...(useMmc ? [{ label: "Bonus tolerance", value: r.bonus, unit: c.L.length, places: p }] : []),
+        { label: "Allowed (tol + bonus)", value: r.allowed, unit: u, places: pp },
+        { label: "Margin", value: r.margin, unit: u, places: pp, clamped: r.margin < 0 },
+        { label: "Radial error", value: r.radial, unit: u, places: p },
+        ...(useMmc ? [{ label: "Bonus tolerance", value: r.bonus, unit: u, places: p }, { label: "Size", text: !r.sizeOk ? "OUT of limits" : hasLmc ? "Within MMC–LMC" : "Not checked (no LMC)", clamped: !r.sizeOk }] : []),
         { label: "Used", value: 100 * r.deviation / r.allowed, unit: "% of zone", places: 0 },
       ],
       warnings,
       source: "geometry",
       explain: [
-        { title: "ASME Y14.5 position", formula: "TP = 2 √(Δx² + Δy²)", plugged: `= 2 √(${fmt(v.dx, p)}² + ${fmt(v.dy, p)}²) = ${fmt(r.deviation, p)}` },
-        ...(useMmc ? [{ title: "Bonus at MMC", formula: v.feature === "hole" ? "bonus = actual − MMC" : "bonus = MMC − actual", plugged: `= ${fmt(r.bonus, p)}` }] : []),
+        { title: "ASME Y14.5 position", formula: "TP = 2 √(Δx² + Δy²)", plugged: `= 2 √(${fmt(v.dx, p)}² + ${fmt(v.dy, p)}²) = ${fmt(r.deviation, pp)} ${u}` },
+        ...(useMmc ? [{ title: "Bonus at MMC", formula: `${hole ? "bonus = actual − MMC" : "bonus = MMC − actual"}${hasLmc ? `, at most ${hole ? "LMC − MMC" : "MMC − LMC"}` : ""}`,
+          plugged: `= ${hole ? `${fmt(actual, p)} − ${fmt(v.mmcSize, p)}` : `${fmt(v.mmcSize, p)} − ${fmt(actual, p)}`} ${u}${hasLmc ? `, capped at ${fmt(sizeTol, p)} ${u}` : ""} → ${fmt(r.bonus, p)} ${u}` }] : []),
+      ],
+      notes: !useMmc ? [] : [
+        ...(v.actualAuto ? ["No actual size entered, so the part is taken as at MMC: no bonus. Type the measured size to earn bonus."] : []),
+        hasLmc ? "Bonus only counts while the size is inside its limits: it grows from 0 at MMC to the full size tolerance at LMC."
+          : "Bonus assumes the size is within its limits — enter LMC to check it and cap the bonus.",
       ],
       historyLabel: `Δ${fmt(v.dx, p)}, ${fmt(v.dy, p)} → ${fmt(r.deviation, p)}`,
     };

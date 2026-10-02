@@ -7,17 +7,33 @@ import { IT_STEPS, IT_TABLE, DEVIATION_STEPS, SHAFT_DEVIATION } from "../data/is
 
 /**
  * True position (ASME Y14.5): diametral deviation = 2 √(Δx² + Δy²).
- * Bonus tolerance at MMC = |actual feature size − MMC size| (only when the feature is inside its size limits).
+ * Bonus tolerance at MMC = how far the actual size has moved from MMC toward LMC (hole: actual − MMC,
+ * pin: MMC − actual). It only exists inside the size limits, so it tops out at the size tolerance |LMC − MMC|.
+ * A feature past either size limit is out of size (sizeOk false) and fails whatever its position.
+ * Leave lmc out and the bonus is not capped — the caller must then know the size is within its limits.
+ * Limits are compared to a millionth of the unit in use (0.000001 in or mm), far below what any gauge reads, so a
+ * part exactly on the line stays on it after a unit switch rewrites its inputs to a finite number of decimals.
  */
-export function truePosition({ dx, dy, tolerance, mmc = null, actualSize = null, internal = true }) {
+export function truePosition({ dx, dy, tolerance, mmc = null, lmc = null, actualSize = null, internal = true }) {
   const radial = Math.hypot(dx, dy);
   const deviation = 2 * radial;
   let bonus = 0;
+  let sizeOk = true;
+  const eps = 1e-6;
   if (Number.isFinite(mmc) && Number.isFinite(actualSize)) {
-    bonus = internal ? Math.max(0, actualSize - mmc) : Math.max(0, mmc - actualSize);
+    const fromMmc = internal ? actualSize - mmc : mmc - actualSize; // + toward LMC
+    if (fromMmc < -eps) sizeOk = false;
+    bonus = Math.max(0, fromMmc);
+    if (Number.isFinite(lmc)) {
+      const sizeTol = internal ? lmc - mmc : mmc - lmc;
+      if (!(sizeTol >= 0)) throw new Error(internal ? "For a hole, LMC (largest allowed size) has to be bigger than MMC — check the two sizes, or clear LMC" : "For a pin, LMC (smallest allowed size) has to be smaller than MMC — check the two sizes, or clear LMC");
+      if (fromMmc > sizeTol + eps) sizeOk = false;
+      bonus = Math.min(bonus, sizeTol);
+    }
   }
   const allowed = tolerance + bonus;
-  return { radial, deviation, bonus, allowed, pass: deviation <= allowed + 1e-12, margin: allowed - deviation };
+  const positionOk = deviation <= allowed + eps;
+  return { radial, deviation, bonus, allowed, sizeOk, positionOk, pass: positionOk && sizeOk, margin: allowed - deviation };
 }
 
 // ── ISO 286 ──────────────────────────────────────────────────────────────────
@@ -61,6 +77,8 @@ export function fundamentalDeviation(d, letter, grade) {
   const clearanceSide = L <= "h";
   if (!isHole) return clearanceSide ? { upper: base, lower: base - T, isHole } : { upper: base + T, lower: base, isHole };
   if (clearanceSide) return { upper: -base + T, lower: -base, isHole };
+  // ISO 286-2 Table 8, note 2: K holes above IT8 are not defined over 3 mm
+  if (L === "k" && grade > 8 && d > 3) throw new Error(`ISO 286 has no ${letter}${grade} hole over 3 mm (0.118 in) — K holes stop at K8 there`);
   const takesDelta = d > 3 && (L <= "n" ? grade <= 8 : grade <= 7);
   const delta = takesDelta ? (IT_TABLE[grade][stepIndex(IT_STEPS, d)] - IT_TABLE[grade - 1][stepIndex(IT_STEPS, d)]) / 1000 : 0;
   let upper = -base + delta;
@@ -94,14 +112,24 @@ export function isoFit(d, holeSpec, shaftSpec) {
 }
 
 // ── Thermal expansion ────────────────────────────────────────────────────────
-/** Linear coefficients, in/in/°F. Source: Machinery's Handbook "Coefficients of Thermal Expansion". */
+/**
+ * Linear coefficients, in/in/°F, mean over about 68–212 °F. Source: Machinery's Handbook "Coefficients of Thermal
+ * Expansion"; stainless from the AK Steel / ATI datasheets (304 9.6, 316 8.9, 410 5.5, 17-4 PH 6.0); copper alloys
+ * from the Copper Development Association (C360 11.4, C510 9.9, C932 10.0, C954 9.0). One alloy per row: the
+ * members of a family differ by 8–20%.
+ */
 export const THERMAL_ALPHA_F = Object.freeze({
   steel: { label: "Carbon / alloy steel", a: 6.5e-6 },
-  stainless304: { label: "Stainless 304 / 316", a: 9.6e-6 },
-  stainless410: { label: "Stainless 410 / 17-4", a: 6.0e-6 },
+  stainless304: { label: "Stainless 304", a: 9.6e-6 },
+  stainless316: { label: "Stainless 316", a: 8.9e-6 },
+  stainless410: { label: "Stainless 410", a: 5.5e-6 },
+  ph174: { label: "Stainless 17-4 PH", a: 6.0e-6 },
   castIron: { label: "Cast iron", a: 6.0e-6 },
   aluminum: { label: "Aluminum", a: 13.0e-6 },
-  brass: { label: "Brass / bronze", a: 11.0e-6 },
+  brass: { label: "Brass (C360 free-cutting)", a: 11.4e-6 },
+  phosphorBronze: { label: "Phosphor bronze (C510)", a: 9.9e-6 },
+  bearingBronze: { label: "Bearing bronze (C932)", a: 10.0e-6 },
+  aluminumBronze: { label: "Aluminum bronze (C954)", a: 9.0e-6 },
   copper: { label: "Copper", a: 9.4e-6 },
   titanium: { label: "Titanium", a: 4.8e-6 },
   invar: { label: "Invar 36", a: 0.8e-6 },

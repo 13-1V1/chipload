@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { truePosition, itTolerance, featureLimits, isoFit, thermalExpansion } from "../../src/core/inspect.js";
+import { truePosition, itTolerance, featureLimits, isoFit, thermalExpansion, THERMAL_ALPHA_F } from "../../src/core/inspect.js";
 import { IT_STEPS, IT_TABLE, DEVIATION_STEPS, SHAFT_DEVIATION } from "../../src/data/iso286.js";
 import { solveTriangle, circularSegment, filletTangents } from "../../src/core/geometry.js";
 
@@ -17,6 +17,50 @@ test("true position with bonus tolerance", () => {
   near(b.bonus, 0.003, 1e-12);
   near(b.deviation, 0.012806, 1e-6);
   assert.equal(b.pass, true);
+});
+
+// ASME Y14.5-2018 position at MMC: bonus = departure from MMC, valid only inside the size limits, so it can
+// never exceed the size tolerance |LMC − MMC|. A feature past LMC (or past MMC) is out of size and rejected.
+test("true position: bonus stops at LMC, and an out-of-size feature never passes", () => {
+  // hole Ø.250–.255 measured .300: bonus capped at .005, allowed .015 < .0424 → out on position and size
+  const big = truePosition({ dx: 0.015, dy: 0.015, tolerance: 0.010, mmc: 0.250, lmc: 0.255, actualSize: 0.300, internal: true });
+  near(big.bonus, 0.005, 1e-12); near(big.allowed, 0.015, 1e-12);
+  assert.equal(big.sizeOk, false); assert.equal(big.positionOk, false); assert.equal(big.pass, false);
+  // a hole just past LMC with a position that would pass is still rejected on size
+  const past = truePosition({ dx: 0.003, dy: 0.004, tolerance: 0.010, mmc: 0.250, lmc: 0.255, actualSize: 0.256, internal: true });
+  assert.equal(past.positionOk, true); assert.equal(past.sizeOk, false); assert.equal(past.pass, false);
+  // pin Ø.245–.250 measured .200: bonus capped at .005
+  const pin = truePosition({ dx: 0.005, dy: 0.005, tolerance: 0.010, mmc: 0.250, lmc: 0.245, actualSize: 0.200, internal: false });
+  near(pin.bonus, 0.005, 1e-12); assert.equal(pin.sizeOk, false); assert.equal(pin.pass, false);
+  // pin inside its limits: MMC − actual
+  const ok = truePosition({ dx: 0.003, dy: 0.004, tolerance: 0.010, mmc: 0.250, lmc: 0.245, actualSize: 0.247, internal: false });
+  near(ok.bonus, 0.003, 1e-12); assert.equal(ok.pass, true);
+  // at exactly LMC the full size tolerance is the bonus
+  near(truePosition({ dx: 0, dy: 0, tolerance: 0.010, mmc: 0.250, lmc: 0.255, actualSize: 0.255 }).bonus, 0.005, 1e-12);
+  // a hole smaller than MMC is out of size too
+  assert.equal(truePosition({ dx: 0, dy: 0, tolerance: 0.010, mmc: 0.250, lmc: 0.255, actualSize: 0.249 }).pass, false);
+  // LMC on the wrong side of MMC is a typing mistake, not a zero bonus
+  assert.throws(() => truePosition({ dx: 0, dy: 0, tolerance: 0.01, mmc: 0.25, lmc: 0.245, actualSize: 0.25, internal: true }), /LMC/);
+});
+
+// ISO 286-2:1988 Table 8, footnote 2: "Deviations for K in tolerance grades above IT8 are not defined for basic
+// sizes greater than 3 mm." Up to 3 mm the table lists K9 = 0/−25 and K10 = 0/−40 µm.
+test("K holes above IT8 exist only up to 3 mm", () => {
+  near(featureLimits(2, "K9").upper * 1000, 0, 0.01); near(featureLimits(2, "K9").lower * 1000, -25, 0.01);
+  near(featureLimits(3, "K10").lower * 1000, -40, 0.01);
+  for (const spec of ["K9", "K10", "K11", "K12", "K13"]) assert.throws(() => featureLimits(25, spec), /no K\d+ hole over 3 mm/, spec);
+  assert.throws(() => isoFit(25, "K11", "h11"), /K holes stop at K8/);
+  near(featureLimits(25, "K8").upper * 1000, 10, 0.01); // still defined
+  near(featureLimits(25, "k9").lower * 1000, 0, 0.01); // the shaft k is defined at every size
+});
+
+// Mean coefficients, µin/in/°F, about 68–212 °F: AK Steel / ATI datasheets 304 9.6, 316 8.9, 410 5.5, 17-4 PH 6.0;
+// Copper Development Association C360 brass 11.4, C510 phosphor bronze 9.9, C932 bearing bronze 10.0, C954 aluminum bronze 9.0.
+test("thermal coefficients: one alloy per row, at its published value", () => {
+  const a = (id) => THERMAL_ALPHA_F[id].a * 1e6;
+  near(a("stainless304"), 9.6); near(a("stainless316"), 8.9); near(a("stainless410"), 5.5); near(a("ph174"), 6.0);
+  near(a("brass"), 11.4); near(a("phosphorBronze"), 9.9); near(a("bearingBronze"), 10.0); near(a("aluminumBronze"), 9.0);
+  for (const m of Object.values(THERMAL_ALPHA_F)) assert.doesNotMatch(m.label, /304 \/ 316|410 \/ 17-4|Brass \/ bronze/, `${m.label} lumps two alloys`);
 });
 
 // ISO 286-1 Table 1: 25 mm IT7 = 21 µm, IT6 = 13, IT9 = 52; 50 mm IT7 = 25; 100 mm IT8 = 54. Exact — these are table lookups.

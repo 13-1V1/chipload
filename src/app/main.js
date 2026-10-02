@@ -4,7 +4,7 @@
 // Boot: theme, calculator modules, router → screens.
 
 import { applyTheme, onSettings, getSettings, setSetting } from "./settings.js";
-import { onRoute, startRouter, navigate, back } from "./router.js";
+import { onRoute, startRouter, navigate, back, replace, refresh } from "./router.js";
 import { getCalc } from "./registry.js";
 import { mountCalculator, hideAnswerBar } from "./render.js";
 import { mountChart } from "./chart.js";
@@ -37,6 +37,16 @@ const syncGlove = () => gloveBtn.setAttribute("aria-pressed", String(!!getSettin
 gloveBtn.addEventListener("click", () => setSetting("glove", !getSettings().glove));
 onSettings(syncGlove);
 syncGlove();
+// Pro turning on (a purchase landing while any screen is open) or off redraws the screen you're on:
+// locks, PRO tags, Shop and the machine clamp all follow at once. Inputs are saved on every change.
+let proWas = !!getSettings().pro;
+onSettings((s) => {
+  if (!!s.pro === proWas) return;
+  proWas = !!s.pro;
+  const y = window.scrollY;
+  refresh();
+  window.scrollTo(0, y);
+});
 helpBtn.addEventListener("click", () => current?.toggleHelp?.());
 // Enter (or Done) on the phone keyboard puts it away: a text field has nowhere else to go.
 // Fields with their own Enter (search, job name) act first; this only drops the keyboard after.
@@ -78,7 +88,7 @@ onRoute(({ segments, params }) => {
   if (head === "settings") { screen("Settings"); renderSettings(main); return; }
   if (head === "pro") { screen("Chipload Pro"); current = renderPro(main); return; }
   if (head === "privacy" || head === "licenses") { screen(head === "privacy" ? "Privacy" : "Licenses"); renderStatic(main, head); return; }
-  navigate("/");
+  replace("/"); // in place of the bad link, so Back still leaves it
 });
 
 startRouter();

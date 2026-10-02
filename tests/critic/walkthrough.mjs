@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { chromium } from "playwright";
 
-const PORT = 4189, BASE = `http://127.0.0.1:${PORT}/`;
+const PORT = Number(process.env.WALK_PORT) || 4189, BASE = `http://127.0.0.1:${PORT}/`;
 const server = spawn(process.execPath, [resolve(import.meta.dirname, "../serve.mjs"), `--port=${PORT}`], { stdio: "ignore" });
 await new Promise((r) => setTimeout(r, 700));
 const browser = await chromium.launch();

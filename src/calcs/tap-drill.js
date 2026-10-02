@@ -5,9 +5,31 @@
 
 import { register } from "../app/registry.js";
 import { tapDrillByPercent, formTapDrillByPercent, percentThreadForDrill, lookupTapDrillUN, lookupTapDrillMetric } from "../core/tapdrill.js";
-import { nearestDrillsInch, nearestDrillsMm } from "../core/drills.js";
+import { nearestDrillsInch, nearestDrillsMm, DRILL_MIN_IN, DRILL_MAX_IN, DRILL_MIN_MM, DRILL_MAX_MM } from "../core/drills.js";
 import { fmt } from "../core/format.js";
 import { threadFromSpec, threadPrefill, dual, COMMON_THREADS } from "./_util.js";
+
+/** A length in the thread's own unit: inch threads in inches, metric threads in mm. */
+const nat = (t, valueIn) => (t.isUn ? fmt(valueIn, 4) : fmt(valueIn * 25.4, 3));
+
+/** The hole is bigger than any drill on the chart: give the size to bore, not the chart's last drill. */
+function offChart(t, pct, form, calcIn, maxIn) {
+  const native = t.isUn ? `${fmt(calcIn, 4)} in` : `${fmt(calcIn * 25.4, 2)} mm`;
+  const last = t.isUn ? `${fmt(maxIn, 4)} in` : `${fmt(maxIn * 25.4, 1)} mm`;
+  return {
+    primary: { label: `Hole for ${t.label} at ${pct}%`, text: `Bore to ${native}` },
+    stats: [
+      { label: "Calculated diameter", text: dual(calcIn, t.nativeUnits) },
+      { label: "Largest drill on the chart", text: last },
+      { label: "Thread", text: `${t.label} · ${t.pitchLabel}` },
+    ],
+    warnings: [`No stock drill comes near ${native}. Drill under size, then bore or interpolate to ${native} — or thread-mill it.`],
+    source: "tapDrill",
+    explain: [{ title: form ? "Roll-form tap hole" : "Cut tap hole", formula: form ? "hole = D − 0.0068 × %thread × P" : "hole = D − (%thread ÷ 76.98) × P",
+      plugged: `= ${nat(t, t.majorIn)} − ${form ? `0.0068 × ${pct}` : `(${pct} ÷ 76.98)`} × ${nat(t, t.pitchIn)} = ${nat(t, calcIn)} ${t.nativeUnits}` }],
+    historyLabel: `${t.label} · ${pct}% · ${form ? "form" : "cut"}`,
+  };
+}
 
 export default register({
   id: "tap-drill",
@@ -31,14 +53,27 @@ export default register({
     const pct = Number(v.percent);
     const form = v.tapType === "form";
     const calcIn = form ? formTapDrillByPercent(t.majorIn, t.pitchIn, pct) : tapDrillByPercent(t.majorIn, t.pitchIn, pct);
+    // A pitch that eats the whole diameter is a typo, not a thread (a real one, even 4-4 UNC, leaves most of it).
+    if (!(calcIn > t.majorIn * 0.25)) throw new Error(`That pitch is too coarse for a ${t.isUn ? fmt(t.majorIn, 4) + " in" : fmt(t.majorMm, 2) + " mm"} thread. Check the thread size`);
     const table = !form ? (t.isUn ? lookupTapDrillUN(t.majorIn, t.tpi) : lookupTapDrillMetric(t.majorMm, t.pitchMm)) : null;
+    // Past the end of the drill chart there is no stock drill to name: give the hole size to bore.
+    const maxIn = t.isUn ? DRILL_MAX_IN : DRILL_MAX_MM / 25.4;
+    const tolIn = t.isUn ? 1 / 64 : 0.5 / 25.4;
+    if (calcIn > maxIn + tolIn) return offChart(t, pct, form, calcIn, maxIn);
     // At the shop-standard 75% a machinist expects the chart drill; any other % (or a form tap) is figured.
     const useChart = !!table && pct === 75;
     const byFormula = t.isUn ? nearestDrillsInch(calcIn) : nearestDrillsMm(calcIn * 25.4);
     const near = useChart ? (t.isUn ? nearestDrillsInch(table.size) : nearestDrillsMm(table.size)) : byFormula;
     const chosenIn = t.isUn ? near.nearest.size : near.nearest.size / 25.4;
     const actualPct = form ? (t.majorIn - chosenIn) / (0.0068 * t.pitchIn) : percentThreadForDrill(t.majorIn, t.pitchIn, chosenIn);
-    const altIn = t.isUn ? nearestDrillsMm(calcIn * 25.4).nearest : nearestDrillsInch(calcIn).nearest;
+    // The other system's nearest drill, unless the hole is off that chart's ends (then there is none to name).
+    const altOff = t.isUn ? (calcIn * 25.4 > DRILL_MAX_MM + 0.5 || calcIn * 25.4 < DRILL_MIN_MM - 0.05)
+      : (calcIn > DRILL_MAX_IN + 1 / 64 || calcIn < DRILL_MIN_IN - 0.002);
+    const altText = altOff
+      ? `None on the chart (hole is ${t.isUn ? `${fmt(calcIn * 25.4, 2)} mm` : `${fmt(calcIn, 4)} in`})`
+      : (t.isUn ? nearestDrillsMm(calcIn * 25.4) : nearestDrillsInch(calcIn)).nearest.label;
+    // Metric chart labels already carry "mm"; inch labels (#7, 1/4") get the decimal size after them.
+    const sizeNote = (d) => (t.isUn ? ` · ${fmt(d.size, 4)} in` : "");
 
     const stats = [
       { label: "Calculated diameter", text: dual(calcIn, t.nativeUnits) },
@@ -46,10 +81,10 @@ export default register({
     ];
     if (table && !useChart) stats.push({ label: "Chart drill (75%)", text: `${t.isUn ? table.label : `${table.size} mm`} (${table.percent}%)` });
     if (useChart && byFormula.nearest.label !== near.nearest.label) stats.push({ label: "Nearest to 75% by formula", text: byFormula.nearest.label });
-    stats.push({ label: "From", text: useChart ? (t.isUn ? "ANSI B94.11M tap drill chart" : "ISO 2306 tap drill chart") : "% thread formula, nearest stock drill" });
-    if (near.prev) stats.push({ label: "One size smaller", text: `${near.prev.label} · ${t.isUn ? fmt(near.prev.size, 4) : fmt(near.prev.size, 2)}` });
-    if (near.next) stats.push({ label: "One size larger", text: `${near.next.label} · ${t.isUn ? fmt(near.next.size, 4) : fmt(near.next.size, 2)}` });
-    stats.push({ label: t.isUn ? "Nearest metric drill" : "Nearest inch drill", text: altIn.label });
+    stats.push({ label: "From", text: useChart ? (t.isUn ? "Machinery's Handbook tap drill chart" : "ISO 2306 tap drill chart") : "% thread formula, nearest stock drill" });
+    if (near.prev) stats.push({ label: "One size smaller", text: `${near.prev.label}${sizeNote(near.prev)}` });
+    if (near.next) stats.push({ label: "One size larger", text: `${near.next.label}${sizeNote(near.next)}` });
+    stats.push({ label: t.isUn ? "Nearest metric drill" : "Nearest inch drill", text: altText });
     stats.push({ label: "Thread", text: `${t.label} · ${t.pitchLabel}` });
 
     const warnings = [];
@@ -58,14 +93,14 @@ export default register({
     if (actualPct < 55) warnings.push("Under 55% thread is weak. Consider a smaller drill.");
 
     return {
-      primary: { label: `Tap drill for ${t.label} at ${pct}%`, text: near.nearest.label, unit: t.isUn ? `(${fmt(near.nearest.size, 4)} in)` : `(${fmt(near.nearest.size, 2)} mm)` },
+      primary: { label: `Tap drill for ${t.label} at ${pct}%`, text: near.nearest.label, ...(t.isUn ? { unit: `(${fmt(near.nearest.size, 4)} in)` } : {}) },
       stats,
       warnings,
       source: "tapDrill",
       explain: form
-        ? [{ title: "Roll-form tap drill", formula: "drill = D − 0.0068 × %thread × P", plugged: `= ${fmt(t.majorIn, 4)} − 0.0068 × ${pct} × ${fmt(t.pitchIn, 4)} = ${fmt(calcIn, 4)} in` }]
-        : [{ title: "Cut tap drill", formula: "drill = D − (%thread ÷ 76.98) × P", plugged: `= ${fmt(t.majorIn, 4)} − (${pct} ÷ 76.98) × ${fmt(t.pitchIn, 4)} = ${fmt(calcIn, 4)} in` },
-           { title: "Actual engagement with stock drill", formula: "% = (D − drill) ÷ P × 76.98", plugged: `= (${fmt(t.majorIn, 4)} − ${fmt(chosenIn, 4)}) ÷ ${fmt(t.pitchIn, 4)} × 76.98 = ${fmt(actualPct, 0)}%` }],
+        ? [{ title: "Roll-form tap drill", formula: "drill = D − 0.0068 × %thread × P", plugged: `= ${nat(t, t.majorIn)} − 0.0068 × ${pct} × ${nat(t, t.pitchIn)} = ${nat(t, calcIn)} ${t.nativeUnits}` }]
+        : [{ title: "Cut tap drill", formula: "drill = D − (%thread ÷ 76.98) × P", plugged: `= ${nat(t, t.majorIn)} − (${pct} ÷ 76.98) × ${nat(t, t.pitchIn)} = ${nat(t, calcIn)} ${t.nativeUnits}` },
+           { title: "Actual engagement with stock drill", formula: "% = (D − drill) ÷ P × 76.98", plugged: `= (${nat(t, t.majorIn)} − ${nat(t, chosenIn)}) ÷ ${nat(t, t.pitchIn)} × 76.98 = ${fmt(actualPct, 0)}%` }],
       notes: ["75% is the usual shop default. Tough materials (stainless, titanium) tap easier at 60–65%."],
       historyLabel: `${t.label} · ${pct}% · ${form ? "form" : "cut"}`,
     };

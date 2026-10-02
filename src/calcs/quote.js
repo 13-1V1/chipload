@@ -5,6 +5,7 @@
 
 import { register } from "../app/registry.js";
 import { fmt } from "../core/format.js";
+import { money } from "./_money.js";
 
 export default register({
   id: "quote",
@@ -35,24 +36,30 @@ export default register({
     const price = cost * (1 + v.markup / 100);
     const each = price / v.qty;
     const setupEach = (v.setup / 60 * v.rate) / v.qty;
+    // Break-even is the price with zero profit: what one part costs, no markup.
+    const costOne = (v.cycle + v.load + v.setup) / 60 * v.rate + v.material + v.tooling + v.outside;
+    // Markup is on cost; margin is the same profit as a share of the price (20% markup = 16.7% margin).
+    const margin = price > 0 ? (price - cost) / price * 100 : 0;
     return {
-      primary: { label: `Price per part · ${v.qty} pcs`, text: `$${fmt(each, 2)}`, unit: "" },
+      primary: { label: `Price per part · ${v.qty} pcs`, text: money(each), unit: "" },
       stats: [
-        { label: "Job total", text: `$${fmt(price, 2)}` },
-        { label: "Total cost (before markup)", text: `$${fmt(cost, 2)}` },
-        { label: "Profit", text: `$${fmt(price - cost, 2)}` },
+        { label: "Job total", text: money(price) },
+        { label: "Total cost (before markup)", text: money(cost) },
+        { label: "Profit", text: money(price - cost) },
+        { label: "Margin (profit ÷ price)", value: margin, unit: "%", places: 1 },
         { label: "Machine time", value: machineHrs, unit: "hr", places: 2 },
-        { label: "Labor / machine", text: `$${fmt(labor, 2)}` },
-        { label: "Materials & tooling", text: `$${fmt(direct, 2)}` },
-        { label: "Setup share per part", text: `$${fmt(setupEach, 2)}` },
-        { label: "Break-even at qty 1", text: `$${fmt(((v.cycle + v.load + v.setup) / 60 * v.rate + v.material + v.tooling + v.outside) * (1 + v.markup / 100), 2)}` },
+        { label: "Labor / machine", text: money(labor) },
+        { label: "Materials & tooling", text: money(direct) },
+        { label: "Setup share per part", text: money(setupEach) },
+        { label: "Break-even at qty 1 (cost, no markup)", text: money(costOne) },
+        { label: "Price at qty 1 (with markup)", text: money(costOne * (1 + v.markup / 100)) },
       ],
       source: "advanced",
       explain: [
-        { title: "Price", formula: "cost = (run + setup) ÷ 60 × rate + (material + tooling + outside) × qty;  price = cost × (1 + markup)", plugged: `run ${fmt(runMin, 0)} min + setup ${fmt(v.setup, 0)} min at $${fmt(v.rate, 0)}/hr = $${fmt(labor, 2)}; direct $${fmt(direct, 2)}; × ${fmt(1 + v.markup / 100, 2)} = $${fmt(price, 2)}` },
+        { title: "Price", formula: "cost = (run + setup) ÷ 60 × rate + (material + tooling + outside) × qty;  price = cost × (1 + markup on cost)", plugged: `run ${fmt(runMin, 0)} min + setup ${fmt(v.setup, 0)} min at ${money(v.rate)}/hr = ${money(labor)}; direct ${money(direct)}; cost ${money(cost)} × ${fmt(1 + v.markup / 100, 3)} = ${money(price)}` },
       ],
-      notes: ["Setup gets spread across the quantity — that's why 1 piece costs so much more than 25. Get the cycle time from the cut-time or lathe cycle tools."],
-      historyLabel: `${v.qty} pcs @ $${fmt(each, 2)}`,
+      notes: [`Markup is on cost: ${fmt(v.markup, 1)}% markup is a ${fmt(margin, 1)}% margin on the price.`, "Setup gets spread across the quantity — that's why 1 piece costs so much more than 25. Get the cycle time from the cut-time or lathe cycle tools."],
+      historyLabel: `${v.qty} pcs @ ${money(each)}`,
     };
   },
 });

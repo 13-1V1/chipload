@@ -16,9 +16,10 @@ export * from "./geometry.js";
 export * from "./milling.js";
 export * from "./tapping.js";
 export * from "./tolstack.js";
+export * from "./saw.js";
 
 export { CALCULATION_SOURCES } from "../data/sources.js";
 export { MACHINE_SCREW_DIAMETERS, UN_THREAD_TABLE, TAP_DRILL_UN_TABLE } from "../data/threads-un.js";
 export { METRIC_DEFAULT_PITCH, METRIC_THREAD_TABLE, TAP_DRILL_METRIC_TABLE } from "../data/threads-metric.js";
 export { DRILL_CHART_INCH, DRILL_CHART_MM, WIRE_SET_INCH, WIRE_SET_MM } from "../data/drills.js";
-export { SF_DEFAULTS, MATERIAL_LABELS, TOOL_LABELS } from "../data/materials.js";
+export { TOOL_LABELS } from "../data/materials.js";
