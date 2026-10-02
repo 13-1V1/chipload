@@ -67,7 +67,7 @@ export default register({
     const iprIn = toIn(v.ipr, c.units);
     const requestedRpm = rpmFromSfm(sfm, dIn);
     const m = machineFor(c, "any");
-    const fit = fitToMachine(m, requestedRpm, iprIn, c);
+    const fit = fitToMachine(m, requestedRpm, iprIn, c, { keep: "the feed per rev" });
     const rpm = fit.rpm;
     // A feed per rev bigger than the machine's whole max feed leaves no spindle speed at all: say so, don't show 0 RPM.
     if (fit.cantRun) throw new Error(fit.problem);

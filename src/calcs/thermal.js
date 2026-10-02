@@ -57,7 +57,8 @@ export default register({
       notes: [metric
         ? "Standard reference temperature is 20 °C (68 °F). A 250 mm steel part measured at 30 °C reads 0.029 mm long."
         : "Standard reference temperature is 68 °F (20 °C). A 10 in steel part measured at 90 °F reads 0.0014 in long."],
-      historyLabel: `${m.label} ${fmt(v.length, lenPlaces(c.units))} ${c.L.length} · ${fmt(v.from, 1)}→${fmt(v.to, 1)} ${c.L.temp}`,
+      // Temperatures to 3 places like the ΔT stat, so a typed 37.75 reads 37.75 (fmt drops zeros: 68 stays 68)
+      historyLabel: `${m.label} ${fmt(v.length, lenPlaces(c.units))} ${c.L.length} · ${fmt(v.from, 3)}→${fmt(v.to, 3)} ${c.L.temp}`,
     };
   },
 });

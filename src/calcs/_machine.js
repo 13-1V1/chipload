@@ -39,13 +39,15 @@ const OVER = 1 + 1e-9;
  * typed in the feed field, say), no whole RPM can run the cut. Then rpm and feedIpm are 0, `cantRun` is
  * true and `problem` says why in the user's units. Callers show that message instead of numbers:
  * `if (fit.cantRun) throw new Error(fit.problem);` — a 0 RPM answer turns into Infinity times and F0 blocks.
- * The text is worded for a cut with a feed per rev field; a tool that holds something else (a tap holds the
- * lead, not a chip load) or takes other inputs (chip load and flutes) names its own in `words`.
+ * Default wording: slowing the spindle keeps "the chip load" (a mill's chip load per tooth), and the cantRun
+ * fix says to check "the feed per rev". Every tool whose field is a feed per rev (drill, lathe, bolt circle)
+ * passes { keep: "the feed per rev" }; a tap keeps the lead, and a mill names "the chip load and flutes" as
+ * its check. Name both in `words` so a screen's warning names the field that screen shows.
  * @param {object|null} m   machine profile from machineFor()
  * @param {number} wantedRpm  spindle speed the surface speed asks for
  * @param {number} iprIn      feed per revolution in inches (flutes × chip load for a mill, lead for a tap)
  * @param {object} c          calculator context (units and labels for the warning text)
- * @param {{ keep?: string, check?: string }} [words]  what slowing the spindle keeps ("the chip load"), and
+ * @param {{ keep?: string, check?: string }} [words]  what slowing the spindle keeps (default "the chip load"), and
  *   which inputs on that screen set the feed per rev ("the feed per rev"), for the cantRun fix
  * @returns {{ rpm: number, feedIpm: number, wantedRpm: number, wantedFeedIpm: number, rpmCapped: boolean, feedCapped: boolean, cantRun: boolean, problem: string|null, warnings: string[] }}
  */
@@ -89,13 +91,16 @@ export function maxRpmAtFeed(m, iprIn) {
  * number is beyond what most machines of this kind turn: say so instead of handing over a confident RPM
  * nobody can run. Pass the RPM the screen shows (fitToMachine's `rpm`), not the one the surface speed asked
  * for: a profile with a max feed but no max spindle may already have slowed the spindle to a speed it can run.
+ * Drilling and tapping ("any") are judged as the profile that applies: a lathe profile by the lathe line,
+ * no profile or a mill profile by the spindle line.
  * @param {number} rpm  spindle speed as fitted
  * @param {"mill"|"lathe"|"any"} work
  */
 export function spindleSanity(rpm, m, work, c) {
-  const limit = work === "lathe" ? 6000 : 20000;
+  const lathe = work === "any" ? m?.type === "lathe" : work === "lathe";
+  const limit = lathe ? 6000 : 20000;
   if (Number.isFinite(maxRpmOf(m)) || !(rpm > limit)) return [];
-  const kind = work === "lathe" ? "lathes" : "spindles";
+  const kind = lathe ? "lathes" : "spindles";
   const fix = m ? `${m.name} has no max spindle set. Add it in Shop and the numbers get figured at that top speed.`
     : c?.settings?.pro ? "Add your machine in Shop and the numbers get figured at its top speed." : "Run it at your machine's top speed and the feed per rev still holds.";
   return [`${fmt(rpm, 0)} RPM is more than most ${kind} turn. ${fix}`];

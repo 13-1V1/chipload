@@ -148,9 +148,38 @@ test("thin stock: the warning names the blades the stats show", () => {
     if (pitch === "14/18") assert.ok(warn.includes(`finest blade you have (${pitch}, or a 24 TPI one-pitch blade)`), warn);
     else {
       assert.equal(pitch, "10/14", `${shape} ${thickness}`);
-      assert.ok(warn.includes(`the chart's ${pitch} TPI leaves under 3 teeth`) && warn.includes("(14/18, or a 24 TPI one-pitch blade)"), warn);
+      assert.ok(warn.includes(`the chart's ${pitch} TPI isn't its finest pitch`) && warn.includes("(14/18, or a 24 TPI one-pitch blade)"), warn);
     }
     assert.doesNotMatch(warn, /finest blade you have \((?!14\/18)/, warn);
   }
   assert.ok(!run({ material: "s1018", thickness: "0.1" }).warnings.some((w) => /^Thin stock/.test(w)));
+});
+
+// One answer per screen. Metal thin is a size cutoff (3/32 in), not a tooth count: the chart puts 10/14 on tube wall up
+// to 1/8 in (USA Band Saw Blades Tooth Selection Guide p.23), so 0.1 in wall shows 1.2 teeth with no warning, and the
+// 0.09 in warning can't say "under 3 teeth" as its reason. Wood thin IS the tooth count (Olson: at least 3 teeth in
+// the cut), so whenever its warning says "under 3 teeth" the stat must show under 3 — 24 × 0.124 = 2.976 once read "3".
+test("saw-speed: a thin-stock warning never contradicts the tooth count on the same screen", () => {
+  for (const units of ["in", "mm"]) {
+    for (const [shape, thickness] of [["tube", "0.09"], ["tube", "0.1"], ["tube", "0.5"], ["round", "0.05"], ["flat", "0.12"], ["tube", "2"], ["tube", "2.5"]]) {
+      const out = run({ material: "s1018", shape, thickness }, units);
+      for (const w of out.warnings.filter((x) => /^Thin stock/.test(x))) assert.doesNotMatch(w, /3 teeth/, `${shape} ${thickness} ${units}: ${w}`);
+    }
+  }
+  const teeth = (out) => Number(out.stats.find((s) => s.label === "Blade to use").text.match(/about ([\d.]+) teeth in the cut/)?.[1]);
+  const cases = [["in", "0.124"], ["in", "0.123"], ["in", "0.1229"], ["in", "0.12499"], ["mm", "3.15"], ["mm", "3.17"], ["mm", "3"], ["in", "0.125"], ["mm", "3.175"]];
+  for (let t = 0.05; t < 0.75; t += 0.0007) cases.push(["in", t.toFixed(4)]);
+  for (let t = 1.2; t < 19; t += 0.013) cases.push(["mm", t.toFixed(3)]);
+  for (const [units, thickness] of cases) {
+    const out = run({ material: "oPlywood", thickness }, units);
+    const n = teeth(out);
+    if (!Number.isFinite(n)) continue; // hook tooth: no count shown
+    const thin = out.warnings.some((w) => /^Thin stock: under 3 teeth/.test(w));
+    assert.equal(n < 3, thin, `${thickness} ${units}: ${n} teeth shown, thin warning ${thin}`);
+    // the explain line carries the same figure as the stat
+    assert.ok(out.explain.find((e) => e.title === "Tooth pitch").plugged.includes(`about ${n} teeth`), thickness);
+  }
+  assert.match(run({ material: "oPlywood", thickness: "0.124" }).stats[1].text, /about 2\.9 teeth in the cut/);
+  assert.match(run({ material: "oPlywood", thickness: "3.15" }, "mm").stats[1].text, /about 2\.9 teeth in the cut/);
+  assert.match(run({ material: "oPlywood", thickness: "0.125" }).stats[1].text, /about 3 teeth in the cut/);
 });

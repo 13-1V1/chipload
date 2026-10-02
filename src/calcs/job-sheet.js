@@ -98,7 +98,7 @@ export default register({
     // cut fitted inside it. Every number below describes the cut as fitted.
     const work = mill ? "mill" : lathe ? "lathe" : "any";
     const m = machineFor(c, work);
-    const fit = fitToMachine(m, requestedRpm, iprIn, c, mill ? { check: "the chip load and flutes" } : {});
+    const fit = fitToMachine(m, requestedRpm, iprIn, c, mill ? { keep: "the chip load", check: "the chip load and flutes" } : { keep: "the feed per rev" });
     if (fit.cantRun) throw new Error(fit.problem);
     const rpm = fit.rpm, feedOut = fit.feedIpm;
     const spindleCapped = fit.rpmCapped || fit.feedCapped;

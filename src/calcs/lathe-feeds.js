@@ -43,7 +43,7 @@ export default register({
     const iprIn = toIn(v.ipr, c.units);
     const requestedRpm = rpmFromSfm(sfm, dIn);
     const m = machineFor(c, "lathe");
-    const fit = fitToMachine(m, requestedRpm, iprIn, c);
+    const fit = fitToMachine(m, requestedRpm, iprIn, c, { keep: "the feed per rev" });
     if (fit.cantRun) throw new Error(fit.problem);
     const { rpm, feedIpm: ipm } = fit;
     const slowed = fit.rpmCapped || fit.feedCapped;

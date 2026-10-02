@@ -6,7 +6,7 @@
 export const CALCULATION_SOURCES = Object.freeze({
   tapDrill: {
     title: "Tap drill guidance",
-    source: "At 75% thread with a cutting tap: the standard tap drill chart (inch: Machinery's Handbook / ASME B1.1 sizes; metric: ISO 2306). Metric fine pitches follow DIN 336 / ISO 2306, drill = D − P, or the next 0.1 mm size down where D − P isn't a stock drill. Any other percent, or a form tap, uses the percent-thread formula and the nearest stock drill (ASME B94.11M inch sizes, ISO 235 metric). Past either end of the drill chart it gives the size to bore or the micro drill to look for.",
+    source: "At 75% thread with a cutting tap: the standard tap drill chart (inch: Machinery's Handbook / ASME B1.1 sizes; metric: ISO 2306). Metric fine pitches follow DIN 13-2 to 13-11 and DIN 336 / ISO 2306, drill = D − P, or the next 0.1 mm size down where D − P isn't a stock drill; the 1.25 mm pitch takes D − 1.2 (M10x1.25 8.8 mm, M12x1.25 10.8 mm, M14x1.25 12.8 mm). Any other percent, or a form tap, uses the percent-thread formula and the nearest stock drill (ASME B94.11M inch sizes, ISO 235 metric). Past either end of the drill chart it gives the size to bore or the micro drill to look for.",
     confidence: "Shop starting point",
   },
   hardness: {
@@ -56,7 +56,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   saw: {
     title: "Band saw blades",
-    source: "LENOX Guide to Band Sawing p.21 bi-metal speed chart, with its size, cutting-fluid and heat-treat adjustments; tooth pitch from the USA Band Saw Blades Tooth Selection Guide p.23, checked against the LENOX tooth chart. Materials the LENOX chart doesn't list (aluminum, magnesium and zinc, plastics, other) get a typical speed range, placed by the material's rating; wood starts near 3,000 FPM (900 m/min) in a 2,500 to 5,000 FPM (760 to 1,520 m/min) range and uses a hook-tooth or regular-tooth wood blade, not the metal tooth chart.",
+    source: "LENOX Guide to Band Sawing p.21 bi-metal speed chart, with its size, cutting-fluid and heat-treat adjustments; tooth pitch from the USA Band Saw Blades Tooth Selection Guide p.23, checked against the LENOX tooth chart. Materials the LENOX chart doesn't list (aluminum, magnesium and zinc, plastics, other) get a typical speed range, placed by the material's rating; wood starts near 3,000 FPM (900 m/min) in a 2,500 to 5,000 FPM (760 to 1,520 m/min) range and uses a hook-tooth or regular-tooth wood blade, not the metal tooth chart. Wood tooth pitch: Olson Saw blade guide (olsonsaw.net), at least 3 teeth in the work; hook tooth, 4 TPI from 3/4 in (19 mm), 3–4 TPI from 1 in (25.4 mm); Laguna gives the same 3-tooth minimum.",
     confidence: "Blade maker's starting point",
   },
   centerDrill: {

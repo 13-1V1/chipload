@@ -128,7 +128,8 @@ export default register({
           if (blocked) warnings.push(`G-code not written: ${blocked}`);
           else warnings.push(...fit.warnings, `The program posts S${fmt(spindle, 0)} F${fmt(feed, feedPlaces(c.units))} (${c.L.feed}): the same feed per rev you asked for.`);
         }
-        warnings.push(...spindleSanity(v.spindle, m, "mill", c));
+        // Judge the S word the program posts (the fitted one once a cap applies), and only when one is written.
+        if (!blocked) warnings.push(...spindleSanity(spindle, m, "mill", c));
         const crawl = boltFeedCaution(v.feed, v.spindle, c.units);
         if (crawl) warnings.push(crawl);
       }

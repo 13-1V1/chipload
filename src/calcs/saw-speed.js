@@ -44,8 +44,11 @@ export default register({
     const spUnit = mm ? "m/min" : "FPM";
     const sp = (fpm) => `${fmt(fromSfm(fpm, c.units), 0)} ${spUnit}`;
     const size = `${fmt(v.thickness, p)} ${c.L.length}`;
+    // Thin stock is under 3 teeth, and the thin warning says so: round that count down, never up to "3"
+    // (24 TPI × 0.124 in = 2.976 shows 2.9, not 3). thin needs teethInCut < 3 − 1e-9, so the nudge can't reach 3.
+    const teethShown = (n) => fmt(blade.thin ? Math.floor(n * 10 + 1e-9) / 10 : n, 1);
     const woodText = () => (blade.tooth === "hook" ? `Hook tooth, about ${blade.tpi} TPI`
-      : `Regular tooth, about ${blade.tpi} TPI (about ${fmt(blade.teethInCut, 1)} teeth in the cut)`);
+      : `Regular tooth, about ${blade.tpi} TPI (about ${teethShown(blade.teethInCut)} teeth in the cut)`);
     const stats = [
       { label: "Speed range for this material", text: speed.basis === "chart" ? `${sp(speed.min)} dry – ${sp(speed.max)} with coolant` : `${sp(speed.min)} – ${sp(speed.max)}` },
       ...(wood ? [{ label: "Blade to use", text: woodText() }] : [
@@ -86,10 +89,14 @@ export default register({
     }
     // Names the same blades as the stats above, so the screen gives one answer. Thin tube wall (1/16–3/32 in) sits
     // on the chart's 10/14 row, which isn't its finest pitch: name the finer blades instead of calling 10/14 the finest.
+    // Metal thin is a size cutoff (THIN_STOCK_IN), not a tooth count: the chart leaves under 3 teeth on tube wall up to
+    // about 0.6 in on purpose, so the warning must not give "under 3 teeth" as its reason (0.1 in wall shows 1.2 teeth
+    // and no warning). It names no cutoff figure either — 3/32 in is 2.38125 mm, and any rounding of it would let a
+    // typed size on the cutoff contradict the text.
     const finest = TOOTH_CHART[shape][0][1];
     if (blade.thin) warnings.push(wood ? `Thin stock: under 3 teeth in the cut even on the finest common blade. Use the finest blade you have (${blade.tpi} TPI) and a light feed, or the teeth will catch.`
       : blade.pitch === finest ? `Thin stock: use the finest blade you have (${blade.pitch}, or a ${blade.constant} TPI one-pitch blade) and a light feed, or the teeth will catch.`
-      : `Thin stock: the chart's ${blade.pitch} TPI leaves under 3 teeth in the cut. Use a finer blade if you have one (${finest}, or a ${blade.constant} TPI one-pitch blade) and a light feed, or the teeth will catch.`);
+      : `Thin stock: the chart's ${blade.pitch} TPI isn't its finest pitch, and stock this thin wants the finest. Use a finer blade if you have one (${finest}, or a ${blade.constant} TPI one-pitch blade) and a light feed, or the teeth will catch.`);
     const notes = [`${spUnit} is how fast the blade's edge travels. Most small band saws run ${mm ? "900+ m/min" : "3,000+ FPM"} — fine for wood and aluminum, way too fast for steel. A saw that only does wood speeds needs a speed reducer to cut steel.`];
     if (speed.basis === "chart") notes.push("Speeds are for a bi-metal blade with flood coolant. Spray lube: 15% slower. No coolant: 30–50% slower. Carbon-steel blade: half speed.");
     // No pitch here: the "Blade to use" stat gives the one pitch for this thickness (a second figure here once disagreed)

@@ -47,10 +47,10 @@ export function chartFilter(cells, { threadToSize = false } = {}) {
   const names = cells.map((r) => nameForms(r[0] ?? ""));
   const all = cells.map((_, i) => i);
   const matches = (ts) => all.filter((i) => ts.every((t) => text[i].includes(t)));
-  return (query) => {
-    const term = normCodes(threadCallout(String(query ?? "").trim().toLowerCase()));
+  /** One spelling of the query: its words, the rows holding all of them, and the rows named by them. */
+  const read = (spelling) => {
+    const term = normCodes(threadCallout(spelling));
     let terms = term.split(/\s+/).filter(Boolean);
-    if (!terms.length) return all.map((i) => ({ i, hit: false }));
     let found = matches(terms);
     // A screw named by its thread ("1/4-20", "#10-32", "M8x1.25") in a chart listed by size: look up the size.
     if (!found.length && threadToSize && parseThreadSpec(term)) {
@@ -58,10 +58,26 @@ export function chartFilter(cells, { threadToSize = false } = {}) {
       found = matches(terms);
     }
     const typed = terms.join(" ").replace(/["″”]/g, "");
+    return { terms, found, named: new Set(found.filter((i) => names[i].includes(typed) || names[i].includes(terms.join(" ")))) };
+  };
+  return (query) => {
+    // What was typed, written the way size rows write it: ".25" is 0.25 ("1/4 SHCS", not every row with ".25"
+    // somewhere in it), "10mm" is "10 mm", "1/2 in" is 1/2"; or with the unit dropped, the way a row is named
+    // ("1/4 inch" → the 1/4 SHCS; in a chart of screws "10mm" is the M10). The first spelling that finds the row
+    // it names wins — "1/4 inch" must not stop at the #5 SHCS, whose counterbore is 1/4" — else the first that
+    // finds any rows ("G20 inch", a glossary's "1/4 inch", a note's "±.5").
+    const asTyped = String(query ?? "").trim().toLowerCase();
+    if (!asTyped) return all.map((i) => ({ i, hit: false }));
+    const dotted = asTyped.replace(/(^|[\s-])\.(?=\d)/g, "$10.");
+    const withUnit = dotted.replace(/(^|\s)(\d[\d./-]*)\s*mm\b/g, "$1$2 mm")
+      .replace(/(^|\s)(\d[\d./-]*)\s*(?:inch(?:es)?|in)\b/g, '$1$2"');
+    const bare = dotted.replace(/(^|\s)(\d[\d./-]*)\s*(?:mm|millimet(?:er|re)s?|inch(?:es)?|in|["″”])(?=\s|$)/g, "$1$2");
+    const metric = threadToSize && dotted.match(/^(\d+(?:\.\d+)?)\s*(?:mm|millimet(?:er|re)s?)$/);
+    const reads = [...new Set([withUnit, dotted, asTyped, bare, metric ? `m${metric[1]}` : ""])].filter(Boolean).map(read);
+    const { terms, found, named } = reads.find((r) => r.named.size) || reads.find((r) => r.found.length) || reads[0];
     // The row named what was typed comes first and alone is highlighted ("1/4" → 1/4" (E), not 6.2 mm, whose
     // nearest 64th is also 1/4). With no such row, exact matches in any column are highlighted. Then rows whose
     // name starts with what was typed ("1/4" → the 1/4 bolt before #5, whose counterbore is 1/4"), then the rest.
-    const named = new Set(found.filter((i) => names[i].includes(typed) || names[i].includes(terms.join(" "))));
     const exact = [], near = [], leading = [], partial = [];
     for (const i of found) {
       const isNamed = named.has(i);

@@ -4,7 +4,7 @@
 // Thread data lookup. Free: basic geometry and tap drill. Pro: class-of-fit limits (estimate).
 
 import { register } from "../app/registry.js";
-import { basicThreadGeometry, unToleranceEnvelope, lookupUnThread, lookupMetricThread, baseSeries } from "../core/thread.js";
+import { basicThreadGeometry, unToleranceEnvelope, metricToleranceEnvelope, lookupUnThread, lookupMetricThread, baseSeries } from "../core/thread.js";
 import { lookupTapDrillUN, lookupTapDrillMetric, tapDrillByPercent, percentThreadForDrill } from "../core/tapdrill.js";
 import { nearestDrillInch, nearestDrillMm, DRILL_MIN_IN, DRILL_MAX_IN, DRILL_MIN_MM, DRILL_MAX_MM } from "../core/drills.js";
 import { fmt } from "../core/format.js";
@@ -27,6 +27,21 @@ function figuredTapDrill(t, nat, len) {
   if (hole < smallest && percentThreadForDrill(nat.major, nat.pitch, smallest) < 55) return `Micro drill ${len(hole, 4, 3)} · under the drill chart`;
   const drill = t.isUn ? nearestDrillInch(hole) : nearestDrillMm(hole);
   return `${drill.label}${t.isUn && nat.mm ? ` (${len(drill.size, 4, 3)})` : ""} · figured`;
+}
+
+/** Where a metric thread's class limits are: point to Metric thread limits only for the classes ISO 965-1 defines
+ * at this size and pitch (M1–M355, 0.2–8 mm; no 6H at 0.2 and 0.25 mm), the same check Measure over wires makes. */
+function metricLimitsNote(t) {
+  let env;
+  try { env = metricToleranceEnvelope({ major: t.major, pitch: t.pitch }); }
+  // an out-of-range pitch already carries the thread's own "Check the pitch." caution; don't repeat it here
+  catch { return "ISO 965-1 has no class limits for this size and pitch (M1 to M355, 0.2 to 8 mm pitch)."; }
+  const have = [env.external?.label, env.internal?.label].filter(Boolean);
+  if (!have.length) return "ISO 965-1 has no 6g or 6H class limits for this pitch.";
+  // ISO 965-1 grades the nut's pitch diameter only 4 and 5 at 0.25 mm pitch, and only 4 at 0.2 mm
+  const finer = t.pitch < 0.25 ? "4H" : "4H or 5H";
+  const missing = !env.internal ? ` ISO 965-1 has no 6H for a ${fmt(t.pitch, 3)} mm pitch; use ${finer} there.` : "";
+  return `${have.join(" / ")} class limits (ISO 965-1): see Metric thread limits.${missing}`;
 }
 
 export default register({
@@ -103,7 +118,7 @@ export default register({
         // the B1.1 note goes with the B1.1 table, which only an inch thread gets; ISO 965 limits live in their own tool
         ...(t.isUn
           ? ["Class limits are ASME B1.1-2003 Table 2: the tolerance formulas, rounded per ASME B1.30 the way that table is. Standard-series threads match it; for a special, check the standard before you accept parts on it."]
-          : ["6g / 6H class limits (ISO 965-1): see Metric thread limits."]),
+          : [metricLimitsNote(t)]),
       ],
       historyLabel: series || t.label,
     };

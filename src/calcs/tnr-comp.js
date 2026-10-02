@@ -155,7 +155,7 @@ export default register({
         "Use G41/G42 for arcs. Tip-programming an arc without comp needs the endpoints shifted the same way as a chamfer — every point along the arc is a different angle.",
         "Arcs are written the Fanuc/Haas way (X up, toward the chuck is Z minus). Front- and rear-turret lathes run the same program.",
       ],
-      historyLabel: `${S} ${convex ? "corner" : "fillet"} R${G(R)} · r ${fmt(r, dp)} ${u}`,
+      historyLabel: `${S} ${convex ? "corner" : "fillet"} R${fmt(R, dp)} ${u} · r ${fmt(r, dp)} ${u}`,
     };
   },
 });

@@ -74,7 +74,7 @@ export default register({
       if (outside(eIn)) throw new Error(`A reading of ${show(mIn)} ${u} doesn't fit a ${t.label}: it works out to a pitch diameter of ${show(eIn)} ${u}, and that has to fall between ${windowText}. Check the units, the wire size and the reading.`);
     }
     const warnings = t.caution ? [t.caution] : [];
-    if (wireIn < range.min || wireIn > range.max) warnings.push(`Wire ${fmt(v.wire, p)} ${u} is outside the usable range ${show(range.min)}–${show(range.max)} ${u} for this pitch: it won't sit on the flanks right.`);
+    if (wireIn < range.min || wireIn > range.max) warnings.push(`Wire ${show(wireIn, p + 1)} ${u} is outside the usable range ${show(range.min)}–${show(range.max)} ${u} for this pitch: it won't sit on the flanks right.`);
 
     // Class limits for the side being checked: 2A / 2B (ASME B1.1) or 6g / 6H (ISO 965)
     let limits = null;
@@ -128,7 +128,8 @@ export default register({
       if (v.mode === "e" && eIn > pdHiIn + slackIn) warnings.push(`Pitch diameter ${showPast(eIn, pdHi, false)} ${u} is over the ${limits.cls} maximum ${pdHi} ${u}: the thread is ${ext ? "oversize (a GO ring won't go on)" : "loose (cut too deep)"}.`);
     }
     const K = 0.86603;
-    const w = show(wireIn), pp = show(t.pitchIn), e = show(eIn), m = show(mIn);
+    // the wire to the place it is marked (as in "Wire used"), so the plugged numbers add up by hand
+    const w = show(wireIn, p + 1), pp = show(t.pitchIn), e = show(eIn), m = show(mIn);
     return {
       primary: v.mode === "m"
         ? { label: `Measurement over ${ext ? "wires" : "balls"}`, value: fromIn(mIn, c.units), unit: u, places: p }
@@ -141,7 +142,7 @@ export default register({
           : { title: "Between balls (internal, 60°)", formula: "M = E − 3W + 0.86603 P", plugged: v.mode === "m" ? `M = ${e} − 3 × ${w} + 0.86603 × ${pp} = ${m} ${u}` : `E = M + 3W − 0.86603 P = ${m} + 3 × ${w} − 0.86603 × ${pp} = ${e} ${u}` },
       ],
       notes: [`Lead-angle correction is ignored; it is under ${c.units === "mm" ? "0.003 mm" : "0.0001 in"} for most single-start threads.`, `K = ${K}`],
-      historyLabel: `${t.label} · ${ext ? "ext" : "int"} · W ${fmt(v.wire, p)} ${u}`,
+      historyLabel: `${t.label} · ${ext ? "ext" : "int"} · W ${show(wireIn, p + 1)} ${u}`,
     };
   },
 });

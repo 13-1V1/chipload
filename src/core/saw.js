@@ -74,7 +74,11 @@ export function bladeForStock(thicknessIn, shape = "round") {
   return { pitch, coarse, fine, mean, teethInCut: mean * thicknessIn, constant, thin };
 }
 
-/** Stock under 3/32 in: fewer than 3 teeth in the cut even on the chart's finest blade, so it gets the finest you can buy. */
+/**
+ * Metal stock under 3/32 in is thin: it gets the finest one-pitch blade you can buy (24 TPI) and the thin-stock warning.
+ * A size cutoff, not a tooth count — the tooth chart leaves under 3 teeth on tube wall well past this (10/14 on 0.1 in
+ * wall is 1.2 teeth), so text keyed to it must not give "under 3 teeth" as the reason.
+ */
 export const THIN_STOCK_IN = 3 / 32;
 
 /**

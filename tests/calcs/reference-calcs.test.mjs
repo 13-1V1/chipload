@@ -435,5 +435,8 @@ test("reference tools: history labels give lengths with their unit", () => {
     }
   }
   assert.equal(run("true-position", { dx: "0.003", dy: "0.004", tol: "0.014" }).out.historyLabel, "Δ0.003, 0.004 → 0.01 in");
-  assert.equal(run("thermal", { material: "steel", length: "250", from: "20", to: "37.75" }, "mm").out.historyLabel, "Carbon / alloy steel 250 mm · 20→37.8 °C");
+  assert.equal(run("thermal", { material: "steel", length: "250", from: "20", to: "37.75" }, "mm").out.historyLabel, "Carbon / alloy steel 250 mm · 20→37.75 °C");
+  // the label shows temperatures as typed, the way the ΔT stat does (it once rounded 0.25 to 0.3)
+  assert.equal(run("thermal", { material: "steel", length: "250", from: "-0.5", to: "0.25" }, "mm").out.historyLabel, "Carbon / alloy steel 250 mm · -0.5→0.25 °C");
+  assert.equal(run("thermal", {}, "in").out.historyLabel, "Carbon / alloy steel 10 in · 68→100 °F");
 });

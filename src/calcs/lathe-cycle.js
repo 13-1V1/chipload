@@ -12,7 +12,7 @@ import { machineFor, fitToMachine, maxRpmOf, maxFeedIpmOf, maxRpmAtFeed, spindle
 
 /** The fitted cut, or the plain reason it can't run (one turn already moves more than the machine's top feed). */
 function fitted(m, rpm, iprIn, c) {
-  const fit = fitToMachine(m, rpm, iprIn, c);
+  const fit = fitToMachine(m, rpm, iprIn, c, { keep: "the feed per rev" });
   if (fit.cantRun) throw new Error(fit.problem);
   return fit;
 }
