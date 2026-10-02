@@ -407,3 +407,49 @@ test("center drill depth includes the drill point, and the picker reads in mm on
   const opts = def.inputs.find((i) => i.id === "size").options({}, ctx("mm"));
   assert.match(opts.find((o) => o.value === "#3").label, /body 6\.35 mm/);
 });
+
+// ── fix round 3 ──
+
+// One rating rule in both tools (drillFeedFactor, _advice.js): a family-scale rating is read on its own scale,
+// so aluminum, magnesium/zinc, plastics and copper alloys rated 80+ take 1.25×. Machinery's Handbook feed at
+// 1/2 in is 0.007 in/rev, so 6061 and C360 get 0.00875; 1018 (B1112 scale, 70%) gets 0.007 × 0.85.
+test("feeds-drill and the job sheet give one drill feed per rev for the same drill and material", () => {
+  near(stat(run("feeds-drill", { diameter: "0.5", material: "al6061" }), /^Feed per rev/).value, 0.00875, 1e-12);
+  near(stat(run("feeds-drill", { diameter: "0.5", material: "c360" }), /^Feed per rev/).value, 0.00875, 1e-12);
+  for (const units of ["in", "mm"]) {
+    const diameter = units === "in" ? "0.5" : "12";
+    for (const material of ["al6061", "c360", "mgAZ31", "pAcetal", "s1018", "ss304", "ti64"]) {
+      for (const toolType of ["hss", "carbide"]) {
+        const drill = stat(run("feeds-drill", { diameter, material, toolType }, units), /^Feed per rev/).value;
+        const sheet = stat(run("job-sheet", { op: "drill", diameter, material, toolType }, units), /^Feed per rev/).value;
+        near(drill, sheet, 1e-12, `${material} ${toolType} ${units}`);
+      }
+    }
+  }
+});
+
+// The 75% limit is the thread mill makers' rule against the thread's major diameter, and the warning says so:
+// 1/4-20 → 0.75 × 0.25 = 0.1875 in; M6x1 → 4.5 mm.
+test("thread mill: the oversize-cutter warning names the major diameter and the limit in the units on screen", () => {
+  const inch = run("thread-mill", { thread: "1/4-20", cutter: "0.19" }).warnings.join(" | ");
+  assert.match(inch, /over 75% of the thread's major diameter \(0\.1875 in max\)/);
+  assert.doesNotMatch(inch, /hole size/);
+  const mm = run("thread-mill", { thread: "M6x1", cutter: "4.8" }, "mm").warnings.join(" | ");
+  assert.match(mm, /major diameter \(4\.5 mm max\)/);
+  // a centerline feed no whole RPM can move points at the inputs this screen has
+  assert.throws(() => run("thread-mill", { side: "external", chip: "1.5" }, "in", { name: "Tiny", maxRpm: 1, maxFeed: 1, units: "in", type: "mill" }), /Check the chip load and flutes, or the max feed in Shop/);
+});
+
+// Synchronized tapping: feed = RPM × lead (Machinery's Handbook). 1/4-20 at 500 RPM = 25 IPM; M8x1.25 at 500 RPM
+// = 625 mm/min. A tap has no chip load: a slowed spindle keeps feed per rev equal to the lead, and says that.
+test("tapping feed: published feeds, and machine warnings talk about the lead, not a chip load", () => {
+  near(run("tapping-feed", { thread: "1/4-20", rpm: "500" }).primary.value, 25, 1e-9);
+  near(run("tapping-feed", { thread: "M8x1.25", rpm: "500" }, "mm").primary.value, 625, 1e-9);
+  const lathe = { name: "ST-10", type: "lathe", maxRpm: 400, maxFeed: 10, units: "in" };
+  const fed = run("tapping-feed", { thread: "1/2-13", rpm: "500" }, "in", lathe).warnings.join(" | ");
+  assert.match(fed, /drops to 130 RPM to keep feed per rev equal to the thread lead/);
+  const capped = run("tapping-feed", { thread: "1/4-20", rpm: "500" }, "in", { ...lathe, maxFeed: 0 }).warnings.join(" | ");
+  assert.match(capped, /Feed is figured at 400 RPM to keep feed per rev equal to the thread lead/);
+  assert.doesNotMatch(fed + capped, /chip load/);
+  assert.throws(() => run("tapping-feed", { thread: "1/2-13" }, "in", { name: "Tiny", maxRpm: 1, maxFeed: 0.05, units: "in" }), /Check the thread, or the max feed in Shop/);
+});

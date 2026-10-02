@@ -4,43 +4,60 @@
 // Search-first home: match calculators by title/keywords, and recognize typed values
 // ("1/4-20", "0.201", "10mm", "8.5 mm", "1 1/4") so the user lands in a tool with the value filled in.
 
-import { parseThreadSpec } from "../core/thread.js";
-import { parseFraction } from "../core/format.js";
+import { lookupUnThread, parseThreadSpec } from "../core/thread.js";
+import { parseFraction, splitUnit } from "../core/format.js";
+import { UNIT_LABEL } from "./settings.js";
+import { chartCells, chartFilter, threadCallout } from "./chart-filter.js";
 
 // What a material word in a question is asking for: how fast to cut it, or the material itself.
 const MATERIAL_WORDS = /\b(?:aluminum|aluminium|alum|steel|stainless|ss|brass|bronze|copper|titanium|ti|inconel|cast iron|iron|plastic|delrin|acetal|nylon|hdpe|uhmw|acrylic|tool steel|mild steel)\b/g;
+/** The words a material stands for. Optional: they add points, but "brass tap" still finds the tap tools. */
+const MATERIAL_TERMS = ["material", "speed"];
+// Words that only go with a fastener: nobody counterbores to a number-drill size (ASME B18.3 lists #10 by its screw).
+const SCREW_CONTEXT = /\b(?:counterbore|cbore|c-bore|clearance|spot\s*-?\s*faces?|spotface)\b/;
+/** A bare "#10": a screw next to counterbore/clearance words, a number drill next to "drill" or alone, else nothing. */
+const numberedSize = (m, ...rest) => {
+  const all = rest[rest.length - 1];
+  if (SCREW_CONTEXT.test(all)) return "cap screw";
+  return /\bdrill/.test(all) || all.trim() === m.trim() ? "number drill" : " ";
+};
 // How beginners type it → the words the catalog uses.
 const SYNONYMS = [
   [/\bband\s*-?\s*saws?\b|\bbandsaws?\b/g, "band saw"], [/\bhack\s*saws?\b/g, "hacksaw"], [/\bchop\s*saw\b|\bcut\s*-?\s*off\s*saw\b/g, "cutoff saw"],
+  [/\bend\s*-?\s*mills?\b|\bendmills?\b/g, "end mill"],
   [/\bdrill\s*bits?\b/g, "drill"], [/\bbits?\b/g, "drill"], [/\bhow fast\b|\bspeeds?\b/g, "speed"], [/\bspindle\s*speed\b|\bspins?\b/g, "rpm"],
   [/\bfeed\s*rates?\b|\bfeedrate\b/g, "feed"], [/\bcounter\s*bores?\b/g, "counterbore"], [/\bcounter\s*sinks?\b/g, "countersink"],
   [/\bmillimet(?:er|re)s?\b/g, "mm"], [/\binches\b/g, "inch"], [/\bhole\s*size\b/g, "hole"], [/\bconvert(?:ing|er)?\b/g, "convert"], [/\bangles?\b/g, "angle"],
-  [MATERIAL_WORDS, "material speed"],
   // a numbered size ("#7", "#10") next to what it is: a number drill or a screw
-  [/#\s?\d{1,2}\s+drills?\b/g, "number drill"], [/#\s?\d{1,2}\s+(?:socket head\s+)?(?:cap\s+)?(?:screws?|bolts?|shcs)\b/g, "cap screw"], [/#\s?\d{1,2}\b/g, "number drill"],
+  [/#\s?\d{1,2}\s+drills?\b/g, (...a) => (SCREW_CONTEXT.test(a[a.length - 1]) ? "cap screw" : "number drill")], [/#\s?\d{1,2}\s+(?:socket head\s+)?(?:cap\s+)?(?:screws?|bolts?|shcs)\b/g, "cap screw"], [/#\s?\d{1,2}\b/g, numberedSize],
 ];
 const STOP = new Set(["a", "an", "the", "for", "to", "of", "my", "i", "do", "what", "which", "is", "in", "on", "with", "and", "or", "size", "me", "need", "want", "find", "get", "how", "will", "it", "take", "much", "should", "can", "does", "be", "this", "that", "at", "from", "into", "use", "using", "run", "set"]);
+/** The query in the catalog's words: { terms } every listed tool must mostly match, { optional } that only add points. */
 function normalizeQuery(q) {
   let t = String(q).toLowerCase();
+  const material = t.search(MATERIAL_WORDS) >= 0;
+  t = t.replace(MATERIAL_WORDS, " ");
   for (const [re, rep] of SYNONYMS) t = t.replace(re, rep);
-  return t;
+  const terms = [...new Set(t.split(/\s+/).filter((w) => w && !STOP.has(w)))];
+  const optional = material ? MATERIAL_TERMS.filter((w) => !terms.includes(w)) : [];
+  // A material alone ("aluminum") is the whole question: how fast to cut it, or the material itself.
+  return terms.length ? { terms, optional } : { terms: optional, optional: [] };
 }
 
 const hayFor = (def) => `${def.title} ${def.short || ""} ${(def.keywords || []).join(" ")} ${def.category}`.toLowerCase();
-/** Points for the words a tool matches, and whether it matched every one. */
-function score(def, terms) {
+/** Points for the words a tool matches, and whether it matched every one. Optional words only add points. */
+function score(def, terms, optional = []) {
   const hay = hayFor(def);
   const title = def.title.toLowerCase();
+  const points = (t) => (title.startsWith(t) ? 5 : title.includes(t) ? 3 : hay.includes(t) ? 1 : 0);
   let s = 0, matched = 0;
   for (const t of terms) {
-    if (title.startsWith(t)) s += 5;
-    else if (title.includes(t)) s += 3;
-    else if (hay.includes(t)) s += 1;
-    else continue;
-    matched++;
+    const p = points(t);
+    if (p) { s += p; matched++; }
   }
   // A sentence rarely uses every word the catalog does: most of the words is enough to be listed.
   if (!matched || matched < Math.ceil(terms.length / 2)) return { s: 0, full: false };
+  for (const t of optional) s += points(t);
   return { s, full: matched === terms.length };
 }
 
@@ -50,15 +67,76 @@ const NUMBERISH = /^-?\d[\d.,/]*(?:mm|in|")?$/i;
 const HYPHEN_MIXED = /^(\d+)-(\d+\/\d+)((?:mm|in|")?)$/i; // "1-1/4" (a size, not a thread: no TPI after it)
 const isValue = (t) => !!parseThreadSpec(t) || NUMBERISH.test(t) || HYPHEN_MIXED.test(t);
 
+const NUMBERED = /^#\d{1,2}$/; // "#10": a screw or number-drill size, not a value on its own
+const FLUTE_WORD = /^(?:flutes?|fl|fluted)$/i;
+/**
+ * A thread typed with a space before its pitch ("M10 1.25", "1/4 28", "#10 32"), read the way the chart filter
+ * reads it: "M10x1.25", "1/4-28", "#10-32". An inch pitch must be a whole TPI that ASME B1.1 lists for that size
+ * (1/2-8 isn't: 8-UN starts at 1 in), and a pitch followed by a flute word is a flute count ("3/4 10 flute",
+ * "1/2 2 flute" stay sizes). Null when the words aren't one thread.
+ */
+function spacedThread(size, pitch, after) {
+  if (!pitch || !/^\d*\.?\d+$/.test(pitch) || !/^(?:m\d|\d*\.\d|\d+\/\d|#\d)/i.test(size)) return null;
+  if (FLUTE_WORD.test(after || "")) return null;
+  const joined = threadCallout(`${size} ${pitch}`.toLowerCase());
+  const t = joined.includes(" ") ? null : parseThreadSpec(joined);
+  // A pitch thread.js cautions on ("M10 3": coarser than any standard thread) is two words, not one thread.
+  if (!t || t.caution || (t.system === "un" && (!/^\d+$/.test(pitch) || !lookupUnThread(t.major, t.tpi)))) return null;
+  return joined.replace(/^m/, "M");
+}
+
+const SEPARATOR = /^[x×-]$/i; // "M10 x 1.25", "M10 × 1.25", "1/4 - 20": ISO's spaced spelling
+const SEPARATED_PITCH = /^[x×](\d*\.?\d+)$/i; // "M10 x1.25"
+/** The thread starting at tokens[i], with or without a spaced separator: { text, len } (tokens used), or null. */
+function threadTokens(tokens, i) {
+  const [size, next, after, after2] = tokens.slice(i, i + 4);
+  if (SEPARATOR.test(next || "")) {
+    const text = spacedThread(size, after, after2);
+    return text ? { text, len: 3 } : null;
+  }
+  const glued = (next || "").match(SEPARATED_PITCH);
+  const text = spacedThread(size, glued ? glued[1] : next, after);
+  return text ? { text, len: 2 } : null;
+}
+
 /** The typed value as one piece: its tokens' index range and its text ("1-1/4" written "1 1/4"). */
 function valueSpan(tokens) {
-  const start = tokens.findIndex(isValue);
+  const threadAt = (i) => threadTokens(tokens, i);
+  let start = tokens.findIndex((t) => isValue(t) || NUMBERED.test(t));
   if (start < 0) return null;
+  let thread = threadAt(start);
+  // A "#10" with no pitch after it is read from the words around it (numberedSize); look past it for a value.
+  if (!thread && NUMBERED.test(tokens[start])) {
+    const from = start;
+    start = tokens.findIndex((t, i) => i > from && isValue(t));
+    if (start < 0) return null;
+    thread = threadAt(start);
+  }
+  if (thread) return { start, end: start + thread.len, text: thread.text };
   let end = start + 1;
   if (/^\d+$/.test(tokens[start]) && /^\d+\/\d+/.test(tokens[end] || "")) end++;
   if (UNIT_WORD.test(tokens[end] || "")) end++;
   const text = tokens.slice(start, end).join(" ").replace(HYPHEN_MIXED, "$1 $2$3");
   return { start, end, text };
+}
+
+const INCH_CTX = { units: "in", L: UNIT_LABEL.in, settings: { units: "in", pro: true } };
+const listsThread = new Map();
+/**
+ * Whether a chart opened from search should be filtered to `size`. A thread callout only goes to a chart that
+ * looks a thread up by its screw size (shcs: def.threadToSize) or has the thread as a row of its own (tap drill,
+ * thread charts). The drill chart gets no "1/4-20": its 1/4" drill is no tap drill for it (#7 is, Machinery's Handbook).
+ */
+function chartTakes(def, size) {
+  if (def.threadToSize || !parseThreadSpec(size)) return true;
+  const key = `${def.id}|${size}`;
+  if (!listsThread.has(key)) {
+    let found = false;
+    try { found = chartFilter(chartCells(def, INCH_CTX).cells)(size).length > 0; } catch { /* a chart that can't draw its rows here */ }
+    if (listsThread.size > 200) listsThread.clear();
+    listsThread.set(key, found);
+  }
+  return listsThread.get(key);
 }
 
 /**
@@ -83,7 +161,7 @@ export function searchCalcs(query, defs) {
   }
 
   const rest = span ? [...rawTokens.slice(0, span.start), ...rawTokens.slice(span.end)] : rawTokens;
-  const terms = [...new Set(normalizeQuery(rest.join(" ")).split(/\s+/).filter((t) => t && !STOP.has(t)))];
+  const { terms, optional } = normalizeQuery(rest.join(" "));
   // A bare grade or angle nobody claimed as a value ("6061", "304", "118") still finds tools that list it.
   const loose = span && /^\d{2,}$/.test(span.text) && !prefills.size ? span.text : null;
   // A size typed next to a chart's name opens that chart filtered to it ("#7 drill", "3/8 bolt clearance").
@@ -91,12 +169,12 @@ export function searchCalcs(query, defs) {
   const phrase = terms.join(" ");
   for (const def of defs) {
     const hay = hayFor(def);
-    const { s: kw, full } = terms.length ? score(def, terms) : { s: 0, full: false };
+    const { s: kw, full } = terms.length ? score(def, terms, optional) : { s: 0, full: false };
     const bonus = (phrase && hay.includes(phrase) ? 4 : 0) + (full ? 10 : 0) + (loose && new RegExp(`\\b${loose}\\b`).test(hay) ? 1 : 0);
     let hit = prefills.get(def);
     // A value only outranks the words around it when there are no other words, or this tool matches all of them.
     const pre = hit ? ((!terms.length || full) ? 50 : 1) : 0;
-    if (!hit && def.view === "chart" && size && kw > 0) hit = { params: { q: size }, label: size };
+    if (!hit && def.view === "chart" && size && kw > 0 && chartTakes(def, size)) hit = { params: { q: size }, label: size };
     const s = pre + kw + bonus;
     if (s > 0) out.push({ def, s, params: hit?.params, prefillLabel: hit?.label });
   }
@@ -105,13 +183,12 @@ export function searchCalcs(query, defs) {
   return out.sort((a, b) => b.s - a.s || rank(a) - rank(b) || (a.def.pro ? 1 : 0) - (b.def.pro ? 1 : 0)).slice(0, 12);
 }
 
-/** Helpers calculators use inside prefill(). */
+/** Helpers for reading a typed value: the same parsers the tools run (a size is splitUnit + parseFraction, as in fraction-converter's readSize). */
 export const recognize = Object.freeze({
   thread: (q) => parseThreadSpec(q),
   number: (q) => {
-    const m = String(q).trim().match(/^(-?[\d\s/.,-]*?[\d.])\s*(in|inch|inches|"|mm|millimet(?:er|re)s?)?$/i);
-    if (!m) return null;
-    const v = parseFraction(m[1].trim().replace(/^(\d+)-(\d+\/\d+)$/, "$1 $2"));
-    return Number.isFinite(v) ? { value: v, unit: m[2] ? (m[2].toLowerCase().startsWith("m") ? "mm" : "in") : null } : null;
+    const s = splitUnit(q);
+    const v = s ? parseFraction(s.number) : NaN;
+    return Number.isFinite(v) ? { value: v, unit: s.unit } : null;
   },
 });

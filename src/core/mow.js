@@ -6,6 +6,7 @@
 // simplified formula (no lead-angle correction): M = E + 3W − 0.86603 P.
 
 import { WIRE_SET_INCH, WIRE_SET_MM } from "../data/drills.js";
+import { BASIC_EXTERNAL_MINOR_FACTOR } from "./thread.js";
 
 const K = Math.sqrt(3) / 2;
 
@@ -61,5 +62,5 @@ export function stockWire(pitch, units = "in") {
  * and the major diameter. A solved or typed PD outside it can't belong to the named thread.
  */
 export function pitchDiameterWindow(major, pitch) {
-  return { min: major - 1.2268693 * pitch, max: major };
+  return { min: major - BASIC_EXTERNAL_MINOR_FACTOR * pitch, max: major };
 }

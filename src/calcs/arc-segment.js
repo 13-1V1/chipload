@@ -38,14 +38,19 @@ export default register({
     if ((k1 === "angle" && v.a >= 360) || (k2 === "angle" && v.b >= 360)) throw new Error("Angle has to be less than 360°");
     const s = circularSegment({ [k1]: v.a, [k2]: v.b });
     if (![s.radius, s.chord, s.height, s.angle, s.arcLength, s.area].every(Number.isFinite)) throw new Error("Those two values don't describe an arc");
+    // Every pair holds to the same limit as a typed angle: a full circle is not a segment.
+    if (s.angle >= 360) throw new Error("Angle has to be less than 360°");
     const notes = ["Measuring a radius on a part: lay a rule across (chord) and measure the gap at the middle (height)."];
     // A radius and a chord fit two arcs; the short one is shown, so name the long one too (not for a half circle — they're the same).
     if (v.pair === "radius,chord" && s.angle < 180 - 1e-9) {
       const major = 360 - s.angle;
       notes.unshift(`This is the short arc. The same radius and chord also make the long arc: ${fmt(major, 3)}°, height ${fmt(2 * s.radius - s.height, p)} ${c.L.length}, arc length ${fmt(s.radius * major * Math.PI / 180, p)} ${c.L.length}. For that one, use Radius + Height.`);
     }
+    // The answer is a number the user didn't type: radius + chord gives the height, the other radius pairs the
+    // chord, and every pair without the radius gives the radius.
+    const [label, value] = v.pair === "radius,chord" ? ["Height (sagitta)", s.height] : k1 === "radius" ? ["Chord", s.chord] : ["Radius", s.radius];
     return {
-      primary: { label: k1 === "radius" || k2 === "radius" ? "Chord" : "Radius", value: k1 === "radius" || k2 === "radius" ? s.chord : s.radius, unit: c.L.length, places: p },
+      primary: { label, value, unit: c.L.length, places: p },
       stats: [
         { label: "Radius", value: s.radius, unit: c.L.length, places: p },
         { label: "Diameter", value: s.radius * 2, unit: c.L.length, places: p },

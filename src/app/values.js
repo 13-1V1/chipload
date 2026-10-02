@@ -76,12 +76,32 @@ export function convertedText(v, measure, units) {
   return fmt(v, 12);
 }
 
-// What was typed before a unit switch, keyed by the text the switch wrote. Flipping straight back gives the
-// user's own text again (10.25 mm → 0.4035 in → 10.25 mm, not 10.249). Any edit in between changes the key.
+// What was typed before a unit switch. Flipping straight back gives the user's own text again
+// (10.25 mm → 0.4035 in → 10.25 mm, not 10.249). On screen the memory belongs to one field (`field` =
+// "<tool>|<input>") and holds only that field's last switch: another field, or another tool, that happens to
+// show 0.4035 converts fresh (10.249). The screen calls forgetFlip(field) on every edit (keys, pad, a chip, Reset,
+// a history row), so a field the user touched converts fresh even when the edit ends on the same text the switch wrote.
+// Callers that name no field (tests, a whole saved job) share one memory per kind, keyed by the text the switch wrote.
 const typedBefore = new Map();
+const fieldBefore = new Map();
+
+/** The user changed this field ("<tool>|<input>"): its text is theirs now, so the next switch converts it fresh. */
+export function forgetFlip(field) {
+  fieldBefore.delete(field);
+}
 
 /** Convert `text` with `convert`, unless it is the untouched result of the opposite switch: then hand back the original. */
-export function convertRemembering(kind, text, from, to, convert) {
+export function convertRemembering(kind, text, from, to, convert, field) {
+  const typed = String(text).trim();
+  if (field) {
+    const last = fieldBefore.get(field);
+    if (last && last.kind === kind && last.units === from && last.text === typed && last.before.units === to) return last.before.text;
+    const out = convert(text);
+    if (out !== text) fieldBefore.set(field, { kind, units: to, text: String(out).trim(), before: { units: from, text } });
+    else fieldBefore.delete(field);
+    if (fieldBefore.size > 500) fieldBefore.delete(fieldBefore.keys().next().value);
+    return out;
+  }
   const key = (units, t) => `${kind}|${units}|${String(t).trim()}`;
   const before = typedBefore.get(key(from, text));
   if (before && before.units === to) return before.text;
@@ -97,18 +117,22 @@ export function convertRemembering(kind, text, from, to, convert) {
  * Re-express typed text when the unit system flips, so the number keeps meaning the same cut:
  * lengths and feeds ×25.4, surface speed SFM ⇄ m/min, temperature °F ⇄ °C.
  * Blank text, text that isn't a number, and unitless measures are returned as they came.
+ * `field` ("<tool>|<input>") keeps the flip-back memory to that one field.
  */
-export function convertForUnits(measure, text, from, to) {
+export function convertForUnits(measure, text, from, to, field) {
   if (from === to || String(text ?? "").trim() === "" || !STEP[measure]) return text;
   return convertRemembering(measure, text, from, to, (t) => {
     const v = measure === "length" ? parseDimension(t, from) : measure === "temp" ? parseTemp(t, from) : parseFraction(t);
     return Number.isFinite(v) ? convertedText(toSystem(measure, v, to), measure, to) : t;
-  });
+  }, field);
 }
 
-/** One field's text moved from one unit system to the other. A field can bring its own convert(text, from, to). */
-export function convertInput(input, text, from, to, raw) {
-  return typeof input.convert === "function" ? input.convert(text, from, to) : convertForUnits(measureOf(input, raw), text, from, to);
+/**
+ * One field's text moved from one unit system to the other. A field can bring its own convert(text, from, to, field).
+ * The screen passes `field` ("<tool>|<input>") so a flip straight back restores only that field's own typing.
+ */
+export function convertInput(input, text, from, to, raw, field) {
+  return typeof input.convert === "function" ? input.convert(text, from, to, field) : convertForUnits(measureOf(input, raw), text, from, to, field);
 }
 
 /**

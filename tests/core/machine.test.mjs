@@ -113,3 +113,26 @@ test("a feed cap that divides evenly lands on the whole RPM, not one under it", 
   assert.equal(maxRpmAtFeed({ ...bp, maxRpm: 150 }, 0.035), 150);
   assert.equal(maxRpmAtFeed(bp, 40), 0);
 });
+
+// ── fix round 3 ──
+
+// A profile saved with Max spindle blank (0 = no limit) has no top speed to go on: the sanity line still
+// applies, and says to add the top speed in Shop.
+test("spindle sanity: a profile with no max spindle still warns past what most machines turn", () => {
+  const feedOnlyMill = { name: "Router", type: "mill", maxRpm: 0, maxFeed: 400, units: "in" };
+  const feedOnlyLathe = { name: "Feed-only lathe", type: "lathe", maxRpm: 0, maxFeed: 200, units: "in" };
+  assert.match(spindleSanity(25000, feedOnlyMill, "mill", c("in", feedOnlyMill))[0], /^25000 RPM is more than most spindles turn\. Router has no max spindle set\. Add it in Shop/);
+  assert.equal(spindleSanity(16666, feedOnlyLathe, "lathe", c("in", feedOnlyLathe)).length, 1);
+  assert.equal(spindleSanity(5000, feedOnlyLathe, "lathe", c("in", feedOnlyLathe)).length, 0);
+  assert.equal(spindleSanity(16666, { ...feedOnlyLathe, maxRpm: -5 }, "lathe", c()).length, 1, "a negative max is no max");
+  assert.equal(spindleSanity(16666, { ...feedOnlyLathe, maxRpm: 4000 }, "lathe", c()).length, 0);
+});
+
+// The warning text names what that tool keeps and which of its inputs to check; the end-mill wording is the default.
+test("fitToMachine words: a tool names what it keeps and what to check", () => {
+  const bp = { name: "BP", type: "mill", maxRpm: 400, maxFeed: 10, units: "in" };
+  assert.match(fitToMachine(bp, 3000, 0.001, c("in", bp)).warnings[0], /Feed is figured at 400 RPM to keep the chip load\./);
+  const tap = { keep: "feed per rev equal to the thread lead", check: "the thread" };
+  assert.match(fitToMachine(bp, 500, 1 / 13, c("in", bp), tap).warnings.join(" "), /drops to 130 RPM to keep feed per rev equal to the thread lead\./);
+  assert.equal(fitToMachine(bp, 500, 20, c("in", bp), tap).problem, "BP max feed is 10 IPM, less than one turn at 20 IPR. Check the thread, or the max feed in Shop.");
+});

@@ -4,11 +4,10 @@
 // Tool-nose radius comp for chamfers, tapers, and radii — with a G-code snippet. Pro.
 
 import { register } from "../app/registry.js";
-import { noseRadiusTaperComp, arcCenterPathRadius, NOSE_RADII_IN } from "../core/lathe.js";
+import { noseRadiusTaperComp, arcCenterPathRadius } from "../core/lathe.js";
 import { fmt, gcodeNumber } from "../core/format.js";
-import { fromIn, toIn } from "./_util.js";
-
-const NOSE = [["0.0156", '1/64"'], ["0.0312", '1/32"'], ["0.0469", '3/64"'], ["0.0625", '1/16"'], ["custom", "Other"]];
+import { toIn } from "./_util.js";
+import { noseOptions, chipNoseRadius, chipNoseSpanIn } from "./surface-finish.js";
 
 const isFillet = (r) => r.feature === "radius" && r.convex === "concave";
 
@@ -24,7 +23,8 @@ export default register({
   inputs: [
     { id: "feature", label: "Feature", kind: "segment", default: "chamfer", options: [{ value: "chamfer", label: "Chamfer / taper" }, { value: "radius", label: "Radius" }] },
     { id: "side", label: "Cutting", kind: "segment", default: "od", options: [{ value: "od", label: "Outside (OD)" }, { value: "id", label: "Bore (ID)" }] },
-    { id: "nose", label: "Nose radius", kind: "segment", default: "0.0312", options: NOSE.map(([value, label]) => ({ value, label })) },
+    // Inch labels until render.js rebuilds segment chips from an options function; then (raw, c) => noseOptions(c?.units).
+    { id: "nose", label: "Nose radius", kind: "segment", default: "0.0312", options: noseOptions("in") },
     { id: "noseCustom", label: "Nose radius", kind: "length", default: "0.0312", defaultMm: "0.8", min: 0.0001, showIf: (r) => r.nose === "custom" },
     { id: "angle", label: "Angle from the Z axis (centerline)", kind: "angle", default: "45", min: 0.1, max: 89.9, showIf: (r) => r.feature === "chamfer", hint: "45° chamfer = 45. A 30° chamfer callout off the face = 60 here." },
     { id: "size", label: "Chamfer size (axial, Z)", kind: "length", default: "0.05", defaultMm: "1", min: 0, showIf: (r) => r.feature === "chamfer" },
@@ -37,7 +37,7 @@ export default register({
   ],
   compute(v, c) {
     const id = v.side === "id";
-    const r = v.nose === "custom" ? v.noseCustom : fromIn(NOSE_RADII_IN[v.nose], c.units);
+    const r = v.nose === "custom" ? v.noseCustom : chipNoseRadius(v.nose, c.units); // 1/32 in, or 0.8 mm on a metric screen
     const dp = c.units === "in" ? 4 : 3;
     const u = c.L.length, U = c.units === "in" ? "IN" : "MM";
     const F = gcodeNumber(v.feed, 4);
@@ -109,9 +109,12 @@ export default register({
     const convex = v.convex === "convex";
     const R = v.radius;
     const pathR = arcCenterPathRadius({ radius: R, noseRadius: r, convex });
-    // Within a tenth (0.0001 in) the fillet and the nose are the same size: prints write a 1/32 nose as 0.0312,
-    // and a near-zero center path is not a real G41/G42 arc.
-    if (!convex && toIn(Math.abs(pathR), c.units) <= 0.0001) throw new Error("The fillet is the same size as the nose radius — form it with the nose and no comp, or use a smaller nose for G41/G42");
+    // Within a tenth (0.0001 in) the fillet and the nose are the same size: prints write a 1/32 nose as 0.0312, and a
+    // near-zero center path is not a real G41/G42 arc. A chip is one insert in both systems (ISO 16 = ANSI 1/16, 0.0005 in
+    // apart), so a fillet anywhere from its inch fraction to its metric size, a tenth either side, is the nose's size too.
+    const [noseLo, noseHi] = v.nose === "custom" ? [toIn(r, c.units), toIn(r, c.units)] : chipNoseSpanIn(v.nose);
+    const filletIn = toIn(R, c.units);
+    if (!convex && filletIn >= noseLo - 0.0001 && filletIn <= noseHi + 0.0001) throw new Error("The fillet is the same size as the nose radius — form it with the nose and no comp, or use a smaller nose for G41/G42");
     if (pathR < 0) throw new Error("Nose radius is bigger than the fillet — it can't cut it. Use a smaller nose");
     if (!id && convex && v.dia - 2 * R < 0) throw new Error("That radius is bigger than the part — check the diameter it starts from");
     if (id && !convex && v.dia - 2 * R <= 0) throw new Error("That fillet steps down past the centerline — check the bore diameter");

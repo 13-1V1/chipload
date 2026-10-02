@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { boltCircleCoordinates, partialBoltCircleCoordinates, buildBoltGcode, buildBoltPositions, buildBoltCsv, buildBoltDxf, boltGcodeProblems, boltFeedCaution, usesOtherDialect, wrapDegrees, zHome } from "../../src/core/boltcircle.js";
+import { boltCircleCoordinates, partialBoltCircleCoordinates, buildBoltGcode, buildBoltPositions, buildBoltCsv, buildBoltDxf, boltGcodeProblems, boltFeedCaution, usesOtherDialect, wrapDegrees, zHome, feedPlaces, feedWordProblem } from "../../src/core/boltcircle.js";
 import { gcodeNumber } from "../../src/core/format.js";
 
 test("4 holes on a 2 inch circle land on the axes", () => {
@@ -133,6 +133,23 @@ test("a feed slow enough to be a feed per rev gets a plain warning", () => {
   assert.equal(boltFeedCaution(0.5, 1000, "in"), null);
   assert.match(boltFeedCaution(0.1, 1000, "mm"), /mm\/rev.*100 mm\/min/);
   assert.equal(boltFeedCaution(120, 1000, "mm"), null);
+  // the sum reads right however small the feed: fixed places once printed 0.0001 × 1000 = 0.05
+  assert.match(boltFeedCaution(0.00005, 1000, "in"), /Feed 0\.00005 IPM .* 0\.00005 × 1000 RPM = 0\.05 IPM\.$/);
+  assert.match(boltFeedCaution(0.0006, 1000, "mm"), /0\.0006 × 1000 RPM = 0\.6 mm\/min\.$/);
+});
+
+// F carries 4 places in inch, 3 in mm: a feed under that posts as F0 or as a different feed, and is refused.
+test("a feed that posts as a different F word is refused, not rounded", () => {
+  assert.equal(feedPlaces("in"), 4);
+  assert.equal(feedPlaces("mm"), 3);
+  assert.equal(feedWordProblem(5, "in"), null);
+  assert.equal(feedWordProblem(0.0125, "mm"), null, "F0.013 is within 5%");
+  assert.match(feedWordProblem(0.00004, "in"), /^posts as F0 and the control would alarm$/);
+  assert.match(feedWordProblem(0.00005, "in"), /^posts as F0\.0001, 2× that feed: the F word stops at 0\.0001 IPM$/);
+  assert.match(feedWordProblem(0.0015, "mm"), /^posts as F0\.002, 1\.3× .*0\.001 mm\/min$/);
+  const ok = { mode: "drill", z: -0.5, r: 0.1, safeZ: 1, spindle: 1000 };
+  assert.match(boltGcodeProblems({ ...ok, feed: 0.00005 })[0], /^Feed 0\.00005 IPM posts as F0\.0001, /);
+  assert.deepEqual(boltGcodeProblems({ ...ok, feed: 0.001 }), []);
 });
 
 // Typical end: Z to home before M30 (Fanuc G91 G28 Z0 then G90; Haas basic program G53 Z0) — src/data/gcodes.js

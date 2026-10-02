@@ -44,7 +44,8 @@ export default register({
       source: "geometry",
       explain: [
         { title: "Point length", formula: "L = D ÷ (2 tan(θ/2))", plugged: `= ${fmt(v.diameter, p)} ${c.L.length} ÷ (2 tan ${fmt(angle / 2, 1)}°) = ${fmt(pt, p)} ${c.L.length}` },
-        { title: "Z depth", formula: v.through === "through" ? "Z = depth + point + clearance" : "Z = depth + point", plugged: `= ${fmt(z, p)} ${c.L.length}` },
+        // Signed like the answer: Z0 is the top of the part and Z goes negative into it.
+        { title: "Z depth", formula: v.through === "through" ? "Z = −(depth + point + clearance)" : "Z = −(depth + point)", plugged: `= ${fmt(-z, p)} ${c.L.length}` },
       ],
       notes: ["Blind holes with a tapped depth callout are measured at full diameter — the point adds to the drill depth, not the thread depth."],
       historyLabel: `Ø${fmt(v.diameter, p)} · ${fmt(angle, 0)}° · ${fmt(v.depth, p)} deep`,

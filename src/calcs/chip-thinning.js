@@ -54,7 +54,9 @@ export default register({
     // Fit inside the machine the same way feeds-mill does: the chip load holds, the spindle gives way.
     const m = machineFor(c, "mill");
     const wantedRpm = rpmFromSfm(toSfm(v.sfm, c.units), toIn(v.diameter, c.units));
-    const fit = fitToMachine(m, wantedRpm, v.flutes * toIn(fz, c.units), c);
+    const fit = fitToMachine(m, wantedRpm, v.flutes * toIn(fz, c.units), c, { check: "the chip thickness and flutes" });
+    // One turn moving more than the machine's whole max feed leaves no spindle speed: say so, don't show 0 RPM.
+    if (fit.cantRun) throw new Error(fit.problem);
     const { rpm } = fit;
     const slowed = fit.rpmCapped || fit.feedCapped;
     const feed = fromIn(fit.feedIpm, c.units);

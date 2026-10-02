@@ -153,11 +153,16 @@ export function renderPro(root) {
     // Only Play knows the price in this country and currency: show none until it answers.
     const price = b.price ? ` — ${esc(b.price)}` : "";
     const noStore = b.error === "no-store";
-    // What stands between this user and Pro right now, in the order it matters.
+    // What stands between this user and Pro right now, in the order it matters. The product is the signal that
+    // Play answered (its price can land before initialize settles). Initialize settling without it means Play
+    // answered without Pro. An error from Play's setup or product load (the plugin retries those forever), or no
+    // answer for a while (billing.js PLAY_SLOW_MS), means it can't be reached; until then it is still connecting.
     const hint = noStore ? "Pro is sold through Google Play. Install Chipload from the Play Store to unlock."
       : !s.pro && b.pending ? "Payment pending — Pro unlocks as soon as Google Play confirms it."
-      : !s.pro && !b.ready ? "Can't reach Google Play right now — check your connection. The price and Unlock work as soon as Play answers."
-      : "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back.";
+      : s.pro || b.product ? "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back."
+      : b.ready ? "Google Play answered without Pro just now — try again in a moment."
+      : b.error || b.slow ? "Can't reach Google Play right now — check your connection. The price and Unlock work as soon as Play answers."
+      : "Checking Google Play…";
     root.innerHTML = `
     <div class="about">
       <p style="font-size:1.125rem;color:var(--text)"><b>Every tool, one price, forever.</b> No subscription. No ads. Works offline.</p>
@@ -184,7 +189,7 @@ export function renderPro(root) {
 
 export function renderStatic(root, kind) {
   if (kind === "privacy") {
-    root.innerHTML = `<div class="about"><h3>Privacy</h3><p>Chipload does not collect, store, or share any personal data. Everything you enter stays on your device. There are no accounts, no analytics, and no network requests except Google Play's own for the Pro unlock. Chipload only learns whether your Google account owns Pro, and keeps that answer on the phone so Pro works offline. When the app starts and Google Play can be reached, it asks again, so a refunded purchase turns Pro back off. Chipload never sees your payment details.</p><p>If Android backup is turned on for your Google account, Android keeps a private copy of the app's data (your machines, tools, and saved jobs) with your other phone backups, so they come back on a new phone. Chipload never sees it.</p></div>`;
+    root.innerHTML = `<div class="about"><h3>Privacy</h3><p>Chipload does not collect, store, or share any personal data. Everything you enter stays on your device. There are no accounts, no analytics, and no network requests except Google Play's own for the Pro unlock. Chipload only learns whether your Google account owns Pro, and keeps that answer on the phone so Pro works offline. When the app starts and Google Play can be reached, it asks again, so a refunded purchase turns Pro back off. Chipload never sees your payment details.</p><p>If Android backup is turned on for your Google account, Android keeps a private copy of the app's data (your machines, tools, saved jobs, and settings) with your other phone backups, so they come back on a new phone. Chipload never sees it.</p><p>If you tap Share, Save (G-code, CSV, DXF), or Print, the data goes wherever you send it (another app, a file, a printer). To hand a saved file to the app you pick, Chipload keeps only a temporary copy in its own private cache folder on your phone, which Android can clear at any time (you can also clear it under Settings → Apps → Chipload → Storage → Clear cache). That copy never leaves your device unless you send it.</p></div>`;
     return;
   }
   root.innerHTML = `<div class="about"><h3>Chipload</h3><p>MIT License. Copyright © 2026 Brennan Meyer.</p><h3>Marcos's Calculator</h3><p>MIT License. Copyright © ianarsenault-tn. Chipload started as a fork of this project.</p><h3>IBM Plex Sans &amp; IBM Plex Mono</h3><p>Copyright © 2017 IBM Corp. Licensed under the SIL Open Font License 1.1.</p><pre class="lic" id="ofl">Loading…</pre></div>`;

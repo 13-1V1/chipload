@@ -28,7 +28,8 @@ export default register({
     const leadIn = t.pitchIn;
     // The machine caps the spindle; if the feed is still over its max, the spindle slows so feed = RPM × lead holds.
     const m = machineFor(c, "any");
-    const fit = fitToMachine(m, v.rpm, leadIn, c);
+    // A tap has no chip load: what the slower spindle keeps is feed per rev = the lead.
+    const fit = fitToMachine(m, v.rpm, leadIn, c, { keep: "feed per rev equal to the thread lead", check: "the thread" });
     const rpm = fit.rpm;
     if (fit.cantRun) throw new Error(fit.problem);
     const feedOut = fit.feedIpm;

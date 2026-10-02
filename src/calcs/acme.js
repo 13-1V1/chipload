@@ -34,37 +34,49 @@ export default register({
     { id: "cls", label: "Class", kind: "segment", default: "2G", options: ["2G", "3G", "4G"].map((v) => ({ value: v, label: v })) },
     { id: "starts", label: "Starts", kind: "int", default: "1", min: 1, max: 8 },
   ],
-  compute(v) {
+  compute(v, c) {
     const t = parseAcme(v.thread);
     const g = acmeGeometry({ major: t.major, tpi: t.tpi });
+    // No inch/mm switch of its own (units: false): an Acme thread is specified in inches, but on a mm screen every
+    // length reads in mm (×25.4, 3 places), the same rule Tap drill and Thread data follow.
+    const mm = c?.units === "mm" || c?.settings?.units === "mm";
+    const u = mm ? "mm" : "in", lp = mm ? 3 : 4, L = (x) => (mm ? x * 25.4 : x);
+    const len = (x) => `${fmt(L(x), lp)} ${u}`;
     // The screw's root has to stay a real diameter: D − P − clearance > 0 (ASME B1.5 sizes stay well inside it).
-    if (!(g.externalMinor > 0)) throw new Error(`${t.tpi} TPI is too coarse for a ${fmt(t.major, 4)} in Acme — the screw would have no core. Check the thread`);
+    if (!(g.externalMinor > 0)) throw new Error(`${t.tpi} TPI is too coarse for a ${len(t.major)} Acme — the screw would have no core. Check the thread`);
     // B1.5's coarsest pitch for its diameter is 1/4-16 (P = D/4); coarser is almost always a typo.
     const warnings = g.pitch > t.major * 0.25 + 1e-9 ? [`${t.label} is coarser than any ASME B1.5 standard size (1/4-16 is P = D ÷ 4). Check the diameter and TPI.`] : [];
     const lead = g.pitch * v.starts;
     const leadAngle = Math.atan(lead / (Math.PI * g.pitchDiameter)) * 180 / Math.PI;
     const allowance = g.allowance[v.cls];
+    // B1.5 writes the root clearance and allowance factors in inches; on a mm screen the formulas show them in mm
+    const clr = mm ? "0.508 mm (≤10 TPI) / 0.254 mm" : "0.020 in (≤10 TPI) / 0.010 in";
+    const factor = { "2G": 0.008, "3G": 0.006, "4G": 0.004 }[v.cls];
     return {
-      primary: { label: `${t.label} basic pitch diameter`, value: g.pitchDiameter, unit: "in", places: 4 },
+      primary: { label: `${t.label} basic pitch diameter`, value: L(g.pitchDiameter), unit: u, places: lp },
       stats: [
-        { label: "Pitch", value: g.pitch, unit: "in", places: 4 },
-        { label: `Lead (${v.starts} start${v.starts > 1 ? "s" : ""})`, value: lead, unit: "in", places: 4 },
+        { label: "Pitch", value: L(g.pitch), unit: u, places: lp },
+        { label: `Lead (${v.starts} start${v.starts > 1 ? "s" : ""})`, value: L(lead), unit: u, places: lp },
         { label: "Lead angle at PD", value: leadAngle, unit: "°", places: 2 },
-        { label: "Thread depth (basic)", value: g.depth, unit: "in", places: 4 },
-        { label: "Minor dia, internal (tap drill basis)", value: g.internalMinor, unit: "in", places: 4 },
-        { label: "Minor dia, external", value: g.externalMinor, unit: "in", places: 4 },
-        { label: "Major dia, internal", value: g.internalMajor, unit: "in", places: 4 },
-        { label: `${v.cls} PD allowance (external)`, value: allowance, unit: "in", places: 4 },
-        { label: `External PD max (${v.cls})`, value: g.pitchDiameter - allowance, unit: "in", places: 4 },
-        { label: "Flat at crest", value: g.crestFlat, unit: "in", places: 4 },
+        { label: "Thread depth (basic)", value: L(g.depth), unit: u, places: lp },
+        { label: "Minor dia, internal (tap drill basis)", value: L(g.internalMinor), unit: u, places: lp },
+        { label: "Minor dia, external", value: L(g.externalMinor), unit: u, places: lp },
+        { label: "Major dia, internal", value: L(g.internalMajor), unit: u, places: lp },
+        { label: `${v.cls} PD allowance (external)`, value: L(allowance), unit: u, places: lp },
+        { label: `External PD max (${v.cls})`, value: L(g.pitchDiameter - allowance), unit: u, places: lp },
+        { label: "Flat at crest", value: L(g.crestFlat), unit: u, places: lp },
       ],
       warnings,
       source: "acme",
       explain: [
-        { title: "ASME B1.5 general purpose Acme", formula: "depth = 0.5P   PD = D − 0.5P   minor(int) = D − P   clearance 0.020 (≤10 TPI) / 0.010", plugged: `P = ${fmt(g.pitch, 4)}, D = ${fmt(t.major, 4)}` },
-        { title: "Allowance", formula: `${v.cls}: ${v.cls === "2G" ? "0.008" : v.cls === "3G" ? "0.006" : "0.004"} √D`, plugged: `= ${fmt(allowance, 4)} in` },
+        { title: "ASME B1.5 general purpose Acme", formula: `depth = 0.5P   PD = D − 0.5P   minor(int) = D − P   clearance ${clr}`, plugged: `P = ${len(g.pitch)}, D = ${len(t.major)}` },
+        // in mm the same rule is (factor × √25.4) √D with D in mm: 2G 0.008 √D in = 0.0403 √D mm
+        { title: "Allowance", formula: `${v.cls}: ${fmt(mm ? factor * Math.sqrt(25.4) : factor, 4)} √D (D in ${mm ? "mm" : "inches"})`, plugged: `= ${fmt(mm ? factor * Math.sqrt(25.4) : factor, 4)} × √${fmt(L(t.major), lp)} = ${len(allowance)}` },
       ],
-      notes: ["PD tolerances for each class come from the B1.5 tables and depend on diameter and pitch — use the tables or a thread gauge for limits. Multi-start: cut each start one lead apart, depth stays 0.5P."],
+      notes: [
+        ...(mm ? [`${t.label} is an inch thread: it is specified in inches (${t.tpi} TPI); the lengths here are converted to mm.`] : []),
+        "PD tolerances for each class come from the B1.5 tables and depend on diameter and pitch — use the tables or a thread gauge for limits. Multi-start: cut each start one lead apart, depth stays 0.5P.",
+      ],
       historyLabel: `${t.label} ${v.cls}`,
     };
   },

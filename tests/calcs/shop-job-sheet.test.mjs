@@ -187,3 +187,10 @@ test("drilling to exactly 3× diameter is not a peck hole in mm either (no float
   assert.match(said("2", "16"), /about 20%/);
   assert.equal(peck(run({ op: "drill", diameter: "4", depth: "12.1" }, ctx("mm"))), true);
 });
+
+// ── fix round 3 ──
+
+test("the history label carries the unit on the diameter", () => {
+  assert.match(run({ op: "lathe", diameter: "12" }, ctx("mm")).historyLabel, /^lathe · Ø12 mm · /);
+  assert.match(run({ op: "mill", diameter: "0.5" }).historyLabel, /^mill · Ø0\.5 in · /);
+});

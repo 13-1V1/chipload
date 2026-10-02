@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
-import { bandSawSpeed, bladeForStock, bladeSpeedFromWheel, wheelRpmForSpeed } from "../../src/core/saw.js";
+import { bandSawSpeed, bladeForStock, woodBladeForStock, bladeSpeedFromWheel, wheelRpmForSpeed } from "../../src/core/saw.js";
 import { MATERIALS, materialById } from "../../src/data/materials-library.js";
 import { SAW_CHART_FPM } from "../../src/data/saw.js";
 import { GLOSSARY } from "../../src/data/glossary.js";
@@ -88,6 +88,38 @@ test("tooth pitch follows the maker's chart", () => {
   assert.equal(one.constant, 6);               // 5/8 averages 6.5 → nearest one-pitch blade 6 TPI
   near(one.teethInCut, 6.5, 1e-9);             // 3–6 teeth in the cut, where the charts aim
   assert.equal(bladeForStock(0, "round"), null);
+});
+
+// 14/18 averages 16, halfway between the 14 and 18 TPI blades. A tie keeps the coarser blade only while it
+// leaves 3 teeth in the cut (the usual minimum), so 1/8 in gets 18, not 14 (1.75 teeth). Under 3/32 in the
+// one-pitch pick is 24 TPI, the finest common blade, the one the thin-stock warning names.
+test("one-pitch blade: a tie goes finer when the coarser leaves under 3 teeth; thin stock gets 24 TPI", () => {
+  assert.equal(bladeForStock(0.125, "round").constant, 18);   // 14 × 0.125 = 1.75 teeth
+  assert.equal(bladeForStock(0.1, "flat").constant, 18);
+  assert.equal(bladeForStock(0.25, "round").constant, 14);    // 10/14 averages 12; 10 × 0.25 = 2.5 teeth
+  assert.equal(bladeForStock(0.35, "round").constant, 10);    // 10 × 0.35 = 3.5 teeth: the coarser stands
+  assert.equal(bladeForStock(4, "round").constant, 3);        // 3/4 averages 3.5; 3 × 4 = 12 teeth
+  assert.equal(bladeForStock(2, "round").constant, 4);        // 4/6 averages 5; 4 × 2 = 8 teeth
+  for (const [t, shape] of [[0.05, "round"], [0.05, "flat"], [0.07, "tube"], [0.09, "tube"]]) {
+    const b = bladeForStock(t, shape);
+    assert.equal(b.thin, true, `${t} ${shape}`);
+    assert.equal(b.constant, 24, `${t} ${shape}`);
+  }
+  assert.equal(bladeForStock(3 / 32, "round").thin, false);
+});
+
+// Woodworking blade guides: hook tooth 3–4 TPI for thick stock; thinner stock keeps at least 3 teeth in the cut.
+test("wood blade: hook tooth for thick stock, enough teeth for thin", () => {
+  assert.deepEqual([woodBladeForStock(1).tooth, woodBladeForStock(1).tpi], ["hook", "3–4"]);
+  assert.equal(woodBladeForStock(0.75).tooth, "hook");                 // 4 TPI × 3/4 in = 3 teeth
+  assert.equal(woodBladeForStock(19 / 25.4).tooth, "hook");            // a 19 mm board is metric 3/4 stock
+  assert.equal(woodBladeForStock(18 / 25.4).tooth, "regular");         // 18 mm plywood sits under the 19 mm line
+  assert.deepEqual([woodBladeForStock(0.5).tooth, woodBladeForStock(0.5).tpi], ["regular", "6"]);   // 3 ÷ 0.5 = 6
+  assert.equal(woodBladeForStock(0.25).tpi, "14");                     // 3 ÷ 0.25 = 12 → next common size 14
+  assert.equal(woodBladeForStock(0.05).tpi, "24");                     // capped at the finest common blade
+  assert.equal(woodBladeForStock(0.05).thin, true);
+  for (const t of [0.125, 0.2, 0.3, 0.5, 0.7]) assert.ok(woodBladeForStock(t).teethInCut >= 3 - 1e-9, String(t));
+  assert.equal(woodBladeForStock(0), null);
 });
 
 // 14 in wheel at 60 RPM → π × 14 × 60 ÷ 12 = 219.9 FPM

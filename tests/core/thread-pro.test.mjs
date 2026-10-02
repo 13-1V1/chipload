@@ -87,9 +87,15 @@ test("STI drills come from the B18.29.1 table, with an estimate fallback", () =>
   assert.equal(m3.alt, 3.15);
   assert.equal(stiTapDrill(24, 3, { isUn: false }).size, 24.75);
   near(stiTapDrill(24, 3, { isUn: false }).minMinor, 24.649, 0.001);
+  // an estimate drills from the STI minor minimum D + 0.2165 P (ASME B18.29.1), not a separate rule of thumb
   const est = stiTapDrill(1.25, 1 / 7, { isUn: true, tpi: 7 });
   assert.equal(est.source, "estimate");
-  near(est.size, 1.25 + 0.25 / 7, 1e-12);
+  near(est.minMinor, 1.25 + 0.216506 / 7, 1e-12);
+  near(est.size, est.minMinor, 1e-12);
+  // the chart lists whole standard TPIs only: 1/4-19.6 is not the 1/4-20 row
+  const odd = stiTapDrill(0.25, 1 / 19.6, { isUn: true, tpi: 19.6 });
+  assert.equal(odd.source, "estimate");
+  assert.equal(odd.label, null);
 });
 
 // ASME B1.20.1: 1/8-27 E1 = 0.37360, 1/2-14 E1 = 0.77843

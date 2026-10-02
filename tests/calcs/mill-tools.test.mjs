@@ -272,7 +272,7 @@ test("feeds-mill on a Bridgeport, both caps hit: the warnings don't contradict e
 test("feeds-mill: a cut no whole RPM can feed says so instead of 0 RPM", () => {
   const tiny = { name: "Tiny", type: "mill", maxRpm: 1, maxFeed: 1, units: "in" };
   const { def, c, values } = build("feeds-mill", { chip: "0.5" }, "in", tiny);
-  assert.throws(() => def.compute(values, c), /Tiny max feed is 1 IPM, less than one turn at 2 IPR\. Check the feed per rev, or the max feed in Shop\./);
+  assert.throws(() => def.compute(values, c), /Tiny max feed is 1 IPM, less than one turn at 2 IPR\. Check the chip load and flutes, or the max feed in Shop\./);
   const mm = build("feeds-mill", { chip: "12.7" }, "mm", tiny);
   assert.throws(() => mm.def.compute(mm.values, mm.c), /Tiny max feed is 25\.4 mm\/min, less than one turn at 50\.8 mm\/rev/);
 });
@@ -305,4 +305,30 @@ test("circle-interp: the tool-center feed is held to the machine's max feed in m
   assert.equal(out.primary.clamped, true);
   near(out.primary.value, 762, 1e-9);
   assert.match(out.warnings[0], /Bridgeport max feed is 762 mm\/min; this circle needs 1480 mm\/min/);
+});
+
+// ── fix round 3 ──
+
+// fitToMachine's contract (_machine.js): when one turn moves more than the machine's whole max feed, the tool
+// shows the reason, not 0 RPM / 0 IPM. Tiny (1 RPM / 1 IPM, the least the Shop form takes) at a 0.5 in chip:
+// 4 flutes × 0.5 × 1.667 thinning = 3.33 in per turn. The Bridgeport needs a 5 in chip to get there.
+test("chip-thinning: a cut no whole RPM can feed says so instead of 0 RPM", () => {
+  const tiny = { name: "Tiny", type: "mill", maxRpm: 1, maxFeed: 1, units: "in" };
+  const inch = build("chip-thinning", { chip: "0.5" }, "in", tiny);
+  assert.throws(() => inch.def.compute(inch.values, inch.c), /Tiny max feed is 1 IPM, less than one turn at 3\.3333 IPR\. Check the chip thickness and flutes/);
+  const mm = build("chip-thinning", { chip: "12.7" }, "mm", tiny);
+  assert.throws(() => mm.def.compute(mm.values, mm.c), /Tiny max feed is 25\.4 mm\/min, less than one turn at [\d.]+ mm\/rev/);
+  const bp = build("chip-thinning", { chip: "5" }, "in", bridgeport);
+  assert.throws(() => bp.def.compute(bp.values, bp.c), /less than one turn/);
+  assert.ok(stat(run("chip-thinning", {}, "in", bridgeport), /^Spindle/).value > 0, "a real cut still runs");
+});
+
+// The heavy-chip warning names the tool at the size typed (lengths to 4 places in inch, 3 in mm), not rounded
+// to 0.3 mm or 0.016 in: micro end mills are a supported case.
+test("feeds-mill: the heavy-chip warning names a micro tool at its real size", () => {
+  const mm = run("feeds-mill", { diameter: "0.25", chip: "0.05" }, "mm").warnings.join(" | ");
+  assert.match(mm, /very heavy chip for a 0\.25 mm tool/);
+  const inch = run("feeds-mill", { diameter: "0.0156", chip: "0.002" }, "in").warnings.join(" | ");
+  assert.match(inch, /very heavy chip for a 0\.0156 in tool/);
+  assert.match(run("feeds-mill", { diameter: "0.125" }, "mm").historyLabel, /^0\.125 mm/);
 });

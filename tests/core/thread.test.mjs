@@ -27,7 +27,8 @@ test("1/4-20 basic geometry matches ASME B1.1", () => {
   near(g.internalMinor, 0.1959, 0.0001, "basic minor (internal)");
 });
 
-// ASME B1.1 / Machinery's Handbook "Unified Screw Threads — Limits of Size", inches.
+// ASME B1.1-2003 Table 2 "Limits of Size for Standard Series Threads", inches. The current table, not the pre-2003
+// values Machinery's Handbook and gauge charts reprint (B1.1-2003 Appendix E Table E-1: 1-8 UNC 2A PD min 0.9100).
 // [name, major, tpi, 2A PD max, 2A PD min, 2B PD min, 2B PD max]
 const PUBLISHED_UN_LIMITS = [
   ["#4-40 UNC", 0.112, 40, 0.0950, 0.0925, 0.0958, 0.0991],
@@ -42,20 +43,20 @@ const PUBLISHED_UN_LIMITS = [
   ["1/2-13 UNC", 0.5, 13, 0.4485, 0.4435, 0.4500, 0.4565],
   ["1/2-20 UNF", 0.5, 20, 0.4662, 0.4619, 0.4675, 0.4731],
   ["3/4-10 UNC", 0.75, 10, 0.6832, 0.6773, 0.6850, 0.6927],
-  ["1-8 UNC", 1, 8, 0.9168, 0.9100, 0.9188, 0.9276],
+  ["1-8 UNC", 1, 8, 0.9168, 0.9101, 0.9188, 0.9276],
 ];
 
-test("UN pitch-diameter limits match the ASME B1.1 tables to the fourth place", () => {
+test("UN pitch-diameter limits match ASME B1.1-2003 Table 2 to the last digit", () => {
   for (const [name, major, tpi, aMax, aMin, bMin, bMax] of PUBLISHED_UN_LIMITS) {
     const env = unToleranceEnvelope({ major, pitch: 1 / tpi });
-    near(env["2A"].pdMax, aMax, 5e-5, `${name} 2A PD max`);
-    near(env["2A"].pdMin, aMin, 5e-5, `${name} 2A PD min`);
-    near(env["2B"].pdMin, bMin, 5e-5, `${name} 2B PD min`);
-    near(env["2B"].pdMax, bMax, 5e-5, `${name} 2B PD max`);
+    near(env["2A"].pdMax, aMax, 5e-6, `${name} 2A PD max`);
+    near(env["2A"].pdMin, aMin, 5e-6, `${name} 2A PD min`);
+    near(env["2B"].pdMin, bMin, 5e-6, `${name} 2B PD min`);
+    near(env["2B"].pdMax, bMax, 5e-6, `${name} 2B PD max`);
   }
 });
 
-// Published 1/4-20 UNC: 2A major 0.2489/0.2408; 3A PD 0.2175/0.2147, major 0.2500/0.2419; 3B PD max 0.2211;
+// ASME B1.1-2003 Table 2, 1/4-20 UNC: 2A major 0.2489/0.2408; 3A PD 0.2175/0.2147, major 0.2500/0.2419; 3B PD max 0.2211;
 // minor 2B 0.196/0.207, 3B 0.1960/0.2067. 1/2-13 UNC: 2A major 0.4985/0.4876, 3A 0.4463 / 0.4891, 3B PD max 0.4548, minor 3B max 0.4284.
 test("UN major and minor diameter limits, and class 3, match the tables", () => {
   const q = unToleranceEnvelope({ major: 0.25, pitch: 1 / 20 });
@@ -128,7 +129,7 @@ test("print callouts with the series run on, UNR and UNJ series, class and hand 
 // A 60° thread needs metal under the root: basic external minor d3 = D − 1.226869 P > 0 (ASME B1.1 §5, ISO 68-1).
 // The coarsest standard pitches are about D/4 (M1x0.25); ISO 965 covers 0.2 to 8 mm pitch.
 test("impossible pitches are refused with a reason, very coarse ones carry a caution", () => {
-  for (const bad of ["1/4-2", "1/4-4", "1/2-0.5", "M10x9"]) {
+  for (const bad of ["1/4-2", "1/4-4", "1/2-0.5", "M10x9", "M1x1", "M2x2", "M10x12"]) {
     assert.equal(parseThreadSpec(bad), null, bad);
     assert.match(threadSpecProblem(bad), /too coarse/, bad);
   }
@@ -138,45 +139,53 @@ test("impossible pitches are refused with a reason, very coarse ones carry a cau
   for (const ok of ["1/4-20", "#0-80", "#4-40", "M1x0.25", "M1.6", "4-4", "M64x6"]) assert.equal(parseThreadSpec(ok).caution, null, ok);
 });
 
-// Willrich Precision gauge PD chart (reproduces ASME B1.1): [major, tpi, 2A max, 2A min, 3A min, 2B max, 3B max].
-// Includes the UNEF / UN / UNS rows and the rows the B1.1 tables smoothed by hand (5/8-11, #6-32 3B, 7/8-20 UNEF …).
-const WILLRICH = [
+// ASME B1.1-2003 Table 2: [major, tpi, 2A max, 2A min, 3A min, 2B max, 3B max]. UNEF / UN / UNS rows, and the rows where
+// the current table differs from the pre-2003 values gauge charts (Willrich) and engineersedge still print (Appendix E
+// Table E-1): #12-32 2A 0.1947/0.1915 (E-1 0.1948/0.1917), 5/8-11 2A min 0.5588 (E-1 0.5589), 1-14 UNS 2A 0.9520/0.9467
+// and 2B max 0.9605 (E-1 0.9519/0.9463, 0.9609), 1-8 UNC 2A min 0.9101, 1-3/16-18 2A max 1.1500, #6-32 3B max 0.1204.
+const TABLE_2_PD = [
   [0.06, 80, 0.0514, 0.0496, 0.0506, 0.0542, 0.0536], [0.138, 32, 0.1169, 0.1141, 0.1156, 0.1214, 0.1204], [0.138, 40, 0.1210, 0.1184, 0.1198, 0.1252, 0.1243],
-  [0.216, 32, 0.1948, 0.1917, 0.1933, 0.1998, 0.1988], [0.25, 32, 0.2287, 0.2255, 0.2273, 0.2339, 0.2328], [0.3125, 32, 0.2912, 0.2880, 0.2898, 0.2964, 0.2953],
-  [0.5, 28, 0.4757, 0.4720, 0.4740, 0.4816, 0.4804], [0.625, 11, 0.5644, 0.5589, 0.5619, 0.5732, 0.5714], [0.875, 20, 0.8412, 0.8368, 0.8392, 0.8482, 0.8468],
-  [1, 14, 0.9519, 0.9463, 0.9494, 0.9609, 0.9590], [1, 20, 0.9661, 0.9616, 0.9641, 0.9734, 0.9719], [1.0625, 12, 1.0067, 1.0010, 1.0042, 1.0158, 1.0139],
-  [1.125, 7, 1.0300, 1.0228, 1.0268, 1.0416, 1.0393], [1.1875, 18, 1.1499, 1.1450, 1.1478, 1.1577, 1.1561], [1.3125, 12, 1.2567, 1.2509, 1.2541, 1.2659, 1.2640],
-  [1.4375, 18, 1.3999, 1.3949, 1.3977, 1.4079, 1.4062], [1.5, 6, 1.3893, 1.3812, 1.3856, 1.4022, 1.3996],
+  [0.216, 32, 0.1947, 0.1915, 0.1933, 0.1998, 0.1988], [0.25, 32, 0.2287, 0.2255, 0.2273, 0.2339, 0.2328], [0.3125, 32, 0.2912, 0.2879, 0.2897, 0.2965, 0.2954],
+  [0.5, 28, 0.4757, 0.4720, 0.4740, 0.4816, 0.4804], [0.5625, 24, 0.5342, 0.5302, 0.5324, 0.5405, 0.5393], [0.625, 11, 0.5643, 0.5588, 0.5619, 0.5732, 0.5714],
+  [0.875, 20, 0.8412, 0.8367, 0.8391, 0.8483, 0.8469], [1, 8, 0.9168, 0.9101, 0.9137, 0.9276, 0.9254],
+  [1, 14, 0.9520, 0.9467, 0.9496, 0.9605, 0.9588], [1, 20, 0.9661, 0.9616, 0.9641, 0.9734, 0.9719], [1.0625, 12, 1.0067, 1.0010, 1.0041, 1.0158, 1.0139],
+  [1.0625, 18, 1.0250, 1.0202, 1.0228, 1.0326, 1.0311], [1.125, 7, 1.0300, 1.0228, 1.0268, 1.0416, 1.0393], [1.1875, 18, 1.1500, 1.1452, 1.1478, 1.1577, 1.1561],
+  [1.3125, 12, 1.2567, 1.2509, 1.2540, 1.2659, 1.2641], [1.4375, 18, 1.3999, 1.3950, 1.3977, 1.4078, 1.4062], [1.5, 6, 1.3893, 1.3812, 1.3856, 1.4022, 1.3996],
 ];
-test("UN pitch-diameter limits match the Willrich / ASME B1.1 values to the last digit", () => {
-  for (const [major, tpi, a2max, a2min, a3min, b2max, b3max] of WILLRICH) {
+test("UN pitch-diameter limits match ASME B1.1-2003 Table 2 (not the superseded Table E-1) to the last digit", () => {
+  for (const [major, tpi, a2max, a2min, a3min, b2max, b3max] of TABLE_2_PD) {
     const e = unToleranceEnvelope({ major, pitch: 1 / tpi }), at = `${major}-${tpi}`;
     near(e["2A"].pdMax, a2max, 5e-6, `${at} 2A max`); near(e["2A"].pdMin, a2min, 5e-6, `${at} 2A min`);
     near(e["3A"].pdMin, a3min, 5e-6, `${at} 3A min`); near(e["2B"].pdMax, b2max, 5e-6, `${at} 2B max`); near(e["3B"].pdMax, b3max, 5e-6, `${at} 3B max`);
   }
 });
 
-// amesweb UNC chart (ASME B1.1-2003) and engineersedge: UNC above 1-1/2 in is toleranced on one diameter.
-// 1-3/4-5 2A PD 1.6174/1.6085, 2B 1.6201/1.6317, minor 1.534/1.568; 2-1/4-4.5 2A 2.1028/2.0931, 2B max 2.1183.
-// 1-14 UNS 2A major 0.9983/0.9880 (allowance 0.0017, LE = D); 5/8-11 2A major 0.6234/0.6113 (published allowance 0.0016).
-test("large UNC, 1-14 UNS and the hand-adjusted 5/8-11 major diameter", () => {
+// ASME B1.1-2003 Table 2: UNC above 1-1/2 in is toleranced on one diameter. 1-3/4-5 2A PD 1.6174/1.6085, 2B 1.6201/1.6317,
+// minor 1.533/1.567; 2-1/4-4.5 2A 2.1028/2.0931, 2B max 2.1183. 1-14 UNS is toleranced on nine pitches (its Td2 0.005285
+// in the table is 0.0015 ∛D + 0.0015 √(9P) + 0.015 ∛P²): allowance 0.0016, 2A major 0.9984/0.9881. 5/8-11 2A major
+// 0.6233/0.6112 (allowance 0.0017; Table E-1's pre-2003 0.6234/0.6113 used 0.0016).
+test("large UNC, 1-14 UNS and the 5/8-11 major diameter", () => {
   const a = unToleranceEnvelope({ major: 1.75, pitch: 1 / 5 });
   near(a["2A"].pdMax, 1.6174, 5e-6); near(a["2A"].pdMin, 1.6085, 5e-6); near(a["2B"].pdMin, 1.6201, 5e-6); near(a["2B"].pdMax, 1.6317, 5e-6);
-  near(a["2B"].minorMin, 1.534, 5e-6); near(a["2B"].minorMax, 1.568, 5e-6);
+  near(a["2B"].minorMin, 1.533, 5e-6); near(a["2B"].minorMax, 1.567, 5e-6);
   const b = unToleranceEnvelope({ major: 2.25, pitch: 1 / 4.5 });
   near(b["2A"].pdMax, 2.1028, 5e-6); near(b["2A"].pdMin, 2.0931, 5e-6); near(b["2B"].pdMax, 2.1183, 5e-6);
   const u = unToleranceEnvelope({ major: 1, pitch: 1 / 14 });
-  near(u.engagement, 1, 1e-12, "1-14 UNS engages one diameter");
-  near(u["2A"].majorMax, 0.9983, 5e-6); near(u["2A"].majorMin, 0.9880, 5e-6);
+  near(u.engagement, 9 / 14, 1e-12, "1-14 UNS engages nine pitches");
+  near(u["2A"].allowance, 0.0016, 5e-6); near(u["2A"].majorMax, 0.9984, 5e-6); near(u["2A"].majorMin, 0.9881, 5e-6);
   const f = unToleranceEnvelope({ major: 0.625, pitch: 1 / 11 });
-  near(f["2A"].majorMax, 0.6234, 5e-6); near(f["2A"].majorMin, 0.6113, 5e-6);
+  near(f["2A"].majorMax, 0.6233, 5e-6); near(f["2A"].majorMin, 0.6112, 5e-6);
 });
 
-// ASME B1.1 Table 2 / Machinery's Handbook internal minor limits (engineersedge internal thread chart):
-// from #6 up the 2B min/max and 3B min print to 3 places, the 3B max to 4. Below #6 everything is 4 places.
-test("internal minor-diameter limits round the way B1.1 prints them, 3B minimum included", () => {
-  const rows = [[0.25, 20, 0.196, 0.207, 0.2067], [0.19, 24, 0.145, 0.156, 0.1555], [0.3125, 24, 0.267, 0.277, null], [0.375, 16, 0.307, 0.321, 0.3182],
-    [0.5, 13, 0.417, 0.434, 0.4284], [0.5, 20, 0.446, 0.457, null], [0.875, 14, 0.798, 0.814, 0.8068], [0.112, 40, 0.0849, 0.0939, null]];
+// ASME B1.1-2003 Table 2 internal minor limits, §8.3.2(e)(f): basic minor plus the unrounded tolerance, rounded once.
+// From #6 up the 2B min/max and 3B min print to 3 places, the 3B max to 4; below #6 everything is 4 places. The
+// pre-2003 Table E-1 rounded the basic minor and the tolerance first (#10-24 2B max 0.156, 1/2-16 3B max 0.4419,
+// 7/8-14 2B max 0.814, #1-64 2B max 0.0623, #6-32 3B max 0.1140); Table 2 has 0.155, 0.4420, 0.813, 0.0622, 0.1139.
+test("internal minor-diameter limits round the way B1.1-2003 Table 2 prints them, 3B minimum included", () => {
+  const rows = [[0.25, 20, 0.196, 0.207, 0.2067], [0.19, 24, 0.145, 0.155, 0.1555], [0.3125, 24, 0.267, 0.277, 0.2754], [0.375, 16, 0.307, 0.321, 0.3182],
+    [0.5, 13, 0.417, 0.434, 0.4284], [0.5, 20, 0.446, 0.457, 0.4537], [0.875, 14, 0.798, 0.813, 0.8067], [0.112, 40, 0.0849, 0.0939, 0.0939],
+    [0.5, 16, 0.432, 0.446, 0.4420], [0.073, 64, 0.0561, 0.0622, 0.0622], [0.138, 32, 0.104, 0.114, 0.1139], [0.5625, 16, 0.495, 0.509, 0.5041],
+    [1.75, 5, 1.533, 1.567, 1.5575]];
   for (const [major, tpi, min, max2, max3] of rows) {
     const e = unToleranceEnvelope({ major, pitch: 1 / tpi }), at = `${major}-${tpi}`;
     near(e["2B"].minorMin, min, 5e-6, `${at} 2B minor min`); near(e["3B"].minorMin, min, 5e-6, `${at} 3B minor min`);
@@ -186,11 +195,16 @@ test("internal minor-diameter limits round the way B1.1 prints them, 3B minimum 
 });
 
 // ASME B1.1 Table 1 standard series: UNC to 4 in, every UNEF size, 1-14 UNS (formerly NF), and the constant-pitch
-// 8/12/16UN series (Willrich lists 1-1/16-12 UN, 1-3/16-12 UN …).
+// 4/6/8/12/16/20/28/32UN series over the sizes Table 1 lists them for (1-1/16-12 UN, 1-3/16-12 UN …).
 test("series names: large UNC, UNEF, 1-14 UNS, constant-pitch UN, ISO 261 fine pitches", () => {
   const un = [[0.5, 28, "1/2-28 UNEF"], [1, 20, "1-20 UNEF"], [0.25, 32, "1/4-32 UNEF"], [0.216, 32, "#12-32 UNEF"], [1.6875, 18, "1-11/16-18 UNEF"],
     [1, 14, "1-14 UNS"], [1.75, 5, "1-3/4-5 UNC"], [2, 4.5, "2-4.5 UNC"], [2.25, 4.5, "2-1/4-4.5 UNC"], [4, 4, "4-4 UNC"],
-    [1.0625, 12, "1-1/16-12 UN"], [1.25, 8, "1-1/4-8 UN"], [0.4375, 16, "7/16-16 UN"], [3, 8, "3-8 UN"], [0.5, 12, null], [1.1, 8, null], [1.75, 18, null]];
+    [1.0625, 12, "1-1/16-12 UN"], [1.25, 8, "1-1/4-8 UN"], [0.4375, 16, "7/16-16 UN"], [3, 8, "3-8 UN"], [0.5, 12, null], [1.1, 8, null], [1.75, 18, null],
+    // B1.1-2003 Table 1 series ends: 32-UN stops at 1 in, 28-UN at 1-1/2, 20-UN at 3; 1/8 in steps from 2 to 6 in
+    [1, 32, "1-32 UN"], [1.0625, 32, null], [3, 32, null], [1.5, 28, "1-1/2-28 UN"], [1.5625, 28, null], [2, 28, null], [3, 20, "3-20 UN"],
+    [3.125, 20, null], [4.5, 20, null], [4.125, 16, "4-1/8-16 UN"], [4.375, 6, "4-3/8-6 UN"], [5.875, 8, "5-7/8-8 UN"], [4.25, 16, "4-1/4-16 UN"], [4.1875, 16, null],
+    // no fractional size under 1/4 in: below it Table 1 lists only numbered sizes (#10, #12)
+    [0.1875, 32, null], [0.125, 32, null]];
   for (const [d, tpi, name] of un) assert.equal(lookupUnThread(d, tpi), name, `${d}-${tpi}`);
   assert.equal(UN_THREAD_TABLE.filter((r) => /UNEF$/.test(r[2])).length, 25, "UNEF #12-32 through 1-11/16-18");
   assert.equal(lookupMetricThread(12, 1.5), "M12x1.5 (fine)");

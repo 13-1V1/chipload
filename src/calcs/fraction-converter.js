@@ -5,7 +5,12 @@
 
 import { register } from "../app/registry.js";
 import { decimalToFraction, fmt, parseDimension, parseFraction, splitUnit } from "../core/format.js";
-import { nearestDrillsInch, nearestDrillMm } from "../core/drills.js";
+import { nearestDrillsInch, nearestDrillMm, DRILL_MIN_IN, DRILL_MAX_IN, DRILL_MIN_MM, DRILL_MAX_MM } from "../core/drills.js";
+
+// Past a chart's end there is no drill to name. The same margins tap-drill.js uses: 1/64" over the
+// biggest inch drill or 0.002" under #80; 0.5 mm over the biggest metric drill or 0.05 mm under the smallest.
+const offInch = (inches) => inches > DRILL_MAX_IN + 1 / 64 || inches < DRILL_MIN_IN - 0.002;
+const offMm = (mm) => mm > DRILL_MAX_MM + 0.5 || mm < DRILL_MIN_MM - 0.05;
 
 /** A size typed with or without its unit: "8.5 mm", "8.5mm", '3/8"', "13/64in", "1 1/4". Null if it isn't one. */
 export function readSize(text) {
@@ -45,6 +50,9 @@ export default register({
     const f64 = decimalToFraction(n64 / 64, { tolerance: 1e-9 });
     const near = nearestDrillsInch(inches);
     const nearMm = nearestDrillMm(mm);
+    const inchOff = offInch(inches), mmOff = offMm(mm);
+    const inchEnd = nearestDrillsInch(inches > DRILL_MAX_IN ? DRILL_MAX_IN : DRILL_MIN_IN).nearest;
+    const mmEnd = mm > DRILL_MAX_MM ? DRILL_MAX_MM : DRILL_MIN_MM;
     const err64 = n64 / 64 - inches;
     // "Exact" only when it is: 0.2035 is 13/64 + 0.0004, and 25 mm is not 63/64.
     const exact = Math.abs(err64) < 1e-6;
@@ -56,10 +64,10 @@ export default register({
       stats: [
         { label: "Decimal inch", value: inches, unit: "in", places: 4 },
         { label: "Millimeters", value: mm, unit: "mm", places: 3 },
-        { label: "Nearest drill (inch)", text: `${near.nearest.label} · ${fmt(near.nearest.size, 4)}` },
-        { label: "Nearest drill (mm)", text: `${nearMm.label} · ${fmt(nearMm.size / 25.4, 4)} in` },
-        ...(near.prev ? [{ label: "Drill under", text: `${near.prev.label} · ${fmt(near.prev.size, 4)}` }] : []),
-        ...(near.next ? [{ label: "Drill over", text: `${near.next.label} · ${fmt(near.next.size, 4)}` }] : []),
+        { label: "Nearest drill (inch)", text: inchOff ? `None on the chart (${inches > DRILL_MAX_IN ? "largest" : "smallest"} ${inchEnd.label} · ${fmt(inchEnd.size, 4)} in)` : `${near.nearest.label} · ${fmt(near.nearest.size, 4)} in` },
+        { label: "Nearest drill (mm)", text: mmOff ? `None on the chart (${mm > DRILL_MAX_MM ? "largest" : "smallest"} ${mmEnd} mm · ${fmt(mmEnd / 25.4, 4)} in)` : `${nearMm.label} · ${fmt(nearMm.size / 25.4, 4)} in` },
+        ...(near.prev && !inchOff ? [{ label: "Drill under", text: `${near.prev.label} · ${fmt(near.prev.size, 4)} in` }] : []),
+        ...(near.next && !inchOff ? [{ label: "Drill over", text: `${near.next.label} · ${fmt(near.next.size, 4)} in` }] : []),
         { label: "Thousandths", value: inches * 1000, unit: "thou", places: 1 },
       ],
       source: "geometry",

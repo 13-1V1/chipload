@@ -79,6 +79,8 @@ export default register({
           // The machine's top feed, not its top speed, is what stops the spindle at this feed per rev.
           const feedText = `${fmt(inch ? maxFeedIpmOf(m) : maxFeedIpmOf(m) * 25.4, 1)} ${c.L.feed}`;
           warnings.push(`No G50 set: under G96 the spindle climbs toward center. Figured at ${fmt(machineTop, 0)} RPM, where ${m.name}'s max feed of ${feedText} is reached at this feed per rev — put a G50 in the program.`);
+          // A profile with no max spindle stops only at its feed, which can be a speed no lathe turns.
+          warnings.push(...spindleSanity(machineTop, m, "lathe", c));
         } else if (Number.isFinite(machineTop)) {
           warnings.push(`No G50 set: under G96 the spindle climbs toward center. Figured at ${m.name}'s top of ${fmt(machineTop, 0)} RPM — put a G50 in the program.`);
         } else {

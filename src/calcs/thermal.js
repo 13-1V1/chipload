@@ -41,14 +41,16 @@ export default register({
       stats: [
         { label: "Final size", value: r.final, unit: c.L.length, places: p },
         { label: "Temperature change", value: c.units === "in" ? r.deltaT : r.deltaT * 5 / 9, unit: c.L.temp, places: 1 },
-        metric ? { label: "Coefficient", value: alphaC * 1e6, unit: "µm/m/°C", places: 1 } : { label: "Coefficient", value: m.a * 1e6, unit: "µin/in/°F", places: 1 },
+        // The table is per °F to one decimal; × 1.8 for °C needs two (brass 11.4 → 20.52) to stay the same number.
+        metric ? { label: "Coefficient", value: alphaC * 1e6, unit: "µm/m/°C", places: 2 } : { label: "Coefficient", value: m.a * 1e6, unit: "µin/in/°F", places: 1 },
         metric ? { label: "Per 10 °C on this size", value: alphaC * v.length * 10, unit: "mm", places: p } : { label: "Per 10 °F on this size", value: m.a * v.length * 10, unit: "in", places: p },
         metric ? { label: "Per 100 mm per 10 °C", value: alphaC * 100 * 10 * 1000, unit: "µm", places: 1 } : { label: "Per inch per 10 °F", value: m.a * 10 * 1e6, unit: "µin", places: 0 },
       ],
       source: "thermal",
+      // α is written the way the Coefficient stat shows it, every figure kept, so the line multiplies out to the answer.
       explain: [{ title: "Linear expansion", formula: "ΔL = α × L × ΔT", plugged: metric
-        ? `= ${alphaC.toExponential(2)} /°C × ${fmt(v.length, p)} mm × ${fmt(r.deltaT * 5 / 9, 1)} °C = ${fmt(r.deltaL, p)} mm`
-        : `= ${m.a.toExponential(1)} /°F × ${fmt(v.length, p)} in × ${fmt(r.deltaT, 1)} °F = ${fmt(r.deltaL, p)} in` }],
+        ? `= ${fmt(alphaC * 1e6, 2)} × 10⁻⁶ /°C × ${fmt(v.length, p)} mm × ${fmt(r.deltaT * 5 / 9, 1)} °C = ${fmt(r.deltaL, p)} mm`
+        : `= ${fmt(m.a * 1e6, 1)} × 10⁻⁶ /°F × ${fmt(v.length, p)} in × ${fmt(r.deltaT, 1)} °F = ${fmt(r.deltaL, p)} in` }],
       notes: [metric
         ? "Standard reference temperature is 20 °C (68 °F). A 250 mm steel part measured at 30 °C reads 0.029 mm long."
         : "Standard reference temperature is 68 °F (20 °C). A 10 in steel part measured at 90 °F reads 0.0014 in long."],

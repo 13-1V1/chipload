@@ -13,7 +13,8 @@ import { lenPlaces } from "./_util.js";
 export function parseStackLines(text) {
   const items = [];
   for (const line of String(text || "").split(/\n/)) {
-    const t = line.trim();
+    // the label prints a typographic minus (U+2212), and PDFs paste an en dash: both are "-" (as in format.js)
+    const t = line.trim().replace(/[−–]/g, "-");
     if (!t || t.startsWith("#")) continue;
     // "1 1/4" alone is one size with no tolerance, not 1 ± 1/4 — the same as "1.250" alone (ASME Y14.5: every dimension has a tolerance).
     if (Number.isFinite(parseFraction(t))) throw new Error(`"${t}" has no tolerance. Write it as nominal ± tolerance, like ${t} ± 0.005.`);
@@ -31,16 +32,21 @@ export function parseStackLines(text) {
 /**
  * The same stack written in the other unit system, so switching units doesn't turn 1.000 in into 1.000 mm.
  * Tolerances keep four significant figures (±0.001 mm → ±0.00003937 in, never ±0), and flipping straight
- * back gives the lines exactly as typed.
+ * back gives the lines exactly as typed. Line by line: a "#" note or a blank line comes through as typed, and a
+ * line that can't be read stays as typed for the user to fix — it never stops the good lines from converting.
+ * `field` names the screen field, so only its own untouched text comes back on a flip (values.js).
  */
-export function convertStackLines(text, from, to) {
+export function convertStackLines(text, from, to, field) {
   if (from === to) return text;
-  return convertRemembering("tol-stack", text, from, to, (t) => {
+  const k = to === "mm" ? 25.4 : 1 / 25.4;
+  const convertLine = (line) => {
     let items;
-    try { items = parseStackLines(t); } catch { return t; } // leave unreadable text for the user to fix
-    const k = to === "mm" ? 25.4 : 1 / 25.4;
-    return items.map((i) => `${convertedText(i.nominal * k, "length", to)} ± ${convertedText(i.tolerance * k, "length", to)}`).join("\n");
-  });
+    try { items = parseStackLines(line); } catch { return line; }
+    if (items.length !== 1) return line; // blank or a note
+    const [i] = items;
+    return `${convertedText(i.nominal * k, "length", to)} ± ${convertedText(i.tolerance * k, "length", to)}`;
+  };
+  return convertRemembering("tol-stack", text, from, to, (t) => String(t).split("\n").map(convertLine).join("\n"), field);
 }
 
 export default register({

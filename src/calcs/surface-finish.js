@@ -8,7 +8,25 @@ import { surfaceFinish, feedForRa, NOSE_RADII_IN } from "../core/lathe.js";
 import { fmt, parseFraction } from "../core/format.js";
 import { toIn, fromIn } from "./_util.js";
 
-const NOSE = [["0.0156", '1/64"'], ["0.0312", '1/32"'], ["0.0469", '3/64"'], ["0.0625", '1/16"'], ["custom", "Other"]];
+// The nose-radius chips, saved by their inch key so old jobs, links and history keep working. ISO 1832 corner
+// radius codes 04/08/12/16 (0.4/0.8/1.2/1.6 mm) are the same inserts as ANSI B212.4 codes 1–4 (CNMG 432 =
+// CNMG 120408), so a metric screen computes with the metric size the insert box reads.
+const NOSE = [["0.0156", '1/64"', 0.4], ["0.0312", '1/32"', 0.8], ["0.0469", '3/64"', 1.2], ["0.0625", '1/16"', 1.6]];
+
+/** The chips labeled in the units on screen, then "Other" for a typed radius. Shared with Nose radius comp. */
+export const noseOptions = (units) => [...NOSE.map(([value, inch, mm]) => ({ value, label: units === "mm" ? `${mm} mm` : inch })), { value: "custom", label: "Other" }];
+
+/** A chip's radius in the units on screen: the true inch fraction (NOSE_RADII_IN), or the ISO metric size. */
+export function chipNoseRadius(key, units) {
+  return units === "mm" ? NOSE.find(([value]) => value === key)[2] : NOSE_RADII_IN[key];
+}
+
+/** A chip's span in inches, its ANSI fraction to its ISO size (1/16 in and 1.6 mm are 0.0005 in apart): one insert, so
+ *  a radius anywhere in it is the chip's own size, whichever system the print is in. [low, high]. */
+export function chipNoseSpanIn(key) {
+  const ansi = NOSE_RADII_IN[key], iso = NOSE.find(([value]) => value === key)[2] / 25.4;
+  return [Math.min(ansi, iso), Math.max(ansi, iso)];
+}
 
 export default register({
   id: "surface-finish",
@@ -20,7 +38,8 @@ export default register({
   pro: true,
   inputs: [
     { id: "mode", label: "Find", kind: "segment", default: "finish", options: [{ value: "finish", label: "Finish" }, { value: "feed", label: "Feed for Ra" }] },
-    { id: "nose", label: "Nose radius", kind: "segment", default: "0.0312", options: NOSE.map(([value, label]) => ({ value, label })) },
+    // Inch labels until render.js rebuilds segment chips from an options function; then (raw, c) => noseOptions(c?.units).
+    { id: "nose", label: "Nose radius", kind: "segment", default: "0.0312", options: noseOptions("in") },
     { id: "noseCustom", label: "Nose radius", kind: "length", default: "0.0312", defaultMm: "0.8", min: 0.0001, showIf: (r) => r.nose === "custom" },
     { id: "ipr", label: "Feed per revolution", kind: "feedRev", default: "0.005", defaultMm: "0.12", min: 0, showIf: (r) => r.mode === "finish" },
     { id: "ra", label: "Target Ra", kind: "number", default: "32", defaultMm: "0.8", unit: (u) => (u === "in" ? "µin" : "µm"), min: 0.001, showIf: (r) => r.mode === "feed",
@@ -32,7 +51,7 @@ export default register({
     const lp = inch ? 4 : 3;
     const raUnit = inch ? "µin" : "µm";
     const raOf = (lenIn) => (inch ? lenIn * 1e6 : lenIn * 25400); // a roughness height in inches, in µin or µm
-    const rIn = v.nose === "custom" ? toIn(v.noseCustom, c.units) : NOSE_RADII_IN[v.nose];
+    const rIn = toIn(v.nose === "custom" ? v.noseCustom : chipNoseRadius(v.nose, c.units), c.units);
     const r = `${fmt(fromIn(rIn, c.units), lp)} ${c.L.length}`;
     if (v.mode === "finish") {
       const fIn = toIn(v.ipr, c.units);

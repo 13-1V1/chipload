@@ -84,8 +84,18 @@ export default register({
         limits = { cls: ext ? "2A" : "2B", ...env[ext ? "2A" : "2B"] };
       } else {
         const env = metricToleranceEnvelope({ major: t.majorMm, pitch: t.pitchMm });
-        const side = ext ? env.external : env.internal;
+        let side = ext ? env.external : env.internal;
+        // ISO 965-1 gives the finest pitches no 6H (0.25 mm: 4H and 5H only; 0.2 mm: 4H only). Check the part
+        // against the nearest class it does define, and say so, rather than leave a measured part with no verdict.
+        if (!side && !ext) {
+          for (const intGrade of [5, 4]) {
+            side = metricToleranceEnvelope({ major: t.majorMm, pitch: t.pitchMm, intGrade }).internal;
+            if (side) { warnings.push(`ISO 965-1 has no 6H for a ${fmt(t.pitchMm, 3)} mm pitch, so the limits and verdict here are ${side.label}, the closest class it defines.`); break; }
+          }
+        }
         if (side) limits = { cls: side.label, pdMin: side.pdMin / 25.4, pdMax: side.pdMax / 25.4 };
+        // the external reason comes first in undefinedReasons, the internal one last
+        else warnings.push(`${ext ? env.undefinedReasons[0] : env.undefinedReasons.at(-1)} No class limits here, so no pass/fail.`);
       }
     } catch { limits = null; }
     const solveM = (e) => (ext ? mowSolveMExternal(e, wireIn, t.pitchIn) : mowSolveMInternal(e, wireIn, t.pitchIn));

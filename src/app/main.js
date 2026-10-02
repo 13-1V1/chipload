@@ -38,13 +38,17 @@ gloveBtn.addEventListener("click", () => setSetting("glove", !getSettings().glov
 onSettings(syncGlove);
 syncGlove();
 // Pro turning on (a purchase landing while any screen is open) or off redraws the screen you're on:
-// locks, PRO tags, Shop and the machine clamp all follow at once. Inputs are saved on every change.
+// locks, PRO tags, Shop and the machine clamp all follow at once. Inputs are saved on every change, so the
+// redraw mounts from what is on screen now: a link's values (search prefill, shared link, chart ?q=) applied
+// once, when the tool opened, and must not wipe what was typed since.
 let proWas = !!getSettings().pro;
+let redrawing = false;
 onSettings((s) => {
   if (!!s.pro === proWas) return;
   proWas = !!s.pro;
   const y = window.scrollY;
-  refresh();
+  redrawing = true;
+  try { refresh(); } finally { redrawing = false; }
   window.scrollTo(0, y);
 });
 helpBtn.addEventListener("click", () => current?.toggleHelp?.());
@@ -78,9 +82,17 @@ onRoute(({ segments, params }) => {
   if (head === "calc") {
     const def = getCalc(id);
     if (!def) { screen("Not found"); main.innerHTML = `<div class="empty">That tool doesn't exist. <a href="#/">Go home</a>.</div>`; return; }
-    if (def.view === "chart") { screen(def.title, { tool: true }); current = mountChart(def, main, { params }); helpBtn.hidden = !current?.hasHelp; return; }
+    if (def.view === "chart") {
+      // a redraw keeps the filter as it reads now, not the one the link opened with
+      const typed = redrawing ? main.querySelector("#cq")?.value : undefined;
+      screen(def.title, { tool: true });
+      current = mountChart(def, main, { params: typed == null ? params : { ...params, q: typed } });
+      helpBtn.hidden = !current?.hasHelp;
+      return;
+    }
     screen(def.title, { answer: true, tool: true });
-    current = mountCalculator(def, main, { params });
+    // a redraw mounts from the saved inputs and units (recalc wrote them), not the link's
+    current = mountCalculator(def, main, { params: redrawing ? {} : params });
     helpBtn.hidden = !current?.hasHelp;
     return;
   }

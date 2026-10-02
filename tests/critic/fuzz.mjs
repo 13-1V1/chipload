@@ -47,10 +47,7 @@ const INERT = [];
  * App defects already handed to their owners (10/02/2026). They print as notes, not failures, until fixed;
  * an entry that no longer matches anything is reported as stale. Never park a new defect here without a handoff.
  */
-const KNOWN = [
-  { calc: /^chip-thinning$/, issue: /is 0 RPM$/,
-    why: "handoff (chip-thinning.js, mill tools owner): fitToMachine returns cantRun + problem when one turn moves more than the machine's max feed; chip-thinning still shows 'Spindle (slowed for max feed)' 0 RPM instead of `if (fit.cantRun) throw new Error(fit.problem)`" },
-];
+const KNOWN = [];
 
 const BAD = /\bNaN\b|undefined|Infinity|\[object|null\b/;
 // Inch units a metric screen must not show. A number inside a word (G50 in the program) is not a length.

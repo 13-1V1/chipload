@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { near } from "../helpers.mjs";
 import { threadMilling, ballNoseScallopHeight, ballNoseStepover } from "../../src/core/milling.js";
-import { tappingFeed, reamerAllowance } from "../../src/core/tapping.js";
+import { reamerAllowance } from "../../src/core/tapping.js";
 import { toleranceStack } from "../../src/core/tolstack.js";
 
 test("internal thread mill centerline feed comp", () => {
@@ -21,11 +21,6 @@ test("ball-nose scallop and stepover invert", () => {
   near(h, 0.00505, 0.00001);
   near(ballNoseStepover({ radius: 0.25, scallopHeight: h }), 0.1);
   assert.ok(Number.isNaN(ballNoseStepover({ radius: 0.25, scallopHeight: 0.3 })));
-});
-
-test("tapping feed: 500 RPM 1/4-20 → 25 IPM; M8x1.25 → 625 mm/min", () => {
-  near(tappingFeed({ units: "in", rpm: 500, tpi: 20 }).feed, 25);
-  near(tappingFeed({ units: "mm", rpm: 500, pitch: 1.25 }).feed, 625);
 });
 
 test("reamer allowance", () => {

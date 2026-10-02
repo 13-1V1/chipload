@@ -5,6 +5,7 @@
 // Pure (no DOM) so the ranking can be tested in Node.
 
 import { parseThreadSpec } from "../core/thread.js";
+import { fmt } from "../core/format.js";
 
 /** G and M words drop their leading zeros, as the control does: G01 = G1, M06 = M6 (M30 and G54.1 stay). */
 export const normCodes = (s) => s.replace(/\b([gm])0+(\d)/g, "$1$2");
@@ -26,11 +27,22 @@ export function nameForms(name) {
   return [...new Set(forms.filter(Boolean).map(normCodes))];
 }
 
+/** A chart's columns, rows and cell texts, the way the chart screen shows them (numbers to their column's places). */
+export function chartCells(def, ctx) {
+  const cols = typeof def.columns === "function" ? def.columns(ctx) : def.columns;
+  const rows = def.rows(ctx);
+  const cell = (r, c) => typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : String(r[c.key] ?? "");
+  return { cols, rows, cell, cells: rows.map((r) => cols.map((c) => cell(r, c))) };
+}
+
 /**
  * Build a filter for one chart. `cells[i]` is row i's cell texts, first column = the row's name.
  * The returned function takes the typed text and gives [{ i, hit }] in display order.
+ * `threadToSize`: the chart lists screws by size (shcs), so a thread callout with no row of its own
+ * ("1/4-20") looks up its screw size ("1/4"). Off everywhere else: on the drill chart a 1/4-20 is not a
+ * 1/4" drill (its tap drill is #7, 0.201", Machinery's Handbook) — there it simply matches nothing.
  */
-export function chartFilter(cells) {
+export function chartFilter(cells, { threadToSize = false } = {}) {
   const text = cells.map((r) => normCodes(r.join(" ").toLowerCase()));
   const names = cells.map((r) => nameForms(r[0] ?? ""));
   const all = cells.map((_, i) => i);
@@ -41,7 +53,7 @@ export function chartFilter(cells) {
     if (!terms.length) return all.map((i) => ({ i, hit: false }));
     let found = matches(terms);
     // A screw named by its thread ("1/4-20", "#10-32", "M8x1.25") in a chart listed by size: look up the size.
-    if (!found.length && parseThreadSpec(term)) {
+    if (!found.length && threadToSize && parseThreadSpec(term)) {
       terms = term.replace(/\s*[-x]\s*\d*\.?\d+$/, "").split(/\s+/).filter(Boolean);
       found = matches(terms);
     }

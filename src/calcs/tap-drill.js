@@ -6,6 +6,7 @@
 import { register } from "../app/registry.js";
 import { tapDrillByPercent, formTapDrillByPercent, percentThreadForDrill, lookupTapDrillUN, lookupTapDrillMetric } from "../core/tapdrill.js";
 import { nearestDrillsInch, nearestDrillsMm, DRILL_MIN_IN, DRILL_MAX_IN, DRILL_MIN_MM, DRILL_MAX_MM } from "../core/drills.js";
+import { unToleranceEnvelope, metricToleranceEnvelope } from "../core/thread.js";
 import { fmt } from "../core/format.js";
 import { threadFromSpec, threadPrefill, dual, COMMON_THREADS } from "./_util.js";
 
@@ -26,6 +27,18 @@ const holeLine = (t, mm, pct, form, calcIn, title) => ({
   title, formula: form ? "hole = D − 0.0068 × %thread × P" : "hole = D − (%thread ÷ 76.98) × P",
   plugged: `= ${nat(mm, t.majorIn)} − ${form ? `0.0068 × ${pct}` : `(${pct} ÷ 76.98)`} × ${nat(mm, t.pitchIn)} = ${nat(mm, calcIn)} ${mm ? "mm" : "in"}`,
 });
+
+/** The internal thread's minor-diameter limits in inches: 2B (ASME B1.1) or 6H (ISO 965-1), or null when there are none. */
+function classMinor(t) {
+  try {
+    if (t.isUn) {
+      const b = unToleranceEnvelope({ major: t.majorIn, pitch: t.pitchIn })["2B"];
+      return { cls: "2B", minIn: b.minorMin, maxIn: b.minorMax };
+    }
+    const int = metricToleranceEnvelope({ major: t.majorMm, pitch: t.pitchMm }).internal;
+    return int ? { cls: int.label, minIn: int.minorMin / 25.4, maxIn: int.minorMax / 25.4 } : null;
+  } catch { return null; }
+}
 
 /** The hole is bigger than any drill on the chart: give the size to bore, not the chart's last drill. */
 function offChart(t, mm, screenMm, pct, form, calcIn, maxIn) {
@@ -135,7 +148,19 @@ export default register({
 
     const warnings = t.caution ? [t.caution] : [];
     if (form) warnings.push("Roll-form taps displace metal: hole must be larger than for a cutting tap. Confirm with the tap maker's chart.");
-    if (actualPct > 85) warnings.push("Over 85% thread adds tap torque without much strength. Consider a bigger drill.");
+    if (actualPct > 85) {
+      // Stay with this drill only when it is the smaller miss of the class minor diameter: its shortfall under the
+      // minor min against the next drill's overshoot past the max. 9/16-24 UNEF: 33/64 is 0.0014 in under 0.517,
+      // 17/32 is 0.0042 in over 0.527 (and ~58%), so stay. 9/16-18 at 80%: 1/2 is 0.0020 in under 0.502, 33/64 only
+      // 0.0006 in over 0.515, so go bigger (ASME B1.1-2003 Table 2).
+      const nextIn = near.next && (t.isUn ? near.next.size : near.next.size / 25.4);
+      const minor = form ? null : classMinor(t);
+      const under = minor ? minor.minIn - chosenIn : 0;
+      const over = nextIn && minor ? nextIn - minor.maxIn : 0;
+      if (nextIn && minor && over > 1e-9 && over > Math.max(0, under)) {
+        warnings.push(`${near.nearest.label} works out to ${fmt(actualPct, 0)}% thread on paper, but the next size up (${near.next.label}, about ${fmt(pctFor(nextIn), 0)}%) is past the ${minor.cls} minor-diameter max ${decimal(minor.maxIn)}. Stay with ${near.nearest.label}: drills usually cut a little oversize.`);
+      } else warnings.push(`Over 85% thread adds tap torque without much strength. Consider a bigger drill${near.next ? ` (${near.next.label}${sizeNote(near.next)})` : ""}.`);
+    }
     if (actualPct < 55) warnings.push("Under 55% thread is weak. Consider a smaller drill.");
 
     return {

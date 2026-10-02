@@ -11,7 +11,10 @@ import { toast } from "./ui.js";
 import { isTestBuild, buildKnown } from "./build.js";
 
 export const PRO_PRODUCT_ID = "pro_unlock";
-const state = { ready: false, price: null, product: null, error: null, pending: false };
+// ready: initialize settled (Play answered). slow: no product and no answer PLAY_SLOW_MS after starting —
+// the Pro screen stops saying "Checking" and says Play can't be reached.
+const state = { ready: false, price: null, product: null, error: null, pending: false, slow: false };
+export const PLAY_SLOW_MS = 8000;
 const listeners = new Set();
 // Snapshot first: a listener may unsubscribe (or a screen may subscribe) while this runs.
 const emit = () => [...listeners].forEach((fn) => fn(getBillingState()));
@@ -21,6 +24,7 @@ export function onBilling(fn) { listeners.add(fn); return () => listeners.delete
 
 const MSG = {
   noPlay: "Can't reach Google Play right now — check your connection and try again",
+  connecting: "Still connecting to Google Play — try again in a moment",
   pending: "Payment pending — Pro unlocks as soon as Google Play confirms it",
   revoked: "Pro is off: Google Play no longer lists a Pro purchase on this Google account (refunded, or bought on another account)",
 };
@@ -127,6 +131,7 @@ export function initBilling() {
       emit();
     });
 
+    setTimeout(() => { if (!state.product && !state.ready) { state.slow = true; emit(); } }, PLAY_SLOW_MS);
     store.initialize([Platform.GOOGLE_PLAY]).then(() => {
       state.ready = true;
       sync("initialize");
@@ -147,7 +152,7 @@ export function initBilling() {
       if (!store) { toast("Purchases need the Google Play version of Chipload"); return; }
       // In the Play app with no offer, Play hasn't answered yet (offline, or billing still connecting).
       const offer = store.get(PRO_PRODUCT_ID)?.getOffer();
-      if (!offer) { toast(state.ready ? "Product not available yet — try again in a moment" : MSG.noPlay); return; }
+      if (!offer) { toast(state.ready ? "Product not available yet — try again in a moment" : notAnswered()); return; }
       let problem;
       try { problem = failed(await offer.order()); } catch (e) { problem = e; }
       // Bought (the store events unlock it), backed out, or pending (the "initiated" event says so).
@@ -163,7 +168,7 @@ export function initBilling() {
       if (!store) { toast("Restore needs the Google Play version of Chipload"); return; }
       // Until billing connects, restorePurchases() asks nobody and reports no error (store.ts restorePurchases
       // skips adapters that aren't ready) — "no purchase found" would be a guess.
-      if (!state.ready && !store.get(PRO_PRODUCT_ID, window.CdvPurchase.Platform?.GOOGLE_PLAY)) { toast(MSG.noPlay); return; }
+      if (!state.ready && !store.get(PRO_PRODUCT_ID, window.CdvPurchase.Platform?.GOOGLE_PLAY)) { toast(notAnswered()); return; }
       let problem;
       try { problem = failed(await store.restorePurchases()); } catch (e) { problem = e; }
       if (problem) console.warn("[billing] restore", problem);
@@ -173,6 +178,11 @@ export function initBilling() {
       else toast("No Pro purchase found on this Google account");
     },
   };
+}
+
+/** Play hasn't answered: unreachable once it reported a setup/load error or took too long, otherwise still connecting (the same words as the Pro screen). */
+function notAnswered() {
+  return (state.error && state.error !== "no-store") || state.slow ? MSG.noPlay : MSG.connecting;
 }
 
 /** Is a Pro payment waiting on Google (cash, slow bank)? A cancelled one comes back consumed (googleplay-adapter removed()). */

@@ -12,6 +12,7 @@ import "../../src/calcs/lathe-cycle.js";
 import "../../src/calcs/surface-finish.js";
 import "../../src/calcs/taper.js";
 import "../../src/calcs/tnr-comp.js";
+import "../../src/calcs/job-sheet.js";
 import { getCalc } from "../../src/app/registry.js";
 import { buildValues, defaultRaw, convertInput } from "../../src/app/values.js";
 import { UNIT_LABEL } from "../../src/app/settings.js";
@@ -147,16 +148,17 @@ test("lathe feeds: a tool caution for the material reaches the warnings", () => 
 });
 
 // Ra ≈ f² ÷ (31.2 r) (Machinery's Handbook, surface finish from feed and nose radius). A drawing callout of
-// Ra 1.6 µm with a 1/32 in (0.79375 mm) nose: f = √(31.2 × 0.79375 × 0.0016) = 0.1991 mm/rev.
+// Ra 1.6 µm with the 1/32 chip, which a metric screen reads as the ISO 0.8 mm nose (ISO 1832 code 08):
+// f = √(31.2 × 0.8 × 0.0016) = 0.1998 mm/rev.
 test("surface finish in mm takes and gives Ra in µm", () => {
   const feed = run("surface-finish", { mode: "feed", ra: "1.6" }, "mm");
-  near(feed.primary.value, 0.1991, 0.0001);
+  near(feed.primary.value, 0.1998, 0.0001);
   assert.equal(feed.primary.unit, "mm/rev");
   assert.match(feed.primary.label, /1\.6 µm/);
   const fin = run("surface-finish", {}, "mm");
   assert.equal(fin.primary.unit, "µm");
-  // 0.12 mm/rev, 0.79375 mm nose: Ra = 0.12² ÷ (31.2 × 0.79375) mm = 0.581 µm → passes a 0.8 µm callout
-  near(fin.primary.value, 0.12 ** 2 / (31.2 * 0.79375) * 1000, 1e-9);
+  // 0.12 mm/rev, 0.8 mm nose: Ra = 0.12² ÷ (31.2 × 0.8) mm = 0.577 µm → passes a 0.8 µm callout
+  near(fin.primary.value, 0.12 ** 2 / (31.2 * 0.8) * 1000, 1e-9);
   assert.equal(stat(fin, /callout/).text, "0.8 µm");
   assert.match(fin.historyLabel, /mm\/rev/);
   assert.doesNotMatch(fin.historyLabel, /ipr/i);
@@ -303,4 +305,65 @@ test("lathe feeds: the machine's max feed slows the spindle so the feed per rev 
   assert.match(out.warnings.join(" "), /Lathe 5 max feed is 5 IPM/);
   assert.ok(stat(out, /G50/).value <= 416);
   throwsFor("lathe-feeds", { ipr: "7" }, "in", lathe5, /less than one turn at 7 IPR/);
+});
+
+// ── fix round 3 ──
+
+// A lathe profile saved with Max spindle left blank (the Shop form stores 0 = no limit) gives no top speed to go
+// on, the same as no machine: the 6000 RPM sanity line still applies and G50 reads "your chuck's rated max".
+test("lathe feeds and cycle time: a profile with Max spindle left blank keeps the RPM guards", () => {
+  const feedOnly = { name: "Feed-only lathe", type: "lathe", maxRpm: 0, maxFeed: 200, units: "in" };
+  const g50 = run("lathe-feeds", { diameter: "2", minDia: "0.1" }, "in", feedOnly);
+  assert.equal(stat(g50, /G50/).text, "your chuck's rated max");
+  assert.match(g50.warnings.join(" | "), /G96 would ask for \d+ RPM at Ø0\.1 in\. Set G50 to your chuck's rated max/);
+  const small = run("lathe-feeds", { diameter: "0.1" }, "in", feedOnly);
+  assert.match(small.warnings.join(" | "), /RPM is more than most lathes turn\. Feed-only lathe has no max spindle set/);
+  // facing to center under G96 stops only at the feed: 200 IPM ÷ 0.002 IPR = 100,000 RPM, and that is flagged
+  const face = run("lathe-cycle", { op: "face", ipr: "0.002" }, "in", feedOnly);
+  assert.match(face.warnings.join(" | "), /100000 RPM is more than most lathes turn/);
+  const faceMm = run("lathe-cycle", { op: "face", ipr: "0.05" }, "mm", feedOnly);
+  assert.match(faceMm.warnings.join(" | "), /RPM is more than most lathes turn/);
+  // a profile with a real top speed is still trusted
+  assert.doesNotMatch(run("lathe-feeds", { diameter: "0.1" }, "in", ST10).warnings.join(" | "), /more than most lathes/);
+});
+
+// Both caps hit: fitToMachine drops the spindle under the machine max for the feed, so the label says so —
+// the same order as the job sheet, feeds-mill and chip-thinning.
+test("lathe feeds: with both caps hit the spindle is labeled slowed for max feed", () => {
+  const lathe = { name: "Lathe 20", type: "lathe", maxRpm: 4000, maxFeed: 20, units: "in" };
+  const out = run("lathe-feeds", { diameter: "0.5" }, "in", lathe);
+  assert.equal(out.primary.label, "Spindle (slowed for max feed)");
+  assert.ok(out.primary.value < 4000);
+  const sheet = run("job-sheet", { op: "lathe", diameter: "0.5", toolType: "coated", material: "s1018" }, "in", lathe);
+  assert.equal(stat(sheet, /^Spindle/).label, out.primary.label);
+});
+
+// Facing to center is a smallest diameter of 0: G96 has no top of its own there, so G50 is the machine's top
+// speed, or the chuck's rating with no machine — never "Infinity RPM at Ø0".
+test("lathe feeds: a smallest diameter of 0 (face to center) is accepted", () => {
+  for (const units of ["in", "mm"]) {
+    const free = run("lathe-feeds", { minDia: "0" }, units);
+    assert.equal(stat(free, /G50/).text, "your chuck's rated max");
+    const said = [...free.warnings, ...free.stats.map((s) => `${s.label} ${s.text ?? s.value}`)].join(" | ");
+    assert.doesNotMatch(said, /Infinity|NaN/);
+    assert.match(free.warnings.join(" | "), /Facing to center, G96 keeps speeding up all the way to X0\. Set G50 to your chuck's rated max/);
+    const capped = run("lathe-feeds", { minDia: "0" }, units, { name: "ST-10", type: "lathe", maxRpm: 4000, maxFeed: 400, units: "in" });
+    assert.equal(stat(capped, /G50/).value, 4000);
+  }
+  const def = getCalc("lathe-feeds"), ctx = { units: "in", L: UNIT_LABEL.in, settings: { units: "in", pro: true }, machine: null, fmt };
+  assert.ok(buildValues(def, defaultRaw(def, { minDia: "-1" }, "in"), ctx).invalid.has("minDia"), "a negative diameter is still refused");
+});
+
+// The nose chips are saved by their inch key; a metric screen computes with the ISO 1832 size of the same insert
+// (codes 04/08/12/16 = 0.4/0.8/1.2/1.6 mm; CNMG 432 = CNMG 120408), and the chip labels follow the units.
+test("nose radius chips: ISO metric sizes on a metric screen, true fractions in inch", async () => {
+  const { noseOptions, chipNoseRadius } = await import("../../src/calcs/surface-finish.js");
+  assert.deepEqual(noseOptions("mm").map((o) => o.label), ["0.4 mm", "0.8 mm", "1.2 mm", "1.6 mm", "Other"]);
+  assert.deepEqual(noseOptions("in").map((o) => o.label), ['1/64"', '1/32"', '3/64"', '1/16"', "Other"]);
+  assert.deepEqual(noseOptions("mm").map((o) => o.value), noseOptions("in").map((o) => o.value), "saved keys don't change with the units");
+  assert.equal(chipNoseRadius("0.0312", "mm"), 0.8);
+  assert.equal(chipNoseRadius("0.0312", "in"), 1 / 32);
+  near(stat(run("surface-finish", {}, "mm"), /Nose radius/).value, 0.8, 1e-12);
+  assert.equal(stat(run("tnr-comp", { feature: "radius" }, "mm"), /Nose radius/).value, 0.8);
+  near(stat(run("tnr-comp", { feature: "radius" }, "in"), /Nose radius/).value, 0.03125, 1e-12);
 });

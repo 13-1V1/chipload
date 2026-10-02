@@ -39,13 +39,17 @@ const OVER = 1 + 1e-9;
  * typed in the feed field, say), no whole RPM can run the cut. Then rpm and feedIpm are 0, `cantRun` is
  * true and `problem` says why in the user's units. Callers show that message instead of numbers:
  * `if (fit.cantRun) throw new Error(fit.problem);` — a 0 RPM answer turns into Infinity times and F0 blocks.
+ * The text is worded for a cut with a feed per rev field; a tool that holds something else (a tap holds the
+ * lead, not a chip load) or takes other inputs (chip load and flutes) names its own in `words`.
  * @param {object|null} m   machine profile from machineFor()
  * @param {number} wantedRpm  spindle speed the surface speed asks for
  * @param {number} iprIn      feed per revolution in inches (flutes × chip load for a mill, lead for a tap)
  * @param {object} c          calculator context (units and labels for the warning text)
+ * @param {{ keep?: string, check?: string }} [words]  what slowing the spindle keeps ("the chip load"), and
+ *   which inputs on that screen set the feed per rev ("the feed per rev"), for the cantRun fix
  * @returns {{ rpm: number, feedIpm: number, wantedRpm: number, wantedFeedIpm: number, rpmCapped: boolean, feedCapped: boolean, cantRun: boolean, problem: string|null, warnings: string[] }}
  */
-export function fitToMachine(m, wantedRpm, iprIn, c) {
+export function fitToMachine(m, wantedRpm, iprIn, c, { keep = "the chip load", check = "the feed per rev" } = {}) {
   const maxRpm = maxRpmOf(m);
   const maxFeed = maxFeedIpmOf(m);
   const wantedFeedIpm = wantedRpm * iprIn;
@@ -61,13 +65,13 @@ export function fitToMachine(m, wantedRpm, iprIn, c) {
   const inch = c.units === "in";
   const feedText = (ipm) => `${fmt(inch ? ipm : ipm * 25.4, 1)} ${c.L.feed}`;
   const problem = cantRun
-    ? `${m.name} max feed is ${feedText(maxFeed)}, less than one turn at ${fmt(inch ? iprIn : iprIn * 25.4, inch ? 4 : 3)} ${c.L.feedRev}. Check the feed per rev, or the max feed in Shop.`
+    ? `${m.name} max feed is ${feedText(maxFeed)}, less than one turn at ${fmt(inch ? iprIn : iprIn * 25.4, inch ? 4 : 3)} ${c.L.feedRev}. Check ${check}, or the max feed in Shop.`
     : null;
   const warnings = [];
   // With both caps hit, the feed line says where the spindle lands; this one only says the machine's top.
-  if (rpmCapped) warnings.push(`${m.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(wantedRpm, 0)}.${feedCapped || !(iprIn > 0) ? "" : ` Feed is figured at ${fmt(maxRpm, 0)} RPM so the chip load holds.`}`);
+  if (rpmCapped) warnings.push(`${m.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(wantedRpm, 0)}.${feedCapped || !(iprIn > 0) ? "" : ` Feed is figured at ${fmt(maxRpm, 0)} RPM to keep ${keep}.`}`);
   if (cantRun) warnings.push(problem);
-  else if (feedCapped) warnings.push(`${m.name} max feed is ${feedText(maxFeed)}. This cut needs ${feedText(feedAtRpm)}, so the spindle drops to ${fmt(rpm, 0)} RPM to keep the chip load.`);
+  else if (feedCapped) warnings.push(`${m.name} max feed is ${feedText(maxFeed)}. This cut needs ${feedText(feedAtRpm)}, so the spindle drops to ${fmt(rpm, 0)} RPM to keep ${keep}.`);
   return { rpm, feedIpm, wantedRpm, wantedFeedIpm, rpmCapped, feedCapped, cantRun, problem, warnings };
 }
 
@@ -81,14 +85,16 @@ export function maxRpmAtFeed(m, iprIn) {
 }
 
 /**
- * No machine set and the spindle number is beyond what most machines of this kind turn: say so instead of
- * handing over a confident RPM nobody can run.
+ * No top spindle speed to go on (no machine set, or a profile saved with Max spindle blank) and the spindle
+ * number is beyond what most machines of this kind turn: say so instead of handing over a confident RPM
+ * nobody can run.
  * @param {"mill"|"lathe"|"any"} work
  */
 export function spindleSanity(rpm, m, work, c) {
   const limit = work === "lathe" ? 6000 : 20000;
-  if (m || !(rpm > limit)) return [];
+  if (Number.isFinite(maxRpmOf(m)) || !(rpm > limit)) return [];
   const kind = work === "lathe" ? "lathes" : "spindles";
-  const fix = c?.settings?.pro ? "Add your machine in Shop and the numbers get figured at its top speed." : "Run it at your machine's top speed and the feed per rev still holds.";
+  const fix = m ? `${m.name} has no max spindle set. Add it in Shop and the numbers get figured at that top speed.`
+    : c?.settings?.pro ? "Add your machine in Shop and the numbers get figured at its top speed." : "Run it at your machine's top speed and the feed per rev still holds.";
   return [`${fmt(rpm, 0)} RPM is more than most ${kind} turn. ${fix}`];
 }

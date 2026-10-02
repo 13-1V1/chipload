@@ -17,6 +17,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import "../../src/calcs/tnr-comp.js";
+import { chipNoseRadius } from "../../src/calcs/surface-finish.js";
 import { getCalc } from "../../src/app/registry.js";
 import { buildValues, defaultRaw } from "../../src/app/values.js";
 import { UNIT_LABEL } from "../../src/app/settings.js";
@@ -181,7 +182,7 @@ test("tip-programmed chamfer puts the real nose on the chamfer line, OD and bore
     for (const side of ["od", "id"]) {
       for (const angle of ["30", "45", "60", "15"]) {
         const { v, out } = run({ side, angle }, units);
-        const r = units === "in" ? 1 / 32 : 25.4 / 32;
+        const r = units === "in" ? 1 / 32 : 0.8; // the 1/32 chip is the ISO 0.8 mm insert on a metric screen
         const metal = partOf(v);
         const m = moves(out.code[0].text).find((x) => x.motion === "G1" && x.from[0] !== x.to[0] && x.from[1] !== x.to[1]);
         const a = v.size * Math.tan(v.angle * Math.PI / 180), d = v.dia / 2, out1 = side === "id" ? -1 : 1;
@@ -206,13 +207,34 @@ test("bad combinations get a plain refusal instead of a snippet", () => {
   // A print writes a 1/32 nose as 0.0312: within a tenth (0.0001 in) of the nose it is the same size, not bigger.
   assert.throws(go({ feature: "radius", convex: "concave", radius: "0.0312" }), /same size as the nose/);
   assert.throws(go({ feature: "radius", convex: "concave", radius: "0.02" }), /bigger than the fillet/);
-  // 0.0315 is 0.00025 in over a 1/32 nose: a real, if small, nose-center path
-  assert.doesNotThrow(go({ feature: "radius", convex: "concave", radius: "0.0315" }));
+  // 0.0315 in is a metric print's R0.8: the ISO 0.8 mm insert is the ANSI 1/32 one (0.00025 in apart), the same size
+  assert.throws(go({ feature: "radius", convex: "concave", radius: "0.0315" }), /same size as the nose/);
+  // 0.033 is 0.00175 in over a 1/32 nose: a real, if small, nose-center path
+  assert.doesNotThrow(go({ feature: "radius", convex: "concave", radius: "0.033" }));
   const mm = { units: "mm", L: UNIT_LABEL.mm, settings: { units: "mm", pro: true }, machine: null, fmt };
   const goMm = (over) => { const b = buildValues(def, defaultRaw(def, over, "mm"), mm); return () => def.compute(b.values, mm); };
-  // 1/32 in = 0.79375 mm; 0.794 mm is 0.00025 mm (0.00001 in) off it
+  // On a metric screen the 1/32 chip is ISO 0.8 mm (ISO 1832 code 08): an 0.8 mm fillet is the nose's size, and so
+  // is 0.794 mm (1/32 in off a print in inches); 0.82 mm leaves a real path
+  assert.throws(goMm({ feature: "radius", convex: "concave", radius: "0.8" }), /same size as the nose/);
   assert.throws(goMm({ feature: "radius", convex: "concave", radius: "0.794" }), /same size as the nose/);
+  assert.doesNotThrow(goMm({ feature: "radius", convex: "concave", radius: "0.82" }));
   assert.throws(goMm({ feature: "radius", convex: "concave", radius: "0.7" }), /bigger than the fillet/);
+  // Every chip is one insert in both systems (ISO 1832 04/08/12/16 = ANSI B212.4 1/64, 1/32, 3/64, 1/16), up to
+  // 0.0005 in apart at 1.6 mm vs 1/16. An inch print's fraction typed on a metric screen, and a metric print's radius
+  // typed on an inch screen, are the nose's own size on every chip, not "bigger" and not a near-zero G41/G42 arc.
+  const pairs = [["0.0156", "0.397", "0.0157"], ["0.0312", "0.794", "0.0315"], ["0.0469", "1.191", "0.0472"], ["0.0625", "1.587", "0.0630"]];
+  for (const [nose, inchPrintInMm, mmPrintInInch] of pairs) {
+    assert.throws(goMm({ feature: "radius", convex: "concave", nose, radius: inchPrintInMm }), /same size as the nose/, `mm, chip ${nose}, fillet ${inchPrintInMm}`);
+    assert.throws(go({ feature: "radius", convex: "concave", nose, radius: mmPrintInInch }), /same size as the nose/, `in, chip ${nose}, fillet ${mmPrintInInch}`);
+    assert.throws(goMm({ feature: "radius", convex: "concave", nose, radius: String(chipNoseRadius(nose, "mm")) }), /same size as the nose/);
+    assert.throws(go({ feature: "radius", convex: "concave", nose, radius: nose }), /same size as the nose/);
+  }
+  // Just past a chip's span (1.6 mm = 0.06299 in, a tenth over is 0.06309) is a real path again, both units
+  assert.doesNotThrow(go({ feature: "radius", convex: "concave", nose: "0.0625", radius: "0.0632" }));
+  assert.doesNotThrow(goMm({ feature: "radius", convex: "concave", nose: "0.0625", radius: "1.61" }));
+  // A typed nose keeps the tenth: 0.0312 nose, 0.0314 fillet is a real path
+  assert.throws(go({ feature: "radius", convex: "concave", nose: "custom", noseCustom: "0.0312", radius: "0.03128" }), /same size as the nose/);
+  assert.doesNotThrow(go({ feature: "radius", convex: "concave", nose: "custom", noseCustom: "0.0312", radius: "0.0314" }));
   assert.throws(go({ feature: "radius", side: "id", convex: "concave", dia: "0.25", radius: "0.125" }), /past the centerline/);
   assert.throws(go({ side: "id", dia: "0" }), /bore diameter/);
 });
@@ -234,11 +256,13 @@ test("mm mode reads in mm, and the error highlight uses 0.0005 in whatever the u
   const { out } = run({}, "mm");
   const text = JSON.stringify({ ...out, code: null });
   assert.doesNotMatch(text, /\bin\b|IPR|IPM|SFM/);
-  assert.match(out.explain[0].plugged, /0\.794 mm/);
-  // 1/32 nose at 45°: e = 0.4142 r = 0.0129 in = 0.329 mm — over 0.0005 in either way
+  // the 1/32 chip is the ISO 0.8 mm insert (CNMG 432 = CNMG 120408): the snippet and the math use 0.8
+  assert.match(out.explain[0].plugged, /r = 0\.8 mm/);
+  assert.match(out.code[0].text, /\(NOSE R 0\.8 MM TIP 3\)/);
+  // 1/32 nose at 45°: e = 0.4142 r = 0.0129 in = 0.331 mm — over 0.0005 in either way
   assert.equal(out.stats.find((s) => /Error/.test(s.label)).clamped, true);
   // 1/64 nose at 1.5°: e = r (sin 1.5° + cos 1.5° − 1) = 0.0258 r = 0.0103 mm — under 0.0005 in (0.0127 mm)
   assert.equal(run({ nose: "0.0156", angle: "1.5" }, "mm").out.stats.find((s) => /Error/.test(s.label)).clamped, false);
   assert.equal(NOSE_RADII_IN["0.0312"], 0.03125);
-  near(run({}, "mm").out.stats.find((s) => s.label === "Same on diameter").value / 2, 25.4 / 32 * (1 - Math.tan(Math.PI / 8)), 1e-9);
+  near(run({}, "mm").out.stats.find((s) => s.label === "Same on diameter").value / 2, 0.8 * (1 - Math.tan(Math.PI / 8)), 1e-9);
 });

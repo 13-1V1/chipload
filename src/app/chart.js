@@ -2,7 +2,9 @@
 // brennanmmeyer@gmail.com
 
 // Chart / reference screen: a sticky-header table with search-as-you-type.
-// Definition: { id, title, view: "chart", columns: [{key,label,align,places}], rows(ctx) → [], note?, pro? }
+// Definition: { id, title, view: "chart", columns: [{key,label,align,places}] or columns(ctx), rows(ctx) → [],
+//   note? (a string, or note(ctx) when it carries a unit), threadToSize? (a chart listed by screw size, so
+//   "1/4-20" finds the 1/4 row; chart-filter.js), pro? }
 
 import { fmt } from "../core/format.js";
 import { getSettings, UNIT_LABEL } from "./settings.js";
@@ -22,11 +24,12 @@ export function mountChart(def, root, { params = {} } = {}) {
   const locked = !!def.pro && !settings.pro;
   const rows = locked ? [] : def.rows(ctx);
   const cols = typeof def.columns === "function" ? def.columns(ctx) : def.columns;
+  const note = typeof def.note === "function" ? def.note(ctx) : def.note;
 
   root.innerHTML = `
     <div id="chartHelp"></div>
     <label class="search"><span class="sr-only">Filter rows</span>${ICONS.search}<input id="cq" type="search" placeholder="${esc(def.placeholder || "Filter…")}" autocomplete="off" autocapitalize="off" value="${esc(params.q || "")}"></label>
-    ${def.note ? `<p class="hint" style="margin:10px 0 0">${esc(def.note)}</p>` : ""}
+    ${note ? `<p class="hint" style="margin:10px 0 0">${esc(note)}</p>` : ""}
     <div style="height:12px"></div>
     ${locked ? `<div class="lock"><div><b>Pro chart</b><br><span>${esc(def.short || "")}</span></div><a class="btn primary" href="#/pro">Unlock Pro</a></div>` : `<div class="table-wrap"><table class="chart"><thead><tr>${cols.map((c) => `<th${cellAttrs(c)}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody id="cbody"></tbody></table></div>`}`;
 
@@ -43,7 +46,7 @@ export function mountChart(def, root, { params = {} } = {}) {
   const q = root.querySelector("#cq");
   const body = root.querySelector("#cbody");
   const cell = (r, c) => typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : String(r[c.key] ?? "");
-  const filter = chartFilter(rows.map((r) => cols.map((c) => cell(r, c))));
+  const filter = chartFilter(rows.map((r) => cols.map((c) => cell(r, c))), { threadToSize: !!def.threadToSize });
 
   function draw() {
     // G01 matches G1, "1/4-20" finds the 1/4 bolt, the row named what was typed comes first (chart-filter.js)

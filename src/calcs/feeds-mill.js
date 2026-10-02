@@ -62,7 +62,7 @@ export default register({
     const thin = Math.min(thinRaw, THIN_CAP);
     const programmedChip = chipIn * thin;
     // Fit inside the machine: RPM cap first, then slow the spindle for a feed cap so the chip load holds.
-    const fit = fitToMachine(m, requestedRpm, v.flutes * programmedChip, c);
+    const fit = fitToMachine(m, requestedRpm, v.flutes * programmedChip, c, { check: "the chip load and flutes" });
     if (fit.cantRun) throw new Error(fit.problem);
     const { rpm, feedIpm } = fit;
     const slowed = fit.rpmCapped || fit.feedCapped;
@@ -75,7 +75,7 @@ export default register({
     if (caution) warnings.push(caution);
     // The math will happily feed 5× faster if you type 5× the chip load — the tool won't.
     const libChip = defaults(v).chipIn * chipLoadScale(dIn);
-    if (!v.chipAuto && chipIn > Math.max(libChip * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), cp)} ${c.L.length} per tooth is a very heavy chip for a ${fmt(v.diameter, inch ? 3 : 1)} ${c.L.length} tool (the library says about ${fmt(fromIn(libChip, c.units), cp)} ${c.L.length}). Expect a broken tool.`);
+    if (!v.chipAuto && chipIn > Math.max(libChip * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), cp)} ${c.L.length} per tooth is a very heavy chip for a ${len(v.diameter)} tool (the library says about ${fmt(fromIn(libChip, c.units), cp)} ${c.L.length}). Expect a broken tool.`);
     if (!v.chipAuto && chipIn > 0 && chipIn < libChip * 0.25) warnings.push(`${fmt(fromIn(chipIn, c.units), cp)} ${c.L.length} per tooth is very light — the tool will rub and dull instead of cutting. Typical is about ${fmt(fromIn(libChip, c.units), cp)} ${c.L.length}.`);
     if (thinRaw > THIN_CAP) warnings.push(`A ${len(fromIn(wocIn, c.units))} width of cut would need ${fmt(thinRaw, 1)}× thinning; it's held at ${THIN_CAP}×. Lighter than that, the edge rubs before the math catches up.`);
 
@@ -102,7 +102,7 @@ export default register({
         { title: "Feed rate", formula: `${c.L.feed} = RPM × flutes × chip load`, plugged: `= ${fmt(rpm, 0)} RPM × ${v.flutes} × ${fmt(fromIn(chipCut, c.units), cp)} ${c.L.length} = ${fmt(fromIn(feedIpm, c.units), 1)} ${c.L.feed}` },
       ],
       notes: v.sfmAuto || v.chipAuto ? ["Table values are conservative starting points for this material and tool type."] : [],
-      historyLabel: `${fmt(v.diameter, c.units === "in" ? 4 : 2)} ${c.L.length} · ${v.flutes}FL · ${materialSpeeds(v.material).material.name}`,
+      historyLabel: `${len(v.diameter)} · ${v.flutes}FL · ${materialSpeeds(v.material).material.name}`,
     };
   },
 });

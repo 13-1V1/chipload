@@ -13,6 +13,7 @@ import "../../src/calcs/arc-segment.js";
 import "../../src/calcs/circle3.js";
 import "../../src/calcs/sine-bar.js";
 import "../../src/calcs/bolt-circle.js";
+import "../../src/calcs/drill-point.js";
 import { getCalc } from "../../src/app/registry.js";
 import { buildValues, defaultRaw, invalidReason } from "../../src/app/values.js";
 import { fmt } from "../../src/core/format.js";
@@ -71,6 +72,50 @@ test("arc segment: chord + height past a half circle, and radius + chord names t
   assert.match(rcMm.notes[0], /height \d+(\.\d+)? mm, arc length \d+(\.\d+)? mm/);
   // a half circle has no second arc to name
   assert.equal(run("arc-segment", { pair: "radius,chord", a: "1", b: "2" }).out.notes.length, 1);
+});
+
+// The answer is a number the user didn't type. Machinery's Handbook "Segments of Circles": h = R − √(R² − c²/4),
+// so R 1, c √3 → h 0.5 (120°).
+test("arc segment: the answer is never one of the two values typed", () => {
+  const rc = run("arc-segment", { pair: "radius,chord", a: "1", b: String(Math.sqrt(3)) }).out.primary;
+  assert.equal(rc.label, "Height (sagitta)");
+  near(rc.value, 0.5, 1e-9);
+  assert.equal(rc.unit, "in");
+  const rcMm = run("arc-segment", { pair: "radius,chord", a: "25", b: String(25 * Math.sqrt(3)) }, "mm").out.primary;
+  assert.equal(rcMm.label, "Height (sagitta)");
+  near(rcMm.value, 12.5, 1e-9);
+  assert.equal(rcMm.unit, "mm");
+  const picks = { "radius,chord": "Height (sagitta)", "radius,height": "Chord", "radius,angle": "Chord", "chord,height": "Radius", "chord,angle": "Radius", "height,angle": "Radius" };
+  const named = { radius: "Radius", chord: "Chord", height: "Height (sagitta)", angle: "Central angle" };
+  for (const [pair, label] of Object.entries(picks)) {
+    const out = run("arc-segment", { pair, a: pair.startsWith("radius") ? "2" : "1", b: pair.endsWith("angle") ? "60" : "0.5" }).out;
+    assert.equal(out.primary.label, label, pair);
+    assert.ok(!pair.split(",").map((k) => named[k]).includes(out.primary.label), `${pair} answers with a typed value`);
+  }
+});
+
+// A height of the full diameter is the whole circle, refused the same as a 360° angle; just under it is still a segment.
+test("arc segment: radius + height of the full diameter is refused like a 360° angle", () => {
+  assert.equal(fails("arc-segment", { pair: "radius,height", a: "1", b: "2" }), "Height has to be less than the diameter");
+  assert.equal(fails("arc-segment", { pair: "radius,height", a: "25", b: "50" }, "mm"), "Height has to be less than the diameter");
+  assert.equal(fails("arc-segment", { pair: "radius,angle", a: "1", b: "360" }), "Angle has to be less than 360°");
+  const under = run("arc-segment", { pair: "radius,height", a: "1", b: "1.999" }).out;
+  assert.ok(under.stats.find((s) => s.label === "Central angle").value < 360);
+  assert.ok(under.primary.value > 0);
+});
+
+// Point length L = D ÷ (2 tan(θ/2)): ½ in, 118° → 0.1502 in. The explain line ends on the Z the answer says to program.
+test("drill point: the Z depth explain line has the same sign and number as Program Z", () => {
+  for (const [over, units] of [[{}, "in"], [{ through: "through" }, "in"], [{}, "mm"], [{ through: "through" }, "mm"]]) {
+    const out = run("drill-point", over, units).out;
+    const line = out.explain.find((e) => e.title === "Z depth");
+    assert.match(line.formula, /^Z = −\(/);
+    const [, num, unit] = line.plugged.match(/^= (-?[\d.]+) (\S+)$/);
+    assert.ok(out.primary.value < 0);
+    near(Number(num), out.primary.value, units === "in" ? 0.00005 : 0.0005);
+    assert.equal(unit, units);
+  }
+  assert.equal(run("drill-point").out.explain.find((e) => e.title === "Z depth").plugged, "= -1.1502 in");
 });
 
 test("circle from 3 points: collinear in mm, same point twice, and points bunched together", () => {
@@ -186,6 +231,21 @@ test("bolt circle G-code: a fitted S under 1 or an F that posts as zero is not w
       assert.doesNotMatch(said, /\bS0\b|F0\.0|program posts/, said);
     }
   }
+  // One turn longer than the machine's top feed (cantRun): the fix names this screen's own fields. Bolt circle has
+  // Spindle and Feed (per minute), no feed per rev field to check.
+  for (const [over, units] of [[{ spindle: "5", feed: "5000" }, "in"], [{ spindle: "5", feed: "127000" }, "mm"]]) {
+    const said = run("bolt-circle", { gcode: "drill", ...over }, units, vf2).out.warnings.join(" | ");
+    assert.match(said, /G-code not written: VF-2 max feed is [^|]*less than one turn at [^|]*Check Spindle and Feed, or the max feed in Shop\. Check that Spindle and Feed aren't swapped/, said);
+    assert.doesNotMatch(said, /feed per rev,/, said);
+  }
+  // An F that rounds up after the fit: the ratio is against the fitted feed, which nobody typed, so the sentence
+  // must not call it the feed asked for. 0.0004 IPM at 30000 → 6000 RPM is 0.00008 IPM, posts F0.0001 (1.25×).
+  for (const [over, units, said] of [[{ spindle: "30000", feed: "0.0004" }, "in", /comes to 0\.00008 IPM, which posts as F0\.0001, 1\.3× that feed: /], [{ spindle: "30000", feed: "0.004" }, "mm", /comes to 0\.0008 mm\/min, which posts as F0\.001, 1\.3× that feed: /]]) {
+    const out = run("bolt-circle", { gcode: "drill", ...over }, units, { ...vf2, units }).out;
+    assert.equal(out.code.length, 0);
+    assert.match(out.warnings.join(" | "), said);
+    assert.doesNotMatch(out.warnings.join(" | "), /asked for/);
+  }
   // the coordinates are still there
   assert.equal(run("bolt-circle", { gcode: "drill", spindle: "100", feed: "30000" }, "in", vf2).out.tables[0].rows.length, 6);
   // a fit that still posts real numbers is unchanged: 12000 → 6000 RPM, F30
@@ -215,6 +275,72 @@ test("bolt circle: holes closer than the last written digit are flagged and get 
   assert.equal(run("bolt-circle", { holes: "2", sweep: "0.01", gcode: "drill" }).out.code.length, 1);
   // one hole has no neighbor
   assert.deepEqual(run("bolt-circle", { holes: "1" }).out.warnings, []);
+});
+
+// The last hole of a partial circle and the first are neighbors in space. Wrap chord D sin((360 − sweep)/2):
+// 4 in, 359.99999° → 4 × sin(0.000005°) = 0.00000035 in; 100 mm, 359.9999° → 0.000087 mm. Both under the last digit.
+test("bolt circle: a sweep a hair under 360 puts the last hole on the first and gets no program", () => {
+  for (const [sweep, units, digit] of [["359.99999", "in", "0.0001 in"], ["359.999", "in", "0.0001 in"], ["359.9999", "mm", "0.001 mm"]]) {
+    for (const gcode of ["positions", "drill", "peck"]) {
+      const out = run("bolt-circle", { holes: "4", sweep, gcode }, units).out;
+      const said = out.warnings.join(" | ");
+      assert.equal(out.code.length, 0, `${sweep} ${units} ${gcode}: ${out.code[0]?.text}`);
+      assert.match(said, new RegExp(`^G-code not written: the last hole is only [\\d.]+° short of the first, so the two are less than ${digit.replace(".", "\\.")} apart`), said);
+      assert.doesNotMatch(said, / 0° /, "the gap never reads 0°");
+      assert.doesNotMatch(out.notes.join(" "), /G98/, "no G98 to change");
+    }
+    // a Heidenhain gets no positions list either
+    const heid = run("bolt-circle", { holes: "4", sweep, gcode: "drill" }, units, { ...vf2, controller: "heidenhain" }).out;
+    assert.equal(heid.code.length, 0);
+  }
+  const none = run("bolt-circle", { holes: "4", sweep: "359.99999" }).out;
+  assert.match(none.warnings[0], /^The last hole is only 0\.00001° short of the first/);
+  assert.equal(none.warnings.length, 1, "one sentence, not the near-360 one as well");
+  // 359.99° on 4 in: the gap is 0.00035 in, separate holes — still posted, with the near-360 note
+  const near360 = run("bolt-circle", { holes: "4", sweep: "359.99", gcode: "drill" }).out;
+  assert.equal(near360.code.length, 1);
+  assert.match(near360.warnings[0], /^The last hole lands only 0\.01° short of the first/);
+});
+
+// Stacking is decided from the posted words: 4 in, start 31°, 0.009° over 4 holes, chord 0.000105 in — over the
+// 0.0001 in digit, but diagonal neighbors still round to the same X and Y.
+test("bolt circle: neighbors that post on the same X/Y get no program", () => {
+  const out = run("bolt-circle", { holes: "4", start: "31", sweep: "0.009", gcode: "drill" }).out;
+  assert.equal(out.code.length, 0);
+  assert.match(out.warnings.join(" "), /^G-code not written: neighbor holes are 0\.000105 in apart, which rounds to the same X\/Y/);
+  // every program the tool writes has each X/Y once
+  for (const [over, units] of [[{ holes: "360", sweep: "1" }, "in"], [{ holes: "360", sweep: "2" }, "in"], [{ holes: "100", sweep: "359.9" }, "in"], [{ holes: "360", diameter: "0.2" }, "in"], [{ holes: "360", sweep: "1" }, "mm"], [{ holes: "50", start: "31", sweep: "0.2" }, "mm"]]) {
+    const text = run("bolt-circle", { ...over, gcode: "drill" }, units).out.code[0]?.text;
+    if (!text) continue;
+    const xy = text.split("\n").map((l) => l.match(/X(-?[\d.]+) Y(-?[\d.]+)/)?.slice(1).join(" ")).filter(Boolean).slice(1);
+    assert.equal(new Set(xy).size, xy.length, `${JSON.stringify(over)} ${units} drills one X/Y twice`);
+  }
+});
+
+// The G98 → G99 note is about the G81/G83 program: only where one was written.
+test("bolt circle: the G98 note shows only with a written G81/G83 program", () => {
+  const g98 = (over, units = "in", machine = null) => /G98/.test(run("bolt-circle", over, units, machine).out.notes.join(" "));
+  assert.ok(g98({ gcode: "drill" }));
+  assert.ok(g98({ gcode: "peck" }, "mm"));
+  assert.ok(!g98({ gcode: "positions" }));
+  assert.ok(!g98({ gcode: "peck" }, "in", { ...vf2, controller: "heidenhain" }), "Heidenhain gets bare positions");
+  assert.ok(!g98({ gcode: "drill", diameter: "0.001", holes: "100" }), "stacked");
+  assert.ok(!g98({ gcode: "drill", z: "0.5" }), "Z above R");
+  assert.ok(!g98({ gcode: "drill", spindle: "30000", feed: "0.0002" }, "in", vf2), "F posts as zero after the fit");
+});
+
+// The F word carries 4 places in inch, 3 in mm (Haas Mill Programming Workbook): a feed under that is refused,
+// never rounded up to a different feed.
+test("bolt circle: a feed under the F word's last digit is refused, not rounded to another feed", () => {
+  for (const [feed, units, posted] of [["0.00005", "in", "F0\\.0001"], ["0.0007", "mm", "F0\\.001"], ["0.0015", "mm", "F0\\.002"]]) {
+    const out = run("bolt-circle", { gcode: "drill", feed }, units).out;
+    assert.equal(out.code.length, 0, `${feed} ${units}`);
+    assert.match(out.warnings[0], new RegExp(`^G-code not written: Feed ${feed.replace(".", "\\.")} ${units === "in" ? "IPM" : "mm\\/min"} posts as ${posted}, `));
+  }
+  // a crawl that posts true is still posted, with the warning's sum right
+  const crawl = run("bolt-circle", { gcode: "drill", feed: "0.06" }, "mm").out;
+  assert.match(crawl.code[0].text, / F0\.06\n/);
+  assert.match(crawl.warnings.join(" "), /0\.06 × 1000 RPM = 60 mm\/min/);
 });
 
 test("bolt circle: the angle column reads 0 to under 360", () => {

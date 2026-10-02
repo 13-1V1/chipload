@@ -10,9 +10,8 @@ export const MACHINE_SCREW_DIAMETERS = Object.freeze({
 });
 
 /**
- * [major_in, tpi, standard_name, engagement?]. UNC to 4 in, UNF to 1-1/2 in, every UNEF size (#12-32 to 1-11/16-18),
- * and 1-14 UNS (the old NF size). The 4th element "D" marks a non-UNC/UNF row the B1.1 tables tolerance on one
- * diameter of engagement (1-14 UNS: Willrich gauge chart 2A PD 0.9519/0.9463, which only LE = D reproduces).
+ * [major_in, tpi, standard_name]. UNC to 4 in, UNF to 1-1/2 in, every UNEF size (#12-32 to 1-11/16-18),
+ * and 1-14 UNS (the old NF size; ASME B1.1-2003 Table 2 tolerances it on nine pitches like UNEF: 2A PD 0.9520/0.9467).
  * Constant-pitch 4/6/8/12/16/20/28/32UN sizes are recognized by rule in core/thread.js (lookupUnThread).
  */
 export const UN_THREAD_TABLE = Object.freeze([
@@ -29,7 +28,7 @@ export const UN_THREAD_TABLE = Object.freeze([
   [0.5625,18,"9/16-18 UNF"],[0.6250,11,"5/8-11 UNC"],[0.6250,18,"5/8-18 UNF"],
   [0.7500,10,"3/4-10 UNC"],[0.7500,16,"3/4-16 UNF"],[0.8750,9,"7/8-9 UNC"],
   [0.8750,14,"7/8-14 UNF"],[1.0000,8,"1-8 UNC"],[1.0000,12,"1-12 UNF"],
-  [1.0000,14,"1-14 UNS","D"],[1.1250,7,"1-1/8-7 UNC"],[1.1250,12,"1-1/8-12 UNF"],
+  [1.0000,14,"1-14 UNS"],[1.1250,7,"1-1/8-7 UNC"],[1.1250,12,"1-1/8-12 UNF"],
   [1.2500,7,"1-1/4-7 UNC"],[1.2500,12,"1-1/4-12 UNF"],[1.3750,6,"1-3/8-6 UNC"],
   [1.3750,12,"1-3/8-12 UNF"],[1.5000,6,"1-1/2-6 UNC"],[1.5000,12,"1-1/2-12 UNF"],
   [1.7500,5,"1-3/4-5 UNC"],[2.0000,4.5,"2-4.5 UNC"],[2.2500,4.5,"2-1/4-4.5 UNC"],[2.5000,4,"2-1/2-4 UNC"],
@@ -46,40 +45,13 @@ export const UN_THREAD_TABLE = Object.freeze([
 ]);
 
 /**
- * Constant-pitch UN series (ASME B1.1 Table 1): each starts at the size whose UNC (UNF for 28) pitch it is,
- * and runs on through the larger sizes. tpi → smallest major, in.
+ * Constant-pitch UN series, ASME B1.1-2003 Table 1: tpi → [smallest, largest] major, in. Each starts at the size
+ * whose UNC (UNF for 28) pitch it is; 20-UN stops at 3 in, 28-UN at 1-1/2 in, 32-UN at 1 in, the rest run to 6 in.
+ * Sizes step 1/16 in up to 2 in and 1/8 in from 2 to 6 in (core/thread.js lookupUnThread). Fractional sizes start at
+ * 1/4 in (Table 1 has no 3/16); the numbered starts (#12-28, #6-32) are UN_THREAD_TABLE rows.
+ * Class limits need no hand-set values: the B1.30-rounded formulas in core/thread.js reproduce every Table 2 row.
  */
-export const UN_CONSTANT_PITCH_START = Object.freeze({ 4: 2.5, 6: 1.375, 8: 1.0, 12: 0.5625, 16: 0.375, 20: 0.25, 28: 0.216, 32: 0.138 });
-
-/**
- * Published ASME B1.1 pitch-diameter limits that the tolerance formulas, rounded the tables' way, miss by
- * 0.0001–0.0002 in (the tables were smoothed by hand). Values from the Willrich Precision gauge PD chart, which
- * reproduces B1.1 (5/8-11 2A also matches engineersedge / amesweb: PD 0.5644/0.5589, major 0.6234/0.6113).
- * "major_in|tpi" → { "2A": [pdMax, pdMin], "3A": [pdMax, pdMin], "2B": [pdMin, pdMax], "3B": [pdMin, pdMax] },
- * only the classes that differ. A 2A override also moves the major diameter by the same allowance.
- */
-export const UN_LIMIT_OVERRIDES = Object.freeze({
-  "0.1380|32": {"3B": [0.1177,0.1204]}, // #6-32 UNC
-  "0.1380|40": {"3B": [0.1218,0.1243]}, // #6-40 UNF
-  "0.2160|32": {"2A": [0.1948,0.1917]}, // #12-32 UNEF
-  "0.3125|32": {"2A": [0.2912,0.288], "3A": [0.2922,0.2898], "2B": [0.2922,0.2964], "3B": [0.2922,0.2953]}, // 5/16-32 UNEF
-  "0.4375|28": {"2B": [0.4143,0.4189]}, // 7/16-28 UNEF
-  "0.5625|24": {"2A": [0.5342,0.5303], "3A": [0.5354,0.5325], "3B": [0.5354,0.5392]}, // 9/16-24 UNEF
-  "0.6250|11": {"2A": [0.5644,0.5589]}, // 5/8-11 UNC
-  "0.6875|24": {"2B": [0.6604,0.6656]}, // 11/16-24 UNEF
-  "0.8125|20": {"2B": [0.78,0.7857]}, // 13/16-20 UNEF
-  "0.8750|20": {"2A": [0.8412,0.8368], "3A": [0.8425,0.8392], "2B": [0.8425,0.8482], "3B": [0.8425,0.8468]}, // 7/8-20 UNEF
-  "1.0625|12": {"3A": [1.0084,1.0042]}, // 1-1/16-12 UN
-  "1.0625|18": {"2A": [1.025,1.0203], "3B": [1.0264,1.031]}, // 1-1/16-18 UNEF
-  "1.1250|7": {"2A": [1.03,1.0228]}, // 1-1/8-7 UNC
-  "1.1250|18": {"2A": [1.0875,1.0828], "3B": [1.0889,1.0935]}, // 1-1/8-18 UNEF
-  "1.1875|12": {"2A": [1.1317,1.1259]}, // 1-3/16-12 UN
-  "1.1875|18": {"2A": [1.1499,1.145]}, // 1-3/16-18 UNEF
-  "1.3125|12": {"3A": [1.2584,1.2541], "3B": [1.2584,1.264]}, // 1-5/16-12 UN
-  "1.3125|18": {"3A": [1.2764,1.2728], "2B": [1.2764,1.2827], "3B": [1.2764,1.2811]}, // 1-5/16-18 UNEF
-  "1.3750|18": {"3A": [1.3389,1.3353], "2B": [1.3389,1.3452], "3B": [1.3389,1.3436]}, // 1-3/8-18 UNEF
-  "1.4375|18": {"2A": [1.3999,1.3949], "2B": [1.4014,1.4079]}, // 1-7/16-18 UNEF
-});
+export const UN_CONSTANT_PITCH_RANGE = Object.freeze({ 4: [2.5, 6], 6: [1.375, 6], 8: [1.0, 6], 12: [0.5625, 6], 16: [0.375, 6], 20: [0.25, 3], 28: [0.216, 1.5], 32: [0.138, 1] });
 
 /**
  * Stock tap drills for ~75% thread. Source: ANSI/ASME B94.11M tap drill chart
@@ -148,8 +120,11 @@ const UN_TAP_DRILLS = {
   "3.7500|4":   [3.5000, '3-1/2"'],
   // 4-4 UNC is left out on purpose: its 75% hole (3.7565 in) is past the 3-1/2 in drill chart, so Tap drill says bore it.
   // UNEF. #12-32 to 1-20 as every chart prints them (B94.11M style: #13, 7/32 … 15/32, 33/64 … 61/64). The 7/16-28 and
-  // 18-TPI rows follow the threadspec.org UNEF chart (Y, 1-1/64 … 1-41/64): the stock drill nearest the 75% size, which
-  // lands at the ASME B1.1 2B maximum minor (YG-1 tap drill table: 1-1/16-18 75% = 1.0084, 2B minor 1.0020–1.0150).
+  // 18-TPI rows follow the threadspec.org UNEF chart (Y, 1-1/64 … 1-41/64): the stock drill nearest the 75% size. On
+  // paper the 18-TPI drills sit about 0.0006 in over the ASME B1.1-2003 Table 2 2B minor max (1-1/16-18: 1-1/64 =
+  // 1.0156 vs 1.002–1.015), as the standard charts print them (9/16-18 and 5/8-18 UNF too). The 24-TPI drills sit
+  // about 0.0014–0.0019 in under the 2B minor min (9/16-24: 33/64 = 0.5156 vs 0.517–0.527) and run ~87% on paper;
+  // normal drill oversize brings them into the band, and Tap drill says so.
   "0.2160|32":  [0.1850, "#13"],
   "0.2500|32":  [0.2188, '7/32"'],
   "0.3125|32":  [0.2812, '9/32"'],

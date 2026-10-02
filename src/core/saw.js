@@ -54,7 +54,10 @@ export function bandSawSpeed(m, thicknessIn = 4) {
 /**
  * Variable-pitch blade for the stock: "round" (diameter), "flat" (width of square/flat bar) or "tube" (wall).
  * Source: USA Band Saw Blades Tooth Selection Guide p.23, cross-checked with the LENOX bi-metal tooth chart.
- * Returns { pitch: "5/8", coarse, fine, mean, teethInCut, constant } — constant is the nearest one-pitch blade.
+ * Returns { pitch: "5/8", coarse, fine, mean, teethInCut, constant, thin } — constant is the nearest one-pitch
+ * blade. On a tie (3/4 → 3 or 4) the coarser one stands while it keeps 3 teeth in the cut, the usual minimum;
+ * past that the finer one wins (1/8 in on 14/18 → 18, not 14). Under THIN_STOCK_IN (thin: true) it is the finest
+ * common blade, 24 TPI, the one the tool's thin-stock warning names.
  */
 export function bladeForStock(thicknessIn, shape = "round") {
   if (!(thicknessIn > 0)) return null;
@@ -62,8 +65,38 @@ export function bladeForStock(thicknessIn, shape = "round") {
   const pitch = chart.find(([upTo]) => thicknessIn < upTo)[1];
   const [coarse, fine] = pitch.split("/").map(Number);
   const mean = (coarse + fine) / 2;
-  const constant = COMMON_TPI.reduce((a, b) => (Math.abs(b - mean) < Math.abs(a - mean) ? b : a));
-  return { pitch, coarse, fine, mean, teethInCut: mean * thicknessIn, constant };
+  const thin = thicknessIn < THIN_STOCK_IN;
+  const nearest = COMMON_TPI.reduce((a, b) => {
+    const da = Math.abs(a - mean), db = Math.abs(b - mean);
+    return db < da || (db === da && a * thicknessIn < 3) ? b : a;   // COMMON_TPI runs coarse → fine, so b is finer
+  });
+  const constant = thin ? COMMON_TPI[COMMON_TPI.length - 1] : nearest;
+  return { pitch, coarse, fine, mean, teethInCut: mean * thicknessIn, constant, thin };
+}
+
+/** Stock under 3/32 in: fewer than 3 teeth in the cut even on the chart's finest blade, so it gets the finest you can buy. */
+export const THIN_STOCK_IN = 3 / 32;
+
+/**
+ * Wood stock this thick and up takes a 3–4 TPI hook-tooth blade (4 TPI still keeps 3 teeth in a 3/4 in cut).
+ * Set at 19 mm (0.748 in), the metric 3/4 board, so a 19 mm entry lands on the side the "from 19 mm up" line promises;
+ * 4 TPI × 0.748 in = 2.99 teeth, still the 3-tooth rule to the figure shown.
+ */
+export const WOOD_HOOK_MIN_IN = 19 / 25.4;
+
+/**
+ * Band saw blade for wood (the metal tooth chart doesn't apply). Woodworking blade guides: hook tooth, 3–4 TPI, for
+ * thick stock and resawing; thinner stock and curves want a finer regular-tooth blade with at least 3 teeth in the
+ * work. Under WOOD_HOOK_MIN_IN this picks the coarsest common pitch that keeps 3 teeth in the cut (24 TPI at most).
+ * Returns { tooth: "hook" | "regular", tpi: "3–4" | "6" …, teethInCut (null for the hook range), thin }.
+ */
+export function woodBladeForStock(thicknessIn) {
+  if (!(thicknessIn > 0)) return null;
+  const thin = thicknessIn < THIN_STOCK_IN;
+  if (thicknessIn >= WOOD_HOOK_MIN_IN) return { tooth: "hook", tpi: "3–4", teethInCut: null, thin };
+  const need = 3 / thicknessIn;
+  const tpi = COMMON_TPI.find((n) => n >= need - 1e-9) ?? COMMON_TPI[COMMON_TPI.length - 1];
+  return { tooth: "regular", tpi: String(tpi), teethInCut: tpi * thicknessIn, thin };
 }
 
 /** Blade speed from wheel diameter (in) and wheel RPM: FPM = π D RPM ÷ 12. */

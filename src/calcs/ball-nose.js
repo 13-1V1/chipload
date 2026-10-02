@@ -59,8 +59,8 @@ export default register({
       if (hasSpeed && Number.isFinite(deff) && deff > 0) {
         const m = machineFor(c, "mill");
         const wantedRpm = rpmFromSfm(toSfm(v.sfm, c.units), toIn(deff, c.units));
-        // No feed here, so only the spindle cap matters. fitToMachine's warning talks about the feed, which
-        // this tool never shows, so the cap is worded below instead.
+        // No feed here, so only the spindle cap matters. With no feed per rev fitToMachine's own warning would only
+        // name the machine's top and the RPM wanted; the line below says that and what surface speed the ball is left with.
         const fit = fitToMachine(m, wantedRpm, 0, c);
         const rpmFull = rpmFromSfm(toSfm(v.sfm, c.units), toIn(v.diameter, c.units));
         warnings.push(...spindleSanity(wantedRpm, m, "mill", c));

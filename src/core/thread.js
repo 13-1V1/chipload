@@ -4,7 +4,7 @@
 // Thread spec parsing and 60° thread geometry (Unified inch + ISO metric).
 
 import { parseFraction } from "./format.js";
-import { MACHINE_SCREW_DIAMETERS, UN_THREAD_TABLE, UN_CONSTANT_PITCH_START, UN_LIMIT_OVERRIDES } from "../data/threads-un.js";
+import { MACHINE_SCREW_DIAMETERS, UN_THREAD_TABLE, UN_CONSTANT_PITCH_RANGE } from "../data/threads-un.js";
 import { METRIC_DEFAULT_PITCH, METRIC_THREAD_TABLE, ISO965_DEVIATIONS, ISO965_TD1, ISO965_TD, ISO965_TD2, ISO965_TD2_EXT } from "../data/threads-metric.js";
 import { STI_DRILL_UN, STI_DRILL_METRIC } from "../data/sti.js";
 
@@ -77,7 +77,7 @@ function parseThreadParts(input) {
   if (metric) {
     const major = Number(metric[1]);
     const pitch = metric[2] !== undefined ? Number(metric[2]) : METRIC_DEFAULT_PITCH[major];
-    if (!(major > 0) || !(pitch > 0) || pitch >= major) return null;
+    if (!(major > 0) || !(pitch > 0)) return null;
     return finish({ system: "metric", major, pitch, label: `M${major}x${pitch}`, suppliedSeries: null });
   }
 
@@ -141,8 +141,9 @@ export function basicThreadGeometry(major, pitch) {
   };
 }
 
+// Half-up rounding to n places; toFixed first strips binary noise so 0.91005 rounds up, as printed.
 const r3 = (x) => Math.round(Number((x * 1e3).toFixed(6))) / 1e3;
-const r4 = (x) => Math.round(x * 1e4) / 1e4, r6 = (x) => Math.round(x * 1e6) / 1e6;
+const r4 = (x) => Math.round(Number((x * 1e4).toFixed(6))) / 1e4, r6 = (x) => Math.round(Number((x * 1e6).toFixed(4))) / 1e6;
 
 /**
  * UN class limits from the ASME B1.1 tolerance formulas (§8), inch units.
@@ -153,55 +154,45 @@ const r4 = (x) => Math.round(x * 1e4) / 1e4, r6 = (x) => Math.round(x * 1e6) / 1
  *     2B: under 1/4 in → 0.05 ∛P² + 0.03 P/D − 0.002, held between 0.25P − 0.4P² and 0.394P;
  *         1/4 in and up → 0.25P − 0.4P² (0.15P coarser than 4 TPI)
  *     3B: 0.05 ∛P² + 0.03 P/D − 0.002, not over 0.394P, not under 0.23P − 1.5P² (0.120P for 12 TPI and coarser)
- * LE is the length of engagement the published tables assume: one diameter for UNC, UNF, 1-14 UNS and the
- * 4-, 6- and 8-thread series; nine pitches for UNEF, the finer constant-pitch series and specials.
- * Rounding the way the tables print: each allowance and tolerance is worked to six places and rounded to
- * 0.0001 in before it is applied to the basic size. Minor diameters: basic minor and tolerance to 0.0001 in;
- * from #6 (0.138 in) up the 2B min/max and 3B min are printed to 0.001 in, the 3B max to 0.0001 in
- * (1/4-20: 2B 0.196/0.207, 3B 0.1960/0.2067). The handful of standard rows the B1.1 tables smoothed by hand
- * (off the rounded formula by 0.0001–0.0002 in) take their published values from UN_LIMIT_OVERRIDES.
- * `raw: true` skips those overrides (used to regenerate them).
+ * LE is the length of engagement the published tables assume: one diameter for UNC, UNF and the 4-, 6- and
+ * 8-thread series; nine pitches for UNEF, 1-14 UNS, the finer constant-pitch series and specials.
+ * Rounding is the ASME B1.30 rule ASME B1.1-2003 Table 2 is computed with (§8.2.1; the pre-2003 values, now in
+ * Nonmandatory Appendix E Table E-1, rounded differently): each formula term is worked to six places, the
+ * allowance, the 3A PD tolerance and the major tolerance are rounded to 0.0001 in, the other tolerances are
+ * applied unrounded, and only the finished limit is rounded (0.0001 in, half up). Internal minor: basic minor
+ * plus the unrounded tolerance, rounded once (§8.3.2(e)(f)); from #6 (0.138 in) up the 2B min/max and 3B min
+ * print to 0.001 in, the 3B max to 0.0001 in. This reproduces every limit of all 344 sizes in Table 2
+ * (1-8 UNC 2A PD 0.9168/0.9101, 1/2-16 UN 3B minor max 0.4420, 1-14 UNS 2A PD 0.9520/0.9467).
  */
-export function unToleranceEnvelope({ major, pitch, raw = false }) {
+export function unToleranceEnvelope({ major, pitch }) {
   const g = basicThreadGeometry(major, pitch);
   const tpi = 1 / pitch;
   const cbrtP2 = Math.cbrt(pitch * pitch);
   const row = unThreadRow(major, tpi);
-  const oneDiameter = row?.[3] === "D" || (row && /UN[CF]$/.test(row[2])) || [4, 6, 8].some((n) => Math.abs(tpi - n) < 1e-6);
+  const oneDiameter = (row && /UN[CF]$/.test(row[2])) || [4, 6, 8].some((n) => Math.abs(tpi - n) < 1e-6);
   const LE = oneDiameter ? major : 9 * pitch;
-  const td2 = r6(0.0015 * Math.cbrt(major) + 0.0015 * Math.sqrt(LE) + 0.015 * cbrtP2);
-  const TD2_2A = r4(td2);
-  const TD2_3A = r4(r6(0.75 * td2));
-  const TD2_2B = r4(r6(1.30 * td2));
-  const TD2_3B = r4(r6(0.975 * td2));
-  const allowance = r4(r6(0.300 * td2));
+  const td2 = r6(0.0015 * Math.cbrt(major)) + r6(0.0015 * Math.sqrt(LE)) + r6(0.015 * cbrtP2);
+  const allowance = r4(0.300 * td2);
   const majorTol = r4(r6(0.060 * cbrtP2));
   const pd = r4(g.pitchDiameter);
+  const pdMax2A = r4(pd - allowance), pdMin2A = r4(pdMax2A - td2), pdMin3A = r4(pd - r4(0.75 * td2));
+  const pdMax2B = r4(pd + 1.30 * td2), pdMax3B = r4(pd + 0.975 * td2);
   const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
-  const smallFormula = 0.05 * cbrtP2 + 0.03 * pitch / major - 0.002;
+  const smallFormula = r6(0.05 * cbrtP2) + r6(0.03 * pitch / major) - 0.002;
   const minorTol2B = major < 0.25
     ? clamp(smallFormula, 0.25 * pitch - 0.4 * pitch * pitch, 0.394 * pitch)
     : (tpi >= 4 ? 0.25 * pitch - 0.4 * pitch * pitch : 0.15 * pitch);
   const minorTol3B = clamp(smallFormula, tpi >= 13 ? 0.23 * pitch - 1.5 * pitch * pitch : 0.120 * pitch, 0.394 * pitch);
-  const bm = r4(g.internalMinor), t2 = r4(minorTol2B), t3 = r4(minorTol3B);
+  const bm = r6(g.internalMinor);
   const threePlace = major >= 0.138 - 1e-9;
-  const minorMin = threePlace ? r3(bm) : bm;
+  const minorMin = threePlace ? r3(bm) : r4(bm);
   const env = {
-    "2A": { pdMax: pd - allowance, pdMin: pd - allowance - TD2_2A, majorMax: major - allowance, majorMin: major - allowance - majorTol, tol: TD2_2A, allowance },
-    "3A": { pdMax: pd, pdMin: pd - TD2_3A, majorMax: major, majorMin: major - majorTol, tol: TD2_3A, allowance: 0 },
-    "2B": { pdMin: pd, pdMax: pd + TD2_2B, minorMin, minorMax: threePlace ? r3(bm + t2) : r4(bm + t2), tol: TD2_2B },
-    "3B": { pdMin: pd, pdMax: pd + TD2_3B, minorMin, minorMax: r4(bm + t3), tol: TD2_3B },
+    "2A": { pdMax: pdMax2A, pdMin: pdMin2A, majorMax: r4(major - allowance), majorMin: r4(major - allowance - majorTol), tol: r4(pdMax2A - pdMin2A), allowance },
+    "3A": { pdMax: pd, pdMin: pdMin3A, majorMax: major, majorMin: r4(major - majorTol), tol: r4(pd - pdMin3A), allowance: 0 },
+    "2B": { pdMin: pd, pdMax: pdMax2B, minorMin, minorMax: threePlace ? r3(bm + minorTol2B) : r4(bm + minorTol2B), tol: r4(pdMax2B - pd) },
+    "3B": { pdMin: pd, pdMax: pdMax3B, minorMin, minorMax: r4(bm + minorTol3B), tol: r4(pdMax3B - pd) },
     engagement: LE,
   };
-  const over = !raw && UN_LIMIT_OVERRIDES[`${major.toFixed(4)}|${Math.round(tpi * 1000) / 1000}`];
-  if (over) {
-    if (over["2A"]) {
-      const [max, min] = over["2A"], allow = r4(pd - max);
-      Object.assign(env["2A"], { pdMax: max, pdMin: min, tol: r4(max - min), allowance: allow, majorMax: major - allow, majorMin: major - allow - majorTol });
-    }
-    if (over["3A"]) Object.assign(env["3A"], { pdMin: over["3A"][1], tol: r4(pd - over["3A"][1]) });
-    for (const cls of ["2B", "3B"]) if (over[cls]) Object.assign(env[cls], { pdMax: over[cls][1], tol: r4(over[cls][1] - pd) });
-  }
   return env;
 }
 
@@ -221,16 +212,17 @@ function inchSizeLabel(d) {
 
 /**
  * Standard-series name for a UN size, e.g. "1/4-20 UNC" or "1-1/16-12 UN", or null.
- * Constant-pitch sizes follow ASME B1.1 Table 1: 1/16 in steps to 2 in, 1/8 in to 4 in, 1/4 in to 6 in,
- * from the size where that pitch is the UNC (or UNF) pitch.
+ * Constant-pitch sizes follow ASME B1.1-2003 Table 1: 1/16 in steps to 2 in, 1/8 in from 2 to 6 in, from the
+ * size where that pitch is the UNC (or UNF) pitch to the series' last size (20-UN 3 in, 28-UN 1-1/2, 32-UN 1).
  */
 export function lookupUnThread(majorIn, tpi) {
   const row = unThreadRow(majorIn, tpi);
   if (row) return row[2];
-  const start = UN_CONSTANT_PITCH_START[tpi];
-  if (start === undefined || majorIn < start - 1e-6) return null;
-  const step = majorIn <= 2 + 1e-9 ? 1 / 16 : majorIn <= 4 + 1e-9 ? 1 / 8 : majorIn <= 6 + 1e-9 ? 1 / 4 : 0;
-  if (!step || Math.abs(majorIn / step - Math.round(majorIn / step)) > 1e-6) return null;
+  const range = UN_CONSTANT_PITCH_RANGE[tpi];
+  // B1.1-2003 Table 1 has no fractional size under 1/4 in (#10 0.190, #12 0.216 are the rows there), so 3/16-32 is a special.
+  if (!range || majorIn < Math.max(range[0], 0.25) - 1e-6 || majorIn > range[1] + 1e-6) return null;
+  const step = majorIn <= 2 + 1e-9 ? 1 / 16 : 1 / 8;
+  if (Math.abs(majorIn / step - Math.round(majorIn / step)) > 1e-6) return null;
   return `${inchSizeLabel(majorIn)}-${tpi} UN`;
 }
 
@@ -355,18 +347,19 @@ export function acmeGeometry({ major, tpi }) {
  * (src/data/sti.js; metric gives the steel drill as size and the aluminum drill as alt). Anything else is
  * an estimate: the STI tapped hole's minimum minor diameter is D + 0.2165 P (the plain thread's basic minor
  * D − 1.0825 P plus twice the insert wire height 0.6495 P, ASME B18.29.1 / B18.29.2M); the caller drills
- * the first stock size at or above it. An estimate's size is the D + 0.25 P shop rule of thumb.
+ * the first stock size at or above it, so an estimate's size is that minimum. The chart is keyed on the exact
+ * TPI: a pitch the chart doesn't list (1/4-19.6) is an estimate, never the neighboring row.
  * Returns { size, label, alt?, minMinor, source: "table" | "estimate" } in the thread's native unit.
  */
 export function stiTapDrill(major, pitch, { isUn = true, tpi = null } = {}) {
   const minMinor = major + 0.216506 * pitch;
   if (isUn && tpi != null) {
-    const row = STI_DRILL_UN[`${major.toFixed(4)}|${Math.round(tpi)}`];
+    const row = STI_DRILL_UN[`${major.toFixed(4)}|${tpi}`];
     if (row) return { size: row[0], label: row[1], minMinor, source: "table" };
   }
   if (!isUn) {
     const mm = STI_DRILL_METRIC[`${major.toFixed(1)}|${pitch.toFixed(2)}`];
     if (mm) return { size: mm[0], label: `${mm[0]} mm`, alt: mm[1], minMinor, source: "table" };
   }
-  return { size: major + 0.25 * pitch, label: null, minMinor, source: "estimate" };
+  return { size: minMinor, label: null, minMinor, source: "estimate" };
 }

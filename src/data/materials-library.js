@@ -309,7 +309,9 @@ export function materialSpeeds(id, toolType = "carbide") {
   const sfm = toolType === "hss" ? m.sfmHss : toolType === "coated" ? m.sfmCarbide * 1.25 : m.sfmCarbide;
   const chipIn = toolType === "hss" ? m.chipIn * 0.75 : m.chipIn;
   const carbide = toolType !== "hss";
-  // Haas lists one carbide drill speed per material; a coated drill is not taken faster than that.
+  // Drill speed = 0.8 × the milling SFM, so a coated drill runs 1.25 × a plain carbide one. Rows with a
+  // drillCarbide (the HARD rows, e.g. 55–60 HRC tool steel; Haas lists one carbide drill speed) use that figure for
+  // carbide and coated alike: a coated drill is not taken faster than Haas lists.
   const drillSfm = carbide && m.drillCarbide ? m.drillCarbide : Math.round(sfm * 0.8);
   // Default turnSfm = the rounded milling SFM × 1.2, the same number the lathe tools figured before.
   const turnSfm = carbide && m.turnCarbide ? Math.round(m.turnCarbide * (toolType === "coated" ? 1.25 : 1)) : Math.round(sfm) * 1.2;

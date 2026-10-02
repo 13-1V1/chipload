@@ -72,9 +72,10 @@ describe("Play Billing with the real plugin", { concurrency: true }, () => {
     assert.match(r.toasts[0], NO_PLAY);
   });
 
-  test("Restore tapped before billing connects says Play can't be reached, not \"no purchase found\"", async () => {
-    const r = await launch({ play: { owned: true, initDelay: 1500 }, steps: [{ wait: 100 }, { tap: "restore", after: 50 }] });
-    assert.deepEqual(r.toasts, ["Can't reach Google Play right now — check your connection and try again"]);
+  // Mid-connect Play has neither answered nor failed: "can't reach" would be a guess, and so would "no purchase found".
+  test("Restore tapped while billing is still connecting says so, not \"no purchase found\" or \"can't reach\"", async () => {
+    const r = await launch({ play: { owned: true, initDelay: 1500 }, steps: [{ wait: 100 }, { tap: "restore", after: 50 }, { tap: "buy", after: 50 }] });
+    assert.deepEqual(r.toasts.slice(0, 2), ["Still connecting to Google Play — try again in a moment", "Still connecting to Google Play — try again in a moment"]);
   });
 
   test("a launch where Play lists Pro resets the count", async () => {

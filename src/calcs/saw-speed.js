@@ -4,7 +4,8 @@
 // Band saw blade speed and tooth pitch. Free tier — the hobbyist's first question.
 
 import { register } from "../app/registry.js";
-import { bandSawSpeed, bladeForStock, bladeSpeedFromWheel, wheelRpmForSpeed } from "../core/saw.js";
+import { bandSawSpeed, bladeForStock, woodBladeForStock, bladeSpeedFromWheel, wheelRpmForSpeed } from "../core/saw.js";
+import { WOOD_IDS } from "../data/saw.js";
 import { materialOptions, materialById } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromSfm, lenPlaces } from "./_util.js";
@@ -23,7 +24,8 @@ export default register({
   safety: "Starting point. A dull blade or a thin wall wants the low number.",
   inputs: [
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
-    { id: "shape", label: "Stock shape", kind: "segment", default: "round", options: SHAPES },
+    // Shape picks a row of the metal tooth chart; a wood blade goes by thickness alone, so wood hides it.
+    { id: "shape", label: "Stock shape", kind: "segment", default: "round", options: SHAPES, showIf: (r) => !WOOD_IDS.includes(r.material) },
     { id: "thickness", label: "Stock size (the part the blade goes through)", kind: "length", default: "1", defaultMm: "25", min: 0.001, hint: "Round bar: the diameter. Flat or square bar: the width the blade crosses. Tube, pipe, angle, channel: the wall thickness." },
     { id: "wheel", positive: true, label: "Saw wheel diameter", kind: "length", default: "", optional: true, placeholder: "optional — gives the wheel RPM to aim for", advanced: true },
     { id: "rpm", min: 1, label: "Wheel RPM you have", kind: "int", default: "", unit: "RPM", optional: true, placeholder: "optional — checks your saw's speed (needs the wheel size too)", advanced: true },
@@ -34,16 +36,22 @@ export default register({
     const shape = SHAPE_WORD[v.shape] ? v.shape : "round";
     const tIn = toIn(v.thickness, c.units);
     const speed = bandSawSpeed(m, tIn);
-    const blade = bladeForStock(tIn, shape);
+    // Wood gets a wood blade (hook or regular tooth); the variable-pitch tooth chart is for metal.
+    const wood = speed.basis === "wood";
+    const blade = wood ? woodBladeForStock(tIn) : bladeForStock(tIn, shape);
     const p = lenPlaces(c.units);
     // Blade speed shows in FPM, or m/min in metric (same conversion as SFM ⇄ m/min).
     const spUnit = mm ? "m/min" : "FPM";
     const sp = (fpm) => `${fmt(fromSfm(fpm, c.units), 0)} ${spUnit}`;
     const size = `${fmt(v.thickness, p)} ${c.L.length}`;
+    const woodText = () => (blade.tooth === "hook" ? "Hook tooth, about 3–4 TPI"
+      : `Regular tooth, about ${blade.tpi} TPI (about ${fmt(blade.teethInCut, 1)} teeth in the cut)`);
     const stats = [
       { label: "Speed range for this material", text: speed.basis === "chart" ? `${sp(speed.min)} dry – ${sp(speed.max)} with coolant` : `${sp(speed.min)} – ${sp(speed.max)}` },
-      { label: "Blade to use", text: `${blade.pitch} TPI variable pitch (about ${fmt(blade.teethInCut, 1)} teeth in the cut)` },
-      { label: "One-pitch blade instead", text: `${blade.constant} TPI` },
+      ...(wood ? [{ label: "Blade to use", text: woodText() }] : [
+        { label: "Blade to use", text: `${blade.pitch} TPI variable pitch (about ${fmt(blade.teethInCut, 1)} teeth in the cut)` },
+        { label: "One-pitch blade instead", text: `${blade.constant} TPI` },
+      ]),
       { label: "Material", text: `${m.name} · ${m.group}` },
     ];
     const warnings = [];
@@ -56,7 +64,8 @@ export default register({
     } else {
       explain.push({ title: "Blade speed", formula: speed.basis === "wood" ? `Wood: start near ${mm ? "900 m/min" : "3,000 FPM"}` : "No maker chart row for this family: a published range, placed by machinability", plugged: `${sp(speed.min)} – ${sp(speed.max)} → start ${sp(speed.start)}` });
     }
-    explain.push({ title: "Tooth pitch", formula: "Blade maker's tooth chart: round bar by diameter, flat bar by width, tube by wall", plugged: `${size} ${SHAPE_WORD[shape]} → ${blade.pitch} TPI` });
+    if (wood) explain.push({ title: "Tooth pitch", formula: `Wood: hook tooth, 3–4 TPI, from ${mm ? "19 mm" : "3/4 in"} up; thinner stock keeps at least 3 teeth in the cut`, plugged: `${size} → ${woodText()}` });
+    else explain.push({ title: "Tooth pitch", formula: "Blade maker's tooth chart: round bar by diameter, flat bar by width, tube by wall", plugged: `${size} ${SHAPE_WORD[shape]} → ${blade.pitch} TPI` });
     if (speed.bimetalUnsuitable) warnings.push(`${m.name} is about ${speed.hrc} HRC — too hard for a bi-metal blade. Use a carbide-tipped blade or an abrasive cutoff saw. The speed shown is only a ceiling if you try a bi-metal blade anyway.`);
     else if (speed.beyondChart) warnings.push(`${m.name} is about ${speed.hrc} HRC, past the end of the blade maker's hardness table (40 HRC). Stay at or under this speed with a light feed, or use a carbide-tipped blade.`);
     if (Number.isFinite(v.wheel) && v.wheel > 0) {
@@ -75,16 +84,18 @@ export default register({
     } else if (Number.isFinite(v.rpm) && v.rpm > 0) {
       warnings.push(`To check ${v.rpm} wheel RPM, also enter the saw wheel diameter (just above it under More options). Blade speed needs both.`);
     }
-    if (tIn < 3 / 32) warnings.push("Thin stock: use the finest blade you have (14/18, or a 24 TPI one-pitch blade) and a light feed, or the teeth will catch.");
+    // Names the same blades as the stats above, so the screen gives one answer.
+    if (blade.thin) warnings.push(wood ? `Thin stock: use the finest blade you have (${blade.tpi} TPI) and a light feed, or the teeth will catch.`
+      : `Thin stock: use the finest blade you have (${blade.pitch}, or a ${blade.constant} TPI one-pitch blade) and a light feed, or the teeth will catch.`);
     const notes = [`${spUnit} is how fast the blade's edge travels. Most small band saws run ${mm ? "900+ m/min" : "3,000+ FPM"} — fine for wood and aluminum, way too fast for steel. A saw that only does wood speeds needs a speed reducer to cut steel.`];
     if (speed.basis === "chart") notes.push("Speeds are for a bi-metal blade with flood coolant. Spray lube: 15% slower. No coolant: 30–50% slower. Carbon-steel blade: half speed.");
-    if (speed.basis === "wood") notes.push("The tooth chart is for metal. For wood use a hook-tooth blade: about 3–4 TPI for thick stock, finer for thin stock and tight curves.");
+    if (speed.basis === "wood") notes.push("The metal tooth chart doesn't apply to wood: a hook-tooth blade, about 3–4 TPI, for thick stock; a finer regular-tooth blade for thin stock and tight curves.");
     return {
       primary: { label: `Blade speed to start · ${m.name.split(" ")[0]}`, value: fromSfm(speed.start, c.units), unit: spUnit, places: 0 },
       stats, warnings, explain,
       source: "saw",
       notes,
-      historyLabel: `${m.name.split(" ")[0]} · ${size} → ${blade.pitch} TPI`,
+      historyLabel: `${m.name.split(" ")[0]} · ${size} → ${wood ? blade.tpi : blade.pitch} TPI`,
     };
   },
 });

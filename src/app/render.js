@@ -5,7 +5,7 @@
 // "How was this figured?" drawer, recent history. Live-calculates on every change.
 
 import { fmt } from "../core/format.js";
-import { buildValues, optionsFor, sanitizeChoices, convertInput, defaultFor, defaultRaw, measureOf, labelOf, invalidReason, NUMERIC_KINDS } from "./values.js";
+import { buildValues, optionsFor, sanitizeChoices, convertInput, forgetFlip, defaultFor, defaultRaw, measureOf, labelOf, invalidReason, NUMERIC_KINDS } from "./values.js";
 import { CALCULATION_SOURCES } from "../data/sources.js";
 import { getSettings, UNIT_LABEL, SHARE_BASE } from "./settings.js";
 import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, saveBlob, loadStrings } from "./store.js";
@@ -54,7 +54,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     if (saved.values && input.id in saved.values) {
       // Saved numbers are in the units they were saved in; a link asking for the other system gets them converted.
       const text = saved.values[input.id];
-      return saved.units && saved.units !== units ? convertInput(input, text, saved.units, units, raw) : text;
+      return saved.units && saved.units !== units ? convertInput(input, text, saved.units, units, raw, `${def.id}|${input.id}`) : text;
     }
     return defaultFor(input, units, raw);
   };
@@ -108,7 +108,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       for (const input of def.inputs) {
         const el = fields[input.id];
         if (isChoice(input) || !el) continue;
-        el.value = raw[input.id] = convertInput(input, String(raw[input.id] ?? ""), from, units, raw);
+        el.value = raw[input.id] = convertInput(input, String(raw[input.id] ?? ""), from, units, raw, `${def.id}|${input.id}`);
       }
       refreshUnits();
       recalc();
@@ -117,6 +117,8 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   }
 
   // ── Fields ──
+  // The user changed a field: a unit switch after this converts their text fresh instead of restoring the old one.
+  const typed = (input) => forgetFlip(`${def.id}|${input.id}`);
   const fields = {};
   const fieldWraps = {};
   const unitLabels = {};
@@ -175,18 +177,18 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       control.rows = input.rows || 4;
       control.value = raw[input.id];
       control.placeholder = input.placeholder || "";
-      control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); });
+      control.addEventListener("input", () => { typed(input); raw[input.id] = control.value; recalc(); });
     } else {
       control = document.createElement("input");
       control.type = "text";
       control.className = "input";
       control.value = raw[input.id];
-      if (input.kind === "text") { control.inputMode = "text"; control.autocapitalize = "off"; control.enterKeyHint = "done"; control.placeholder = input.placeholder || ""; control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); }); }
+      if (input.kind === "text") { control.inputMode = "text"; control.autocapitalize = "off"; control.enterKeyHint = "done"; control.placeholder = input.placeholder || ""; control.addEventListener("input", () => { typed(input); raw[input.id] = control.value; recalc(); }); }
       else {
         // Only number fields belong to the custom pad; a text field gets the phone's own keyboard.
         control.dataset.numpad = "1";
         attachNumpad(control, {
-          change: (el) => { raw[input.id] = el.value; recalc(); },
+          change: (el) => { typed(input); raw[input.id] = el.value; recalc(); },
           next: (el) => nextField(el, calc), // skips fields hidden by the mode or folded in More options
         });
       }
@@ -204,7 +206,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       for (const value of input.suggest) {
         const b = document.createElement("button");
         b.type = "button"; b.textContent = value;
-        b.addEventListener("click", () => { control.value = value; raw[input.id] = value; recalc(); });
+        b.addEventListener("click", () => { typed(input); control.value = value; raw[input.id] = value; recalc(); });
         row.append(b);
       }
       wrap.append(row);
@@ -370,6 +372,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     // A row saved before a choice was renamed or dropped: the same fallback buildValues uses, so field and answer agree.
     next = sanitizeChoices(def, Object.fromEntries(def.inputs.map((i) => [i.id, String(next[i.id] ?? "")])), ctx());
     for (const input of def.inputs) {
+      typed(input);
       raw[input.id] = String(next[input.id] ?? "");
       const el = fields[input.id];
       if (input.kind === "segment") el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === raw[input.id])));

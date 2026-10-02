@@ -292,3 +292,85 @@ test("material library: count, per-family rating scales, and cost in dollars and
   }
   assert.match(cost("2000").text, /^\$\d,\d{3}\.\d\d$/);
 });
+
+// ASME Y14.5-2018 zero positional tolerance at MMC: the frame says Ø0 Ⓜ and the whole zone is bonus
+// (hole: actual − MMC, capped at LMC − MMC). 0.253 hole, MMC 0.250, LMC 0.255 → bonus 0.003;
+// TP = 2√(0.0006² + 0.0008²) = 0.002 → in, 0.001 margin.
+test("true position: Ø0 at MMC is accepted, the zone is all bonus; RFS still refuses a zero tolerance", () => {
+  const z = { tol: "0", mmc: "mmc", feature: "hole", mmcSize: "0.250", lmc: "0.255", actual: "0.253", dx: "0.0006", dy: "0.0008" };
+  const inch = run("true-position", z);
+  assert.equal(inch.invalid.size, 0, [...inch.invalid].join());
+  near(inch.out.stats.find((s) => s.label === "Allowed (tol + bonus)").value, 0.003, 1e-12);
+  near(inch.out.primary.value, 0.002, 1e-12);
+  assert.equal(inch.out.primary.label, "Position (in tolerance)");
+  near(inch.out.stats.find((s) => s.label === "Used").value, 66.67, 0.01);
+  assert.ok(inch.out.notes.some((n) => /Ø0 at MMC/.test(n)));
+  // the same part in mm: 6.35 / 6.477 / 6.4262, dx 0.01524, dy 0.02032 → allowed 0.0762, TP 0.0508
+  const mm = run("true-position", { ...z, mmcSize: "6.35", lmc: "6.477", actual: "6.4262", dx: "0.01524", dy: "0.02032" }, "mm").out;
+  near(mm.stats.find((s) => s.label === "Allowed (tol + bonus)").value, 0.0762, 1e-9);
+  near(mm.primary.value, 0.0508, 1e-9);
+  assert.equal(mm.primary.label, "Position (in tolerance)");
+  // a part at MMC with Ø0 has no zone: on true position it passes, off it fails, and "Used" never reads NaN or ∞
+  for (const [dx, pass] of [["0", true], ["0.001", false]]) {
+    const out = run("true-position", { ...z, actual: "0.250", dx, dy: "0" }).out;
+    assert.equal(out.primary.label === "Position (in tolerance)", pass, dx);
+    const used = out.stats.find((s) => s.label === "Used");
+    assert.equal(used.value, undefined);
+    assert.match(used.text, /No zone/);
+    assert.doesNotMatch(JSON.stringify(out), /NaN|Infinity/);
+  }
+  assert.throws(() => run("true-position", { tol: "0" }), /only works at MMC/);
+  assert.equal(run("true-position", { tol: "-0.001", mmc: "mmc" }).invalid.has("tol"), true);
+});
+
+// The explain line's α is the Coefficient stat's number: C360 brass 11.4 µin/in/°F (= 20.52 µm/m/°C), so
+// 11.4e-6 × 10 in × 32 °F = 0.003648 in and 20.52e-6 × 250 mm × 20 °C = 0.1026 mm.
+test("thermal: the plugged α multiplies out to the answer shown", () => {
+  for (const [units, raw] of [["in", { material: "brass", length: "10", from: "68", to: "100" }], ["mm", { material: "brass", length: "250", from: "20", to: "40" }]]) {
+    const out = run("thermal", raw, units).out;
+    const coef = out.stats.find((s) => s.label === "Coefficient");
+    const plugged = out.explain[0].plugged;
+    const m = plugged.match(/= ([\d.]+) × 10⁻⁶ \/°[FC] × ([\d.]+) (?:in|mm) × ([\d.]+) °[FC] = ([\d.]+)/);
+    assert.ok(m, plugged);
+    assert.equal(m[1], fmt(coef.value, coef.places), units);
+    const product = Number(m[1]) * 1e-6 * Number(m[2]) * Number(m[3]);
+    assert.equal(fmt(product, units === "in" ? 5 : 4), m[4], `${units}: ${plugged}`);
+  }
+});
+
+// The inch limits round inward (ISO 370); the clearance and tolerance on the same screen are worked from them.
+// 1 in H7/g6: hole 1.0000–1.0008, shaft 0.9993–0.9997 → clearance 0.0003–0.0015, tolerances 0.0008 and 0.0004.
+test("fits: in inches, the clearance and tolerance add up from the limits shown", () => {
+  const g6 = run("fits", { nominal: "1", fit: "H7/g6" }).out;
+  const stat = (out, label) => out.stats.find((s) => s.label.startsWith(label)).value;
+  assert.equal(g6.primary.text, "0.0003 – 0.0015");
+  near(stat(g6, "Max clearance"), 0.0015, 1e-12);
+  near(stat(g6, "Min clearance"), 0.0003, 1e-12);
+  near(stat(g6, "Hole tolerance"), 0.0008, 1e-12);
+  near(stat(g6, "Shaft tolerance"), 0.0004, 1e-12);
+  assert.match(g6.notes[0], /worked from those limits/);
+  for (const [nominal, fit, units] of [["0.04", "H7/p6", "in"], ["0.5", "H7/s6", "in"], ["2", "H8/f7", "in"], ["0.25", "H7/k6", "in"], ["25", "H7/p6", "mm"], ["40", "H9/d9", "mm"]]) {
+    const out = run("fits", { nominal, fit }, units).out;
+    const [hole, shaft] = out.tables[0].rows;
+    near(stat(out, "Max clearance"), hole.max - shaft.min, 1e-9, `${nominal} ${fit}`);
+    near(stat(out, "Min clearance"), hole.min - shaft.max, 1e-9, `${nominal} ${fit}`);
+    near(stat(out, "Hole tolerance"), hole.max - hole.min, 1e-9, `${nominal} ${fit}`);
+    near(hole.tol, hole.max - hole.min, 1e-9);
+    near(shaft.tol, shaft.max - shaft.min, 1e-9);
+  }
+  // mm stays the exact ISO 286 values: 25 H7/g6 = +21/0 and −7/−20 µm → 0.007–0.041 mm
+  const mm = run("fits", { nominal: "25", fit: "H7/g6" }, "mm").out;
+  assert.equal(mm.primary.text, "0.007 – 0.041");
+});
+
+// 0.010–0.030 in = 0.254–0.762 mm. The chart lists inch and metric screws in both modes, so both units show,
+// the active one first.
+test("shcs chart: the sink allowance reads in the active unit, and the chart looks a thread up by size", () => {
+  const shcs = getCalc("shcs");
+  assert.equal(typeof shcs.note, "function");
+  assert.match(shcs.note({ units: "mm" }), /Add 0\.25–0\.75 mm \(0\.010–0\.030 in\)/);
+  assert.match(shcs.note({ units: "in" }), /Add 0\.010–0\.030 in \(0\.25–0\.75 mm\)/);
+  assert.equal(shcs.threadToSize, true);
+  // every other chart keeps a plain-string note
+  for (const id of ["gdt", "materials"]) assert.equal(typeof getCalc(id).note, "string", id);
+});

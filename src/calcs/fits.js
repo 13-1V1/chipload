@@ -48,23 +48,28 @@ export default register({
     const hl = limits(f.hole), sl = limits(f.shaft);
     const p = inch ? 4 : 3;
     const lp = Math.max(hl.places, sl.places);
+    // Clearance and tolerance are worked from the limits shown, so the screen adds up. In mm those are the ISO
+    // values; in inches they are the inward-rounded limits (what the shop makes to), each up to 0.0001 in inside ISO.
+    const shown = (x) => Math.round(x * 10 ** lp) / 10 ** lp;
+    const maxClear = shown(hl.max - sl.min), minClear = shown(hl.min - sl.max);
+    const holeTol = shown(hl.max - hl.min), shaftTol = shown(sl.max - sl.min);
     const rows = [
-      { what: `Hole ${f.hole.spec}`, min: hl.min, max: hl.max, tol: L(f.hole.tolerance) },
-      { what: `Shaft ${f.shaft.spec}`, min: sl.min, max: sl.max, tol: L(f.shaft.tolerance) },
+      { what: `Hole ${f.hole.spec}`, min: hl.min, max: hl.max, tol: holeTol },
+      { what: `Shaft ${f.shaft.spec}`, min: sl.min, max: sl.max, tol: shaftTol },
     ];
     const um = (x) => { const n = Math.round(x * 1e4) / 10; return `${n > 0 ? "+" : ""}${fmt(n, 1)}`; };
     const kindLabel = { clearance: "Clearance", interference: "Interference", transition: "Transition" }[f.kind];
     return {
-      primary: { label: `${h}/${s} · ${kindLabel} fit`, text: f.kind === "interference" ? `${fmt(L(-f.maxClearance), p)} – ${fmt(L(-f.minClearance), p)} tight` : `${fmt(L(f.minClearance), p)} – ${fmt(L(f.maxClearance), p)}`, unit: c.L.length },
+      primary: { label: `${h}/${s} · ${kindLabel} fit`, text: f.kind === "interference" ? `${fmt(-maxClear, lp)} – ${fmt(-minClear, lp)} tight` : `${fmt(minClear, lp)} – ${fmt(maxClear, lp)}`, unit: c.L.length },
       stats: [
         { label: `Hole ${f.hole.spec}`, text: `${fmt(hl.min, hl.places)} – ${fmt(hl.max, hl.places)}` },
         { label: `Shaft ${f.shaft.spec}`, text: `${fmt(sl.min, sl.places)} – ${fmt(sl.max, sl.places)}` },
-        { label: "Max clearance", value: L(f.maxClearance), unit: c.L.length, places: p },
-        { label: "Min clearance (− = interference)", value: L(f.minClearance), unit: c.L.length, places: p, clamped: f.minClearance < 0 },
-        { label: "Hole tolerance", value: L(f.hole.tolerance), unit: c.L.length, places: p },
-        { label: "Shaft tolerance", value: L(f.shaft.tolerance), unit: c.L.length, places: p },
+        { label: "Max clearance", value: maxClear, unit: c.L.length, places: lp },
+        { label: "Min clearance (− = interference)", value: minClear, unit: c.L.length, places: lp, clamped: minClear < 0 },
+        { label: "Hole tolerance", value: holeTol, unit: c.L.length, places: lp },
+        { label: "Shaft tolerance", value: shaftTol, unit: c.L.length, places: lp },
       ],
-      tables: [{ title: "Limits", columns: [{ key: "what", label: "" }, { key: "min", label: "Min", align: "right", places: lp }, { key: "max", label: "Max", align: "right", places: lp }, { key: "tol", label: "Tol", align: "right", places: p }], rows }],
+      tables: [{ title: "Limits", columns: [{ key: "what", label: "" }, { key: "min", label: "Min", align: "right", places: lp }, { key: "max", label: "Max", align: "right", places: lp }, { key: "tol", label: "Tol", align: "right", places: lp }], rows }],
       source: "fits",
       explain: [{
         title: "ISO 286-1 tables",
@@ -77,7 +82,7 @@ export default register({
         plugged: `${f.hole.spec} ${fmt(L(f.hole.min), 6)} – ${fmt(L(f.hole.max), 6)} in → ${fmt(hl.min, hl.places)} – ${fmt(hl.max, hl.places)} in; ${f.shaft.spec} ${fmt(L(f.shaft.min), 6)} – ${fmt(L(f.shaft.max), 6)} in → ${fmt(sl.min, sl.places)} – ${fmt(sl.max, sl.places)} in`,
       }] : [])],
       notes: [inch
-        ? "Looked up from the ISO 286 tables in mm, then converted back. Inch limits are rounded inward to 0.0001 in so they stay inside the ISO limits."
+        ? "Looked up from the ISO 286 tables in mm, then converted back. Inch limits are rounded inward to 0.0001 in so they stay inside the ISO limits, and the clearance and tolerance are worked from those limits, so they can read up to 0.0002 in tighter than the ISO values."
         : "Looked up from the ISO 286 tables."],
       historyLabel: `${fmt(v.nominal, p)} ${c.L.length} ${h}/${s}`,
     };

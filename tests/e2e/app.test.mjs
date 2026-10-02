@@ -240,10 +240,12 @@ const typeInto = async (page, selector, text) => { await page.locator(selector).
  * A stand-in for the Play Billing plugin that behaves like the real one with no receipt server:
  * the verified receipt's collection is empty, and ownership is only visible through store.owned().
  * Like the real one it has the "initiated" (a pending payment) and "receiptsReady" (Play answered the purchase
- * query) events and a localReceipts list. Options: offline — Play never answers (initialize never settles, no
- * product); pending — an order comes back as a pending payment (cash, slow bank), never approved.
+ * query) events and a localReceipts list. Options: offline — Play can't be reached: the bridge reports a SETUP
+ * error and retries forever, so initialize never settles and no product arrives (store.js iabError); connecting —
+ * nothing has answered yet, no error either; priceFirst — the price arrives (productUpdated) while initialize is
+ * still waiting on the purchase list; pending — an order comes back as a pending payment (cash, slow bank), never approved.
  */
-const FAKE_PLAY_STORE = ({ offline = false, pending = false } = {}) => {
+const FAKE_PLAY_STORE = ({ offline = false, pending = false, connecting = false, priceFirst = false } = {}) => {
   const cb = { productUpdated: [], approved: [], verified: [], finished: [], initiated: [], receiptsReady: [], error: [] };
   let bought = false;
   const later = (fn) => setTimeout(fn, 15);
@@ -267,8 +269,11 @@ const FAKE_PLAY_STORE = ({ offline = false, pending = false } = {}) => {
   window.CdvPurchase = {
     store: {
       verbosity: 0, register() {}, when: () => chain, error: (f) => cb.error.push(f), localReceipts,
-      initialize: offline ? () => new Promise(() => {}) : async () => { later(() => { cb.productUpdated.forEach((f) => f(product)); cb.receiptsReady.forEach((f) => f()); }); },
-      owned: () => bought, get: () => (offline ? undefined : product), restorePurchases: async () => undefined,
+      initialize: offline ? () => { later(() => cb.error.forEach((f) => f({ code: 6777001, message: "Init failed - Billing service unavailable" }))); return new Promise(() => {}); }
+        : connecting ? () => new Promise(() => {})
+        : priceFirst ? () => { later(() => cb.productUpdated.forEach((f) => f(product))); return new Promise(() => {}); }
+        : async () => { later(() => { cb.productUpdated.forEach((f) => f(product)); cb.receiptsReady.forEach((f) => f()); }); },
+      owned: () => bought, get: () => (offline || connecting ? undefined : product), restorePurchases: async () => undefined,
     },
     ProductType: { NON_CONSUMABLE: "non consumable" }, Platform: { GOOGLE_PLAY: "android-playstore" }, LogLevel: { WARNING: 2 }, ErrorCode: { PAYMENT_CANCELLED: 6777006 },
   };
@@ -326,7 +331,8 @@ test("Play out of reach: Unlock and Restore say so instead of failing quietly", 
   const { page, ctx, errors } = await openWithStore({ offline: true }, "offline");
   // billing.js MSG.noPlay, word for word
   const NO_PLAY = "Can't reach Google Play right now — check your connection and try again";
-  assert.match(await page.locator("#proHint").textContent(), /Can't reach Google Play right now/);
+  // the plugin's SETUP error is Play's word that it can't be reached
+  await page.waitForFunction(() => /Can't reach Google Play right now/.test(document.querySelector("#proHint")?.textContent || ""));
   assert.doesNotMatch(await page.locator("#buy").textContent(), /\$/, "no price until Play answers");
   await page.locator("#buy").click();
   await page.waitForFunction(() => !!document.querySelector(".copied"));
@@ -1030,6 +1036,50 @@ test("job sheet: a field added with 'add one more number' stays through an inch/
   assert.ok(await page.locator("#f-job-sheet-woc").isVisible(), "still shown in mm");
   await page.locator('.calc > .seg [data-u="in"]').click();
   assert.ok(await page.locator("#f-job-sheet-woc").isVisible(), "and back in inch");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+// ── app team fixes, round 3 (10/02/2026) ──
+
+test("the Pro hint follows what Play has said: connecting, a price, or an error — never 'can't reach' next to a price", async () => {
+  // still connecting: a neutral line, and Unlock says so instead of blaming the connection
+  let { page, ctx, errors } = await openWithStore({ connecting: true }, "connecting");
+  assert.equal(await page.locator("#proHint").textContent(), "Checking Google Play…");
+  await page.locator("#buy").click();
+  await page.waitForFunction(() => !!document.querySelector(".copied"));
+  assert.equal(await toastText(page), "Still connecting to Google Play — try again in a moment");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  // the price lands while initialize still waits on the purchase list (cordova-plugin-purchase fires productUpdated first)
+  ({ page, ctx, errors } = await openWithStore({ priceFirst: true }, "price-first"));
+  await page.waitForFunction(() => /\$9\.99/.test(document.querySelector("#buy")?.textContent || ""));
+  assert.match(await page.locator("#proHint").textContent(), /^One-time purchase through Google Play/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Pro turning on keeps what was typed on a tool opened from a link", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill?diameter=0.5");
+  const dia = page.locator("#f-feeds-mill-diameter");
+  assert.equal(await dia.inputValue(), "0.5");
+  await dia.click();
+  await page.waitForSelector(".numpad.open");
+  for (let i = 0; i < 8; i++) await page.locator('.numpad [data-key="bksp"]').dispatchEvent("pointerdown");
+  for (const k of ["0", ".", "7", "5"]) await page.locator(`.numpad [data-key="${k}"]`).dispatchEvent("pointerdown");
+  assert.equal(await dia.inputValue(), "0.75");
+  await dia.evaluate((el) => { el.dataset.before = "1"; });
+  await setPro(page, true); // what billing.js unlock() does when Play approves or restores a purchase
+  assert.equal(await page.locator("#f-feeds-mill-diameter[data-before]").count(), 0, "the screen was drawn again");
+  assert.equal(await page.locator("#f-feeds-mill-diameter").inputValue(), "0.75", "the link's 0.5 must not come back");
+  await setPro(page, false); // a refund revoke redraws too
+  assert.equal(await page.locator("#f-feeds-mill-diameter").inputValue(), "0.75");
+  // a chart keeps the filter as it reads now, not the link's
+  await page.evaluate(() => { location.hash = "#/calc/drill-chart?q=1/4"; });
+  await page.locator("#cq").waitFor();
+  await page.locator("#cq").fill("#7");
+  await setPro(page, true);
+  assert.equal(await page.locator("#cq").inputValue(), "#7");
   assert.deepEqual(errors, []);
   await ctx.close();
 });

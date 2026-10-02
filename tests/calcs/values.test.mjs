@@ -8,12 +8,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import "../../src/calcs/index.js";
 import { allCalcs, getCalc } from "../../src/app/registry.js";
-import { buildValues, defaultRaw, defaultFor, convertForUnits, convertInput, measureOf, labelOf, invalidReason, sanitizeChoices, NUMERIC_KINDS } from "../../src/app/values.js";
+import { buildValues, defaultRaw, defaultFor, convertForUnits, convertInput, forgetFlip, measureOf, labelOf, invalidReason, sanitizeChoices, NUMERIC_KINDS } from "../../src/app/values.js";
 import { fmt, parseFraction } from "../../src/core/format.js";
 import { rpmFromSfm } from "../../src/core/feeds.js";
 import { UNIT_LABEL } from "../../src/app/settings.js";
 import { convertStackLines, parseStackLines } from "../../src/calcs/tol-stack.js";
 import { near } from "../helpers.mjs";
+import { DRILL_MAX_IN, DRILL_MAX_MM } from "../../src/core/drills.js";
 
 const ctxFor = (units, machine = null) => ({ units, L: UNIT_LABEL[units], settings: { units, pro: true }, machine, fmt });
 const run = (id, over = {}, units = "in", machine = null) => {
@@ -328,7 +329,7 @@ test("fraction converter: a size typed with its unit opens on that unit", () => 
     assert.equal(invalid.size, 0, value);
     assert.equal(out.primary.text, "21/64");
     assert.equal(out.primary.label, "Nearest 1/64 (−0.0065 in)");
-    assert.equal(out.stats.find((s) => s.label === "Nearest drill (inch)").text, "Q · 0.332");
+    assert.equal(out.stats.find((s) => s.label === "Nearest drill (inch)").text, "Q · 0.332 in");
   }
   near(run("fraction-converter", { value: '3/8"', units: "mm" }).out.stats.find((s) => s.label === "Millimeters").value, 9.525, 1e-12);
   near(run("fraction-converter", { value: "1-1/4", units: "in" }).out.stats.find((s) => s.label === "Millimeters").value, 31.75, 1e-12);
@@ -408,4 +409,84 @@ test("tolerance stack: a fraction with no tolerance is refused, and tolerances s
   assert.equal(convertStackLines("1.000 ± 0.00025\n0.5 ± 0.00015", "in", "mm"), "25.4 ± 0.00635\n12.7 ± 0.00381");
   const typed = "0.750 ± 0.00025\n-0.250 ± 0.0001";
   assert.equal(convertStackLines(convertStackLines(typed, "in", "mm"), "mm", "in"), typed);
+});
+
+// ── app team fixes, round 3 (10/02/2026) ──
+
+// 1 in = 25.4 mm exactly (NIST SP 811 App. B): ±0.005 in = ±0.127 mm. One unreadable line used to stop the whole
+// stack converting, so 1.000 ± 0.005 stayed under the mm label and meant 1 mm (25.4× smaller).
+test("tolerance stack: every readable line converts; notes, blanks and a bad line stay as typed", () => {
+  assert.equal(convertStackLines("1.000 ± 0.005\n2.000", "in", "mm"), "25.4 ± 0.127\n2.000");
+  assert.equal(convertStackLines("1.000 ± 0.005\n1 1/4", "in", "mm"), "25.4 ± 0.127\n1 1/4");
+  const typed = "# housing bore\n1.000 ± 0.005\n\n# spacer\n2.000 ± 0.010\n-0.500 ± 0.002";
+  const mm = convertStackLines(typed, "in", "mm");
+  assert.equal(mm, "# housing bore\n25.4 ± 0.127\n\n# spacer\n50.8 ± 0.254\n-12.7 ± 0.0508");
+  // edit in mm, then switch back: the notes are still there and only the numbers convert
+  const edited = mm.replace("50.8 ± 0.254", "50.8 ± 0.2");
+  assert.equal(convertStackLines(edited, "mm", "in"), "# housing bore\n1 ± 0.005\n\n# spacer\n2 ± 0.007874\n-0.5 ± 0.002");
+  // an untouched flip still gives the lines exactly as typed
+  assert.equal(convertStackLines(mm, "mm", "in"), typed);
+});
+
+// format.js: a typographic minus (U+2212, as printed in the field's label) is the same sign as "-"; PDFs paste an en dash.
+test("tolerance stack: the minus sign the label prints is read as minus", () => {
+  assert.deepEqual(parseStackLines("−0.500 ± 0.002"), [{ nominal: -0.5, tolerance: 0.002 }]);
+  assert.deepEqual(parseStackLines("–.5 ± .002"), [{ nominal: -0.5, tolerance: 0.002 }]);
+  assert.equal(convertStackLines("1.000 ± 0.005\n−0.500 ± 0.002", "in", "mm"), "25.4 ± 0.127\n-12.7 ± 0.0508");
+  near(run("tol-stack", { lines: "1.000 ± 0.005\n−0.500 ± 0.002" }).out.stats.find((s) => s.label === "Nominal").value, 0.5, 1e-12);
+});
+
+// 0.4035 in × 25.4 = 10.2489 mm. Only the field that made a conversion gets its own typing back on a flip.
+test("the flip-back memory belongs to one field: another field showing the same text converts fresh", () => {
+  const len = { id: "d", kind: "length" };
+  const a = "feeds-mill|diameter", b = "drill-point|diameter";
+  const out = convertInput(len, "10.25", "mm", "in", {}, a);
+  assert.equal(out, "0.4035");
+  assert.equal(convertInput(len, "0.4035", "in", "mm", {}, b), "10.249", "another tool's field typed 0.4035");
+  assert.equal(convertInput(len, out, "in", "mm", {}, a), "10.25", "the same untouched field flips straight back");
+  // an edit in between is a new number
+  convertInput(len, "10.25", "mm", "in", {}, a);
+  assert.equal(convertInput(len, "0.40351", "in", "mm", {}, a), "10.249");
+  // °F ⇄ °C: 21.13 °C → 70 °F; another field showing 70 °F is 21.1 °C (to the 0.1° step)
+  const temp = { id: "t", kind: "temp" };
+  assert.equal(convertInput(temp, "21.13", "mm", "in", {}, "thermal|t1"), "70");
+  assert.equal(convertInput(temp, "70", "in", "mm", {}, "thermal|t2"), "21.1");
+  // the tolerance stack's own converter keeps to its field too
+  const stack = getCalc("tol-stack").inputs[0];
+  const stackMm = convertInput(stack, "1.000 ± 0.005", "in", "mm", {}, "tol-stack|lines");
+  assert.equal(convertInput(stack, stackMm, "mm", "in", {}, "tol-stack|lines"), "1.000 ± 0.005");
+});
+
+// NIST SP 811: 1 in = 25.4 mm exactly, so 0.4035 in = 10.2489 mm → "10.249". The screen calls forgetFlip on every
+// edit; an edit that ends on the same text the switch wrote (backspace and retype, undo) is still the user's number.
+test("an edited field converts fresh even when the edit ends on the text the switch wrote", () => {
+  const len = { id: "d", kind: "length" };
+  const a = "feeds-mill|diameter";
+  assert.equal(convertInput(len, "10.25", "mm", "in", {}, a), "0.4035");
+  forgetFlip(a); // the user backspaced the 5 and typed it again
+  assert.equal(convertInput(len, "0.4035", "in", "mm", {}, a), "10.249");
+  // untouched, it still flips straight back
+  assert.equal(convertInput(len, "10.25", "mm", "in", {}, a), "0.4035");
+  assert.equal(convertInput(len, "0.4035", "in", "mm", {}, a), "10.25");
+});
+
+// The drill charts end at 3-1/2" and #80 (0.0135") inch, 60 mm and 0.2 mm metric (src/core/drills.js). Past an end
+// there is no drill to name, with the same margins tap-drill.js uses (1/64" / 0.002"; 0.5 mm / 0.05 mm).
+test("fraction converter: no nearest drill past the ends of the drill chart, and every decimal carries its unit", () => {
+  const stats = (value, units = "in") => Object.fromEntries(run("fraction-converter", { value, units }).out.stats.map((s) => [s.label, s.text]));
+  const big = stats("25");
+  assert.equal(big["Nearest drill (inch)"], `None on the chart (largest 3-1/2" · ${fmt(DRILL_MAX_IN, 4)} in)`);
+  assert.equal(big["Nearest drill (mm)"], `None on the chart (largest ${DRILL_MAX_MM} mm · ${fmt(DRILL_MAX_MM / 25.4, 4)} in)`);
+  assert.equal(big["Drill under"], undefined);
+  assert.equal(big["Drill over"], undefined);
+  const tiny = stats("0.0001");
+  assert.match(tiny["Nearest drill (inch)"], /^None on the chart \(smallest #80 · 0\.0135 in\)$/);
+  assert.match(tiny["Nearest drill (mm)"], /^None on the chart \(smallest 0\.2 mm/);
+  // inside the chart: the drill and its neighbors, each decimal with "in" (ASME B94.11M: #7 = 0.2010)
+  const mid = stats("0.201");
+  assert.equal(mid["Nearest drill (inch)"], "#7 · 0.201 in");
+  assert.match(mid["Drill under"], / in$/);
+  assert.match(mid["Drill over"], / in$/);
+  // just past the end but within the margin still names the end drill (3.5 + 1/64)
+  assert.match(stats("3.51")["Nearest drill (inch)"], /^3-1\/2"/);
 });

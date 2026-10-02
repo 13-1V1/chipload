@@ -3,7 +3,7 @@
 
 // Bolt circle coordinates plus G-code / CSV / DXF text builders (pure — no DOM).
 
-import { fmt, gcodeNumber } from "./format.js";
+import { fmt, fmtSig, gcodeNumber } from "./format.js";
 
 /**
  * A polar angle as a person reads it, 0 to under 360 (600° → 240°, −60° → 300°). Only for showing:
@@ -38,18 +38,33 @@ const OTHER_DIALECT = Object.freeze({ siemens: "Siemens", heidenhain: "Heidenhai
 export const usesOtherDialect = (controller) => OTHER_DIALECT[String(controller).toLowerCase()] || null;
 
 /** Places on the F word: 4 in inch, 3 in mm — what Haas and Fanuc take, and the same as the length words. */
-const feedPlaces = (units) => (units === "in" ? 4 : 3);
+export const feedPlaces = (units) => (units === "in" ? 4 : 3);
+
+/**
+ * What is wrong with the F word a feed posts as, or null when it posts true. F carries only feedPlaces
+ * digits, so a feed under the last one either posts as F0 (the control alarms) or rounds to a different
+ * feed — 0.00005 IPM would post F0.0001, twice that feed. More than 5% off is refused, not posted.
+ * "That feed" is the one passed in: the typed feed, or the machine-fitted one, which nobody typed.
+ * Ends without a period so callers can add their own reason after it.
+ */
+export function feedWordProblem(feed, units = "in") {
+  const posted = Number(gcodeNumber(feed, feedPlaces(units)));
+  if (!(posted > 0)) return "posts as F0 and the control would alarm";
+  if (Math.abs(posted - feed) > 0.05 * feed) return `posts as F${gcodeNumber(feed, feedPlaces(units))}, ${fmtSig(posted / feed, 2)}× that feed: the F word stops at ${fmt(10 ** -feedPlaces(units), feedPlaces(units))} ${units === "in" ? "IPM" : "mm/min"}`;
+  return null;
+}
 
 /**
  * A drilling feed this slow per minute is almost always a feed per rev typed in the per-minute box (the
  * slowest real drilling feeds, tiny drills, still come to about 1 IPM). Under 0.1 IPM / 2.5 mm/min: say so.
+ * The numbers are significant figures, not fixed places, so the sum always reads right (0.00005 × 1000 = 0.05).
  * @returns {string|null}
  */
 export function boltFeedCaution(feed, spindle, units = "in") {
   const unit = units === "in" ? "IPM" : "mm/min";
   if (!(feed > 0) || feed >= (units === "in" ? 0.1 : 2.5)) return null;
   const perRev = units === "in" ? "in/rev" : "mm/rev";
-  return `Feed ${fmt(feed, 4)} ${unit} is a crawl for a drill. It looks like a feed per rev (${perRev}). Feed here is per minute: ${fmt(feed, 4)} × ${fmt(spindle, 0)} RPM = ${fmt(feed * spindle, units === "in" ? 2 : 0)} ${unit}.`;
+  return `Feed ${fmtSig(feed, 3)} ${unit} is a crawl for a drill. It looks like a feed per rev (${perRev}). Feed here is per minute: ${fmtSig(feed, 3)} × ${fmt(spindle, 0)} RPM = ${fmtSig(feed * spindle, 3)} ${unit}.`;
 }
 
 /**
@@ -63,8 +78,8 @@ export function boltGcodeProblems({ mode = "positions", units = "in", z, r, safe
   if (mode === "drill" || mode === "peck") {
     if (!(z < r)) out.push(`Hole depth Z (${fmt(z, 4)} ${u}) has to be below the R plane (${fmt(r, 4)} ${u}). Depth is a negative number, like ${units === "in" ? "-0.5 in" : "-12 mm"}.`);
     if (!(feed > 0)) out.push("Feed has to be more than zero.");
-    // The control alarms on F0, so the number as posted has to be above zero, not just the number typed.
-    else if (!(Number(gcodeNumber(feed, feedPlaces(units))) > 0)) out.push(`Feed ${fmt(feed, 6)} ${units === "in" ? "IPM" : "mm/min"} posts as F0 and the control would alarm. Feed is per minute: feed per rev × RPM.`);
+    // The number as posted has to be the feed typed: F0 alarms, and a feed under the F word's last digit rounds to another feed.
+    else if (feedWordProblem(feed, units)) out.push(`Feed ${fmtSig(feed, 3)} ${units === "in" ? "IPM" : "mm/min"} ${feedWordProblem(feed, units)}. Feed is per minute: feed per rev × RPM.`);
     if (!(spindle > 0)) out.push("Spindle speed has to be more than zero.");
     if (mode === "peck" && !(peck > 0)) out.push("Peck depth (Q) has to be more than zero.");
     if (!(safeZ >= r)) out.push(`Safe Z (${fmt(safeZ, 4)} ${u}) has to be at or above the R plane (${fmt(r, 4)} ${u}). The tool lifts to Safe Z between holes.`);

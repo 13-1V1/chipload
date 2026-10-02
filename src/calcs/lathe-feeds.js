@@ -8,7 +8,7 @@ import { rpmFromSfm, sfmFromRpm } from "../core/feeds.js";
 import { materialOptions, materialSpeeds, toolCaution } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
-import { machineFor, fitToMachine, maxRpmAtFeed, spindleSanity } from "./_machine.js";
+import { machineFor, fitToMachine, maxRpmOf, maxRpmAtFeed, spindleSanity } from "./_machine.js";
 import { latheFeedIpr } from "./_advice.js";
 
 // Beyond this most lathes can't turn (same line spindleSanity draws for "lathe").
@@ -32,7 +32,8 @@ export default register({
     { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(latheFeedIpr(raw.material, raw.cut), c.units),
       hint: "Blank = library rough or finish feed (lighter for hardened stock, 45 HRC and up)." },
     { id: "length", positive: true, advanced: true, label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
-    { id: "minDia", positive: true, advanced: true, label: "Smallest diameter this cut reaches", kind: "length", default: "", optional: true, placeholder: "optional — sets the G50", hint: "Facing toward center? Enter how far in you go. Blank = the work diameter." },
+    // 0 is a face to center (X0): G96 then has no top of its own, so G50 comes from the machine or the chuck.
+    { id: "minDia", min: 0, advanced: true, label: "Smallest diameter this cut reaches", kind: "length", default: "", optional: true, placeholder: "optional — sets the G50", hint: "Facing toward center? Enter how far in you go (0 = to center). Blank = the work diameter." },
   ],
   compute(v, c) {
     const p = lenPlaces(c.units);
@@ -50,14 +51,19 @@ export default register({
     // G50 is a job cap: the speed G96 needs at the smallest diameter this cut reaches, never above the
     // machine's top speed. It is not the machine's top speed itself — that would make the clamp do nothing.
     const smallIn = Number.isFinite(v.minDia) ? Math.min(dIn, toIn(v.minDia, c.units)) : dIn;
-    const jobCap = Math.ceil(rpmFromSfm(sfm, smallIn) / 100) * 100;
+    const jobCap = smallIn > 0 ? Math.ceil(rpmFromSfm(sfm, smallIn) / 100) * 100 : Infinity; // to center G96 never tops out
     const g50 = Math.min(jobCap, maxRpmAtFeed(m, iprIn));
-    // With no machine, a cap beyond any lathe isn't advice; the chuck's rating is the number to use.
-    const g50Wild = !m && g50 > LATHE_SANE_RPM;
+    // With no top speed to go on (no machine, or a profile with Max spindle blank), a cap beyond any lathe
+    // isn't advice; the chuck's rating is the number to use.
+    const g50Wild = !Number.isFinite(maxRpmOf(m)) && g50 > LATHE_SANE_RPM;
     const caution = toolCaution(v.material, v.toolType, c.units);
     const sanity = spindleSanity(requestedRpm, m, "lathe", c);
+    const wildWhy = smallIn > 0
+      ? `G96 would ask for ${fmt(jobCap, 0)} RPM at Ø${fmt(fromIn(smallIn, c.units), p)} ${c.L.length}.`
+      : "Facing to center, G96 keeps speeding up all the way to X0.";
     return {
-      primary: { label: fit.rpmCapped ? "Spindle (machine max)" : fit.feedCapped ? "Spindle (slowed for max feed)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped: slowed },
+      // Feed cap first: with both caps hit the spindle runs under the machine max, slowed for the feed.
+      primary: { label: fit.feedCapped ? "Spindle (slowed for max feed)" : fit.rpmCapped ? "Spindle (machine max)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped: slowed },
       stats: [
         { label: "Feed", value: fromIn(ipm, c.units), unit: c.L.feed, places: 1, clamped: fit.feedCapped },
         { label: "G96 S (constant surface speed)", value: v.sfm, unit: c.L.speed, places: 0 },
@@ -70,7 +76,7 @@ export default register({
       warnings: [
         ...fit.warnings,
         ...sanity,
-        ...(g50Wild && !sanity.length ? [`G96 would ask for ${fmt(jobCap, 0)} RPM at Ø${fmt(fromIn(smallIn, c.units), p)} ${c.L.length}. Set G50 to your chuck's rated max (or lower), not that.`] : []),
+        ...(g50Wild && !sanity.length ? [`${wildWhy} Set G50 to your chuck's rated max (or lower)${smallIn > 0 ? ", not that" : ""}.`] : []),
         ...(caution ? [caution] : []),
       ],
       source: "feeds",

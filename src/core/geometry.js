@@ -121,13 +121,14 @@ export function solveTriangle(mode, p) {
  * Source: Machinery's Handbook "Segments of Circles".
  * Chord + height pins one arc: when h > R it is more than a half circle, so θ = 2·atan2(c/2, R − h)
  * (= 360° − 2·asin(c/2R) there). Radius + chord fits two arcs; this returns the minor one (θ ≤ 180°),
- * the handbook's convention — the major arc is 360° − θ, height 2R − h.
+ * the handbook's convention — the major arc is 360° − θ, height 2R − h. A height of the full diameter is the
+ * whole circle (360°, no chord), not a segment, so it is refused like a 360° angle.
  */
 export function circularSegment({ radius, chord, height, angle }) {
   let R = radius, c = chord, h = height, th = angle;
   const r = (d) => d * Math.PI / 180, d = (x) => x * 180 / Math.PI;
   if (Number.isFinite(R) && Number.isFinite(c)) { if (c > 2 * R) throw new Error("Chord can't be longer than the diameter"); th = d(2 * Math.asin(c / (2 * R))); h = R - Math.sqrt(R * R - c * c / 4); }
-  else if (Number.isFinite(R) && Number.isFinite(h)) { if (h > 2 * R) throw new Error("Height can't exceed the diameter"); c = 2 * Math.sqrt(2 * R * h - h * h); th = d(2 * Math.acos((R - h) / R)); }
+  else if (Number.isFinite(R) && Number.isFinite(h)) { if (h >= 2 * R) throw new Error("Height has to be less than the diameter"); c = 2 * Math.sqrt(2 * R * h - h * h); th = d(2 * Math.acos((R - h) / R)); }
   else if (Number.isFinite(R) && Number.isFinite(th)) { c = 2 * R * Math.sin(r(th) / 2); h = R * (1 - Math.cos(r(th) / 2)); }
   else if (Number.isFinite(c) && Number.isFinite(h)) { R = (c * c / (4 * h) + h) / 2; th = d(2 * Math.atan2(c / 2, R - h)); }
   else if (Number.isFinite(c) && Number.isFinite(th)) { R = c / (2 * Math.sin(r(th) / 2)); h = R * (1 - Math.cos(r(th) / 2)); }

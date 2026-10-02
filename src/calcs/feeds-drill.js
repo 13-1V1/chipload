@@ -55,7 +55,9 @@ export default register({
       auto: (raw, c) => fromSfm(materialSpeeds(raw.material, ["hss", "carbide", "coated"].includes(raw.toolType) ? raw.toolType : "hss").drillSfm, c.units),
       hint: "Leave blank to use the table value." },
     { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 5,
-      auto: (raw, c, v) => fromIn(drillFeedPerRev(toIn(Number.isFinite(v.diameter) ? v.diameter : 0.25, c.units)) * drillFeedFactor(materialSpeeds(raw.material).material.rating), c.units),
+      // The library row, not its bare rating: aluminum, copper and plastics are rated on their own family scales
+      // (drillFeedFactor), the same rule the job sheet's drill line uses.
+      auto: (raw, c, v) => fromIn(drillFeedPerRev(toIn(Number.isFinite(v.diameter) ? v.diameter : 0.25, c.units)) * drillFeedFactor(materialSpeeds(raw.material).material), c.units),
       hint: "Leave blank for the handbook feed, eased off for tough materials." },
     { id: "depth", positive: true, advanced: true, label: "Hole depth", kind: "length", default: "", optional: true, placeholder: "optional — gives time per hole" },
   ],

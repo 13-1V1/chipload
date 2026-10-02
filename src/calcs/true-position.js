@@ -35,11 +35,12 @@ export default register({
   pro: true,
   // One "actual" and one "lmc" serve the hole and the pin, so saved jobs from before LMC existed reopen as typed.
   // A blank actual is taken as MMC (in size for a hole and a pin, no bonus). A blank LMC means the size isn't
-  // checked on that side and the bonus isn't capped; a note says so.
+  // checked on that side and the bonus isn't capped; a note says so. A tolerance of 0 is the Y14.5 "Ø0 at MMC"
+  // callout (the whole zone is bonus), so the field takes 0 and compute() turns it away only under RFS.
   inputs: [
     { id: "dx", label: "X deviation (actual − nominal)", kind: "length", default: "0.003", defaultMm: "0.08", convert: convertLength },
     { id: "dy", label: "Y deviation (actual − nominal)", kind: "length", default: "0.004", defaultMm: "0.10", convert: convertLength },
-    { id: "tol", positive: true, label: "Position tolerance (diameter)", kind: "length", default: "0.014", defaultMm: "0.35", min: 0, convert: convertLength },
+    { id: "tol", label: "Position tolerance (diameter)", kind: "length", default: "0.014", defaultMm: "0.35", min: 0, convert: convertLength },
     { id: "mmc", label: "Material condition", kind: "segment", default: "rfs", options: [{ value: "rfs", label: "RFS" }, { value: "mmc", label: "MMC (bonus)" }] },
     { id: "feature", label: "Feature", kind: "segment", default: "hole", options: [{ value: "hole", label: "Hole" }, { value: "pin", label: "Pin" }], showIf: (r) => r.mmc === "mmc" },
     { id: "mmcSize", positive: true, label: (r) => (r.feature === "pin" ? "MMC size (largest pin allowed)" : "MMC size (smallest hole allowed)"), kind: "length", default: "0.250", defaultMm: "6.00", min: 0, convert: convertLength, showIf: (r) => r.mmc === "mmc" },
@@ -53,6 +54,7 @@ export default register({
     const hole = v.feature !== "pin";
     const hasLmc = useMmc && Number.isFinite(v.lmc);
     const actual = v.actual;
+    if (!useMmc && !(v.tol > 0)) throw new Error("A zero position tolerance only works at MMC (Ø0 at MMC, all of the zone is bonus). Pick MMC, or enter the tolerance from the print.");
     // One physical comparison band, 0.000001 in (= 0.0000254 mm): the same size in both units, so the unit
     // itself doesn't decide the verdict. (A rounded mm → inch conversion can still nudge a part sitting right
     // at the band's edge; see convertLength.)
@@ -78,7 +80,9 @@ export default register({
         { label: "Margin", value: r.margin, unit: u, places: pp, clamped: !r.positionOk },
         { label: "Radial error", value: r.radial, unit: u, places: p },
         ...(useMmc ? [{ label: "Bonus tolerance", value: r.bonus, unit: u, places: p }, { label: "Size", text: !r.sizeOk ? "OUT of limits" : hasLmc ? "Within MMC–LMC" : "Not checked (no LMC)", clamped: !r.sizeOk }] : []),
-        { label: "Used", value: 100 * r.deviation / r.allowed, unit: "% of zone", places: 0 },
+        // Ø0 at MMC with no bonus earned leaves no zone to take a share of: say so, never NaN or Infinity.
+        r.allowed > 0 ? { label: "Used", value: 100 * r.deviation / r.allowed, unit: "% of zone", places: 0 }
+          : { label: "Used", text: "No zone (Ø0 at MMC, no bonus)", clamped: !r.positionOk },
       ],
       warnings,
       source: "geometry",
@@ -89,6 +93,7 @@ export default register({
       ],
       notes: !useMmc ? [] : [
         ...(v.actualAuto ? ["No actual size entered, so the part is taken as at MMC: no bonus. Type the measured size to earn bonus."] : []),
+        ...(v.tol > 0 ? [] : ["Ø0 at MMC: the whole position zone is bonus. A part at MMC has to sit exactly on true position."]),
         hasLmc ? "Bonus only counts while the size is inside its limits: it grows from 0 at MMC to the full size tolerance at LMC."
           : "Bonus assumes the size is within its limits — enter LMC to check it and cap the bonus.",
       ],

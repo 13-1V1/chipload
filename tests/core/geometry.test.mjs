@@ -71,6 +71,9 @@ test("arc segment from chord + height past a half circle", () => {
   // radius + chord is the minor arc by the handbook's convention: R 1, c √3 → 120°, h 0.5
   const rc = circularSegment({ radius: 1, chord: Math.sqrt(3) });
   near(rc.angle, 120, 1e-9); near(rc.height, 0.5, 1e-12);
+  // a height of the full diameter is the whole circle, not a segment; just under it still is one
+  assert.throws(() => circularSegment({ radius: 1, height: 2 }), /Height has to be less than the diameter/);
+  assert.ok(circularSegment({ radius: 1, height: 1.999 }).angle < 360);
 });
 
 // Law of sines, ambiguous case (Machinery's Handbook "Solution of Oblique Triangles"): with A < 90° and
