@@ -16,6 +16,8 @@ const LABEL = { bksp: ICONS.backspace, sp: "␣", pm: "±", next: "Next", "/": "
 
 let el = null;
 let active = null;
+let holdTimer = null; // backspace held down
+const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
 let onChange = null;
 let onNext = null;
 
@@ -36,10 +38,12 @@ function build() {
     b.addEventListener("pointerdown", (e) => { e.preventDefault(); press(k); });
     if (k === "bksp") {
       // hold backspace to clear the whole field — one gesture instead of ten taps with a glove on
-      let timer = null;
-      const cancel = () => { clearTimeout(timer); timer = null; };
-      b.addEventListener("pointerdown", () => { cancel(); timer = setTimeout(() => { if (active) { active.value = ""; onChange?.(active); } }, 550); });
-      for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, cancel);
+      b.addEventListener("pointerdown", () => {
+        cancelHold();
+        const field = active; // only ever the field the hold began on
+        holdTimer = setTimeout(() => { if (field && active === field) { field.value = ""; onChange?.(field); } }, 550);
+      });
+      for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, cancelHold);
       b.setAttribute("aria-label", "backspace (hold to clear)");
     }
     el.append(b);
@@ -49,6 +53,7 @@ function build() {
 }
 
 function press(k) {
+  if (k !== "bksp") cancelHold(); // another key means the backspace was let go
   if (!active) return;
   let v = active.value;
   if (k === "bksp") v = v.slice(0, -1);
@@ -114,6 +119,7 @@ export function openNumpad(input, { change, next } = {}) {
 }
 
 export function closeNumpad() {
+  cancelHold();
   if (!el) return;
   el.classList.remove("open");
   if (active) active.removeAttribute("data-active");
@@ -123,16 +129,27 @@ export function closeNumpad() {
 
 export function isNumpadOpen() { return !!el?.classList.contains("open"); }
 
+/**
+ * On screen right now. A closed "More options" drawer doesn't remove its fields from the page —
+ * Chrome hides them with content-visibility, so they still have boxes — and a field in there can't
+ * take focus. Ask the browser itself (checkVisibility), and treat a closed drawer as hidden either way.
+ */
+export const isShown = (field) => !field.closest("details:not([open])") &&
+  (typeof field.checkVisibility === "function" ? field.checkVisibility() : field.getClientRects().length > 0);
+
+/** The pad's Next: the following number field on screen in `scope`, or put the pad away after the last one. */
+export function nextField(field, scope) {
+  const list = [...(scope || document).querySelectorAll("[data-numpad]")].filter((x) => x === field || isShown(x));
+  const following = list[list.indexOf(field) + 1];
+  if (following) following.focus();
+  else { field.blur(); closeNumpad(); }
+}
+
 /** Wire a numeric input to the pad. With no `next` handler, Next steps to the following pad field in `scope`, or closes the pad. */
 export function attachNumpad(input, handlers = {}, scope = null) {
   input.inputMode = "none";
   input.autocomplete = "off";
-  const next = handlers.next || ((field) => {
-    const list = scope ? [...scope.querySelectorAll("[data-numpad]")] : [];
-    const following = list[list.indexOf(field) + 1];
-    if (following) following.focus();
-    else { field.blur(); closeNumpad(); }
-  });
+  const next = handlers.next || ((field) => nextField(field, scope));
   const wired = { change: handlers.change, next };
   input.addEventListener("focus", () => openNumpad(input, wired));
   // A field that already has focus (pad was dismissed) must reopen on the next tap.

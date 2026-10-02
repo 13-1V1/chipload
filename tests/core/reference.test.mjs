@@ -32,6 +32,10 @@ test("hardness conversion round-trips through the E140 table", () => {
   near(convertHardness("hrb", 90).hb, 185, 0.5);
   near(convertHardness("hrc", 45).hv, 446, 0.5);
   assert.equal(convertHardness("hrc", 70), null);
+  // Vickers off both ends of the steel table is an error, not a row of "off scale" (HV 93–940)
+  for (const hv of [40, 92, 941, 2000]) assert.equal(convertHardness("hv", hv), null, `HV ${hv}`);
+  near(convertHardness("hv", 93).hrb, 50, 0.5);
+  near(convertHardness("hv", 940).hrc, 68, 0.5);
 });
 
 test("SHCS chart: 1/4 SHCS gets a 7/16 counterbore, 0.250 deep", () => {

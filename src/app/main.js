@@ -38,6 +38,11 @@ gloveBtn.addEventListener("click", () => setSetting("glove", !getSettings().glov
 onSettings(syncGlove);
 syncGlove();
 helpBtn.addEventListener("click", () => current?.toggleHelp?.());
+// Enter (or Done) on the phone keyboard puts it away: a text field has nowhere else to go.
+// Fields with their own Enter (search, job name) act first; this only drops the keyboard after.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.matches?.('input[type="text"]:not([data-numpad]), input[type="search"]')) e.target.blur();
+});
 
 function screen(name, { showBack = true, answer = false, tool = false } = {}) {
   current?.destroy?.();

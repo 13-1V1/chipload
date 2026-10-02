@@ -55,5 +55,7 @@ export function convertHardness(scale, value) {
   const hrb = hv <= 240 ? interp(HRB_TABLE, 1, hv, 0) : null;
   const hb = hv >= 238 ? interp(HRC_TABLE, 1, hv, 2) : interp(HRB_TABLE, 1, hv, 2);
   const tensile = hv >= 238 ? interp(HRC_TABLE, 1, hv, 3) : interp(HRB_TABLE, 1, hv, 3);
+  // A Vickers number below or above both tables converts to nothing — say so, don't answer "off scale" everywhere.
+  if (hrc == null && hrb == null) return null;
   return { hv, hrc, hrb, hb, tensile };
 }

@@ -80,7 +80,7 @@ function machineForm(body, m) {
   const host = body.querySelector("#form");
   host.innerHTML = `<div class="calc" style="margin-top:14px">
     <h2 class="sec" style="margin:0">${isNew ? "New machine" : "Edit machine"}</h2>
-    ${field("Name", `<input class="input" id="mName" type="text" value="${esc(m.name)}" placeholder="Haas VF-2" autocapitalize="words">`)}
+    ${field("Name", `<input class="input" id="mName" type="text" enterkeyhint="done" value="${esc(m.name)}" placeholder="Haas VF-2" autocapitalize="words">`)}
     ${field("Type", seg("mType", [["mill", "Mill"], ["lathe", "Lathe"]], m.type))}
     ${field("Max spindle", `<input class="input" id="mRpm" type="text" value="${esc(m.maxRpm)}" data-numpad="1">`, "RPM")}
     ${field("Max feed", `<input class="input" id="mFeed" type="text" value="${esc(m.maxFeed)}" data-numpad="1">`, m.units === "mm" ? "mm/min" : "IPM")}
@@ -137,12 +137,12 @@ function toolForm(body, t) {
   const host = body.querySelector("#form");
   host.innerHTML = `<div class="calc" style="margin-top:14px">
     <h2 class="sec" style="margin:0">${isNew ? "New tool" : "Edit tool"}</h2>
-    ${field("Name", `<input class="input" id="tName" type="text" value="${esc(t.name)}" placeholder='3/8" 4FL carbide' autocapitalize="off">`)}
+    ${field("Name", `<input class="input" id="tName" type="text" enterkeyhint="done" value="${esc(t.name)}" placeholder='3/8" 4FL carbide' autocapitalize="off">`)}
     ${field("Kind", seg("tKind", [["endmill", "End mill"], ["drill", "Drill"]], t.kind))}
     ${field("Diameter", `<input class="input" id="tDia" type="text" value="${esc(t.diameter)}" data-numpad="1">`, t.units)}
     ${field("Flutes", `<input class="input" id="tFlutes" type="text" value="${esc(t.flutes)}" data-numpad="1">`)}
     ${field("Material", seg("tType", [["hss", "HSS"], ["carbide", "Carbide"], ["coated", "Coated"]], t.toolType))}
-    ${field("Note", `<input class="input" id="tNote" type="text" value="${esc(t.note)}" placeholder="AlTiN, 1.5 LOC, brand…">`)}
+    ${field("Note", `<input class="input" id="tNote" type="text" enterkeyhint="done" value="${esc(t.note)}" placeholder="AlTiN, 1.5 LOC, brand…">`)}
     <div class="dl-row"><button type="button" class="btn primary" id="save">Save</button>${isNew ? "" : `<button type="button" class="btn" id="del">Delete</button>`}<button type="button" class="btn" id="cancel">Cancel</button></div>
   </div>`;
   wireSeg(host, "tKind"); wireSeg(host, "tType");

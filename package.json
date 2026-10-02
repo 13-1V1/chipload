@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test \"tests/core/*.test.mjs\" \"tests/calcs/*.test.mjs\"",
     "test:e2e": "node --test tests/e2e/app.test.mjs",
-    "test:all": "npm test && npm run test:e2e",
+    "test:walk": "node tests/critic/walkthrough.mjs",
+    "test:all": "npm test && npm run test:e2e && npm run test:walk",
     "serve": "node tests/serve.mjs",
     "vendor": "node scripts/vendor.mjs",
     "build": "node scripts/build-www.mjs",

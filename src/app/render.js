@@ -9,7 +9,7 @@ import { buildValues, optionsFor, sanitizeChoices, convertInput, defaultFor, def
 import { CALCULATION_SOURCES } from "../data/sources.js";
 import { getSettings, UNIT_LABEL, SHARE_BASE } from "./settings.js";
 import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFavorite, pushRecent, saveBlob, loadStrings } from "./store.js";
-import { attachNumpad, closeNumpad } from "./numpad.js";
+import { attachNumpad, closeNumpad, nextField } from "./numpad.js";
 import { ICONS } from "./icons.js";
 import { toast, download, share, printScreen } from "./ui.js";
 import { cellAttrs, fitTable } from "./tables.js";
@@ -120,7 +120,6 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   const fieldWraps = {};
   const unitLabels = {};
   const labelTexts = {};
-  const numericInputs = [];
   const advancedInputs = def.inputs.filter((i) => i.advanced);
   let more = null, moreBody = null;
   if (advancedInputs.length) {
@@ -181,19 +180,13 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       control.type = "text";
       control.className = "input";
       control.value = raw[input.id];
-      if (input.kind === "text") { control.inputMode = "text"; control.autocapitalize = "off"; control.placeholder = input.placeholder || ""; control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); }); }
+      if (input.kind === "text") { control.inputMode = "text"; control.autocapitalize = "off"; control.enterKeyHint = "done"; control.placeholder = input.placeholder || ""; control.addEventListener("input", () => { raw[input.id] = control.value; recalc(); }); }
       else {
         // Only number fields belong to the custom pad; a text field gets the phone's own keyboard.
         control.dataset.numpad = "1";
-        numericInputs.push(control);
         attachNumpad(control, {
           change: (el) => { raw[input.id] = el.value; recalc(); },
-          next: (el) => {
-            const visible = numericInputs.filter((x) => !fieldWraps[x.dataset.inputId].hidden);
-            const i = visible.indexOf(el);
-            if (i >= 0 && i < visible.length - 1) visible[i + 1].focus();
-            else { el.blur(); closeNumpad(); }
-          },
+          next: (el) => nextField(el, calc), // skips fields hidden by the mode or folded in More options
         });
       }
       control.dataset.inputId = input.id;

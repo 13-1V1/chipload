@@ -5,6 +5,7 @@ Android machinist calculator (Capacitor + vanilla JS, no bundler). Brief: `CHIPL
 ## Commands
 - `npm test` — Node tests: core math vs published values, every calculator in inch + mm, plus the two critic gates (input fuzzer, machinist checklist)
 - `npm run test:e2e` — Playwright Chromium at phone size (`npx playwright install chromium` once)
+- `npm run test:walk` — uses every calculator like a person, tap by tap: Next through every mode, pad typing, every button, dropdown and chip, help, Reset, history, Enter (~5 min). Part of `npm run test:all`; run it before every build you hand over
 - `node tests/critic/ui-stress.mjs` — browser stress report (overflow, unit switch, corrupt storage, XSS, touch targets, contrast, leaks); JSON on stdout, exit 0 only if every verdict passes. Takes about 6 minutes
 - `npm run serve` — static server on 4173 (also `.claude/launch.json` → `chipload-dev`)
 - `npm run vendor` — copy Capacitor ESM into `vendor/` (import map in `index.html`)

@@ -610,3 +610,39 @@ test("test build: Pro can be switched on and off without a purchase", async () =
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+// "Typed the stock thickness, hit Next, nothing happens": Next aimed at a field folded inside the closed
+// More options drawer. tests/critic/walkthrough.mjs walks every tool in every mode; this pins the case he hit.
+test("Next skips fields folded away in More options, and closes the pad after the last one on screen", async () => {
+  const { page, ctx, errors } = await open("/calc/saw-speed");
+  await page.locator("#f-saw-speed-thickness").click();
+  await page.waitForSelector(".numpad.open");
+  const tap = async (k) => { const b = page.locator(`.numpad [data-key="${k}"]`); await b.dispatchEvent("pointerdown"); await b.dispatchEvent("pointerup"); };
+  await tap("next");
+  assert.equal(await page.evaluate(() => document.querySelector(".numpad").classList.contains("open")), false, "pad put away");
+  // with More options open, Next walks into it
+  await page.locator("details.more > summary").click();
+  await page.locator("#f-saw-speed-thickness").click();
+  await tap("next");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "f-saw-speed-wheel");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("hold backspace clears the field it was held on, and only that field", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill");
+  const bksp = page.locator('.numpad [data-key="bksp"]');
+  await page.locator("#f-feeds-mill-diameter").click();
+  await bksp.dispatchEvent("pointerdown");
+  await page.waitForTimeout(700);
+  await bksp.dispatchEvent("pointerup");
+  assert.equal(await page.locator("#f-feeds-mill-diameter").inputValue(), "", "held: cleared");
+  // a press that is never let go must not wipe a different field later
+  await page.locator('.numpad [data-key="5"]').dispatchEvent("pointerdown");
+  await bksp.dispatchEvent("pointerdown"); // no pointerup
+  await page.locator("#f-feeds-mill-flutes").click();
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator("#f-feeds-mill-flutes").inputValue(), "4", "the other field is untouched");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
