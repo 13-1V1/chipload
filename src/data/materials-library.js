@@ -230,6 +230,14 @@ export function materialOptions() {
   return MATERIALS.map((m) => ({ value: m.id, label: m.name, group: m.group }));
 }
 
+/**
+ * A warning when this tool type shouldn't be cutting this material at all (for example HSS on hardened
+ * steel), else null. Every speeds & feeds tool shows it.
+ */
+export function toolCaution(id, toolType = "carbide") {
+  return null;
+}
+
 /** Starting SFM and chip load for a material and tool type. */
 export function materialSpeeds(id, toolType = "carbide") {
   const m = materialById(id) || materialById("al6061");
