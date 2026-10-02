@@ -51,7 +51,7 @@ export default register({
       source: "advanced",
       explain: [{ title: internal ? "Inside circle" : "Outside circle", formula: internal ? "Fc = F × (Df − Dt) ÷ Df" : "Fc = F × (Df + Dt) ÷ Df", plugged: `= ${feedText(v.feed)} × (${len(v.feature)} ${internal ? "−" : "+"} ${len(v.tool)}) ÷ ${len(v.feature)} = ${feedText(f)}${capped ? ` → ${feedText(program)} on ${m.name}` : ""}` }],
       notes: ["Controls with G41/G42 feed the tool center on the compensated path — this is the same correction, done by hand."],
-      historyLabel: `${internal ? "ID" : "OD"} Ø${fmt(v.feature, p)} · Ø${fmt(v.tool, p)}`,
+      historyLabel: `${internal ? "ID" : "OD"} Ø${fmt(v.feature, p)} ${c.L.length} · Ø${fmt(v.tool, p)} ${c.L.length}`,
     };
   },
 });

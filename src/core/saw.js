@@ -78,25 +78,34 @@ export function bladeForStock(thicknessIn, shape = "round") {
 export const THIN_STOCK_IN = 3 / 32;
 
 /**
- * Wood stock this thick and up takes a 3–4 TPI hook-tooth blade (4 TPI still keeps 3 teeth in a 3/4 in cut).
- * Set at 19 mm (0.748 in), the metric 3/4 board, so a 19 mm entry lands on the side the "from 19 mm up" line promises;
+ * Wood stock this thick and up takes a 4 TPI hook-tooth blade (Olson: 4 TPI from 3/4 in). Set at 19 mm (0.748 in),
+ * the metric 3/4 board, so a 19 mm entry lands on the side the "from 19 mm up" line promises;
  * 4 TPI × 0.748 in = 2.99 teeth, still the 3-tooth rule to the figure shown.
  */
 export const WOOD_HOOK_MIN_IN = 19 / 25.4;
 
 /**
- * Band saw blade for wood (the metal tooth chart doesn't apply). Woodworking blade guides: hook tooth, 3–4 TPI, for
- * thick stock and resawing; thinner stock and curves want a finer regular-tooth blade with at least 3 teeth in the
- * work. Under WOOD_HOOK_MIN_IN this picks the coarsest common pitch that keeps 3 teeth in the cut (24 TPI at most).
- * Returns { tooth: "hook" | "regular", tpi: "3–4" | "6" …, teethInCut (null for the hook range), thin }.
+ * From here up the hook blade can be 3–4 TPI: Olson gives 3 TPI from 1 in, where 3 TPI × 1 in = 3 teeth. Exactly
+ * 1 in (25.4 mm), not the 25 mm metric board: 3 TPI × 0.984 in = 2.95 teeth, and the inch line "from 1 in up" would
+ * be wrong from 0.984 to 1 in. A 25 mm board gets 4 TPI (3.9 teeth).
+ */
+export const WOOD_HOOK_3TPI_MIN_IN = 1;
+
+/**
+ * Band saw blade for wood (the metal tooth chart doesn't apply). Olson Saw, "What band saw blade should I get?"
+ * (olsonsaw.net, 2024): at least 3 teeth in the work; hook tooth for thick wood and resawing; 4 TPI from 3/4 in,
+ * 6 from 1/2, 8 from 3/8, 10 from 5/16, 14 from 1/4 (each = 3 teeth in the cut). Laguna's blade guide gives the same
+ * 3-tooth minimum. Hook tooth: 4 TPI from WOOD_HOOK_MIN_IN, 3–4 TPI from WOOD_HOOK_3TPI_MIN_IN. Under that this picks
+ * the coarsest common pitch that keeps 3 teeth in the cut; stock too thin for 3 teeth even on the finest common blade
+ * (24 TPI, so under 1/8 in) is `thin`. Returns { tooth: "hook" | "regular", tpi: "3–4" | "4" | "6" …, teethInCut
+ * (null for the hook range), thin }.
  */
 export function woodBladeForStock(thicknessIn) {
   if (!(thicknessIn > 0)) return null;
-  const thin = thicknessIn < THIN_STOCK_IN;
-  if (thicknessIn >= WOOD_HOOK_MIN_IN) return { tooth: "hook", tpi: "3–4", teethInCut: null, thin };
+  if (thicknessIn >= WOOD_HOOK_MIN_IN) return { tooth: "hook", tpi: thicknessIn >= WOOD_HOOK_3TPI_MIN_IN ? "3–4" : "4", teethInCut: null, thin: false };
   const need = 3 / thicknessIn;
   const tpi = COMMON_TPI.find((n) => n >= need - 1e-9) ?? COMMON_TPI[COMMON_TPI.length - 1];
-  return { tooth: "regular", tpi: String(tpi), teethInCut: tpi * thicknessIn, thin };
+  return { tooth: "regular", tpi: String(tpi), teethInCut: tpi * thicknessIn, thin: tpi * thicknessIn < 3 - 1e-9 };
 }
 
 /** Blade speed from wheel diameter (in) and wheel RPM: FPM = π D RPM ÷ 12. */

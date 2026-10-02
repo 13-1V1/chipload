@@ -97,7 +97,14 @@ export default register({
         // the external reason comes first in undefinedReasons, the internal one last
         else warnings.push(`${ext ? env.undefinedReasons[0] : env.undefinedReasons.at(-1)} No class limits here, so no pass/fail.`);
       }
-    } catch { limits = null; }
+    } catch (err) {
+      // ISO 965-1 stops at M1–M355 and 0.2–8 mm pitch (metricToleranceEnvelope throws past that): say why there is no verdict.
+      // A pitch out of range already carries the thread's own "Check the pitch." caution, so don't say it twice.
+      limits = null;
+      if (!t.isUn) warnings.push(t.caution && /pitch/.test(err.message)
+        ? "No ISO 965 class limits for this pitch, so no pass/fail."
+        : `${err.message} No class limits here, so no pass/fail.`);
+    }
     const solveM = (e) => (ext ? mowSolveMExternal(e, wireIn, t.pitchIn) : mowSolveMInternal(e, wireIn, t.pitchIn));
     const stats = [
       // wire sizes one place finer, the way wires are marked (.02887 in, 0.2887 mm)
@@ -134,7 +141,7 @@ export default register({
           : { title: "Between balls (internal, 60°)", formula: "M = E − 3W + 0.86603 P", plugged: v.mode === "m" ? `M = ${e} − 3 × ${w} + 0.86603 × ${pp} = ${m} ${u}` : `E = M + 3W − 0.86603 P = ${m} + 3 × ${w} − 0.86603 × ${pp} = ${e} ${u}` },
       ],
       notes: [`Lead-angle correction is ignored; it is under ${c.units === "mm" ? "0.003 mm" : "0.0001 in"} for most single-start threads.`, `K = ${K}`],
-      historyLabel: `${t.label} · ${ext ? "ext" : "int"} · W ${fmt(v.wire, p)}`,
+      historyLabel: `${t.label} · ${ext ? "ext" : "int"} · W ${fmt(v.wire, p)} ${u}`,
     };
   },
 });

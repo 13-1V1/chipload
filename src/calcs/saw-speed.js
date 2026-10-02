@@ -5,7 +5,7 @@
 
 import { register } from "../app/registry.js";
 import { bandSawSpeed, bladeForStock, woodBladeForStock, bladeSpeedFromWheel, wheelRpmForSpeed } from "../core/saw.js";
-import { WOOD_IDS } from "../data/saw.js";
+import { WOOD_IDS, TOOTH_CHART } from "../data/saw.js";
 import { materialOptions, materialById } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromSfm, lenPlaces } from "./_util.js";
@@ -44,7 +44,7 @@ export default register({
     const spUnit = mm ? "m/min" : "FPM";
     const sp = (fpm) => `${fmt(fromSfm(fpm, c.units), 0)} ${spUnit}`;
     const size = `${fmt(v.thickness, p)} ${c.L.length}`;
-    const woodText = () => (blade.tooth === "hook" ? "Hook tooth, about 3–4 TPI"
+    const woodText = () => (blade.tooth === "hook" ? `Hook tooth, about ${blade.tpi} TPI`
       : `Regular tooth, about ${blade.tpi} TPI (about ${fmt(blade.teethInCut, 1)} teeth in the cut)`);
     const stats = [
       { label: "Speed range for this material", text: speed.basis === "chart" ? `${sp(speed.min)} dry – ${sp(speed.max)} with coolant` : `${sp(speed.min)} – ${sp(speed.max)}` },
@@ -64,7 +64,7 @@ export default register({
     } else {
       explain.push({ title: "Blade speed", formula: speed.basis === "wood" ? `Wood: start near ${mm ? "900 m/min" : "3,000 FPM"}` : "No maker chart row for this family: a published range, placed by machinability", plugged: `${sp(speed.min)} – ${sp(speed.max)} → start ${sp(speed.start)}` });
     }
-    if (wood) explain.push({ title: "Tooth pitch", formula: `Wood: hook tooth, 3–4 TPI, from ${mm ? "19 mm" : "3/4 in"} up; thinner stock keeps at least 3 teeth in the cut`, plugged: `${size} → ${woodText()}` });
+    if (wood) explain.push({ title: "Tooth pitch", formula: `Wood: at least 3 teeth in the cut. Hook tooth from ${mm ? "19 mm" : "3/4 in"} up: 4 TPI, or 3–4 TPI from ${mm ? "25.4 mm" : "1 in"} up; thinner stock gets a finer regular tooth`, plugged: `${size} → ${woodText()}` });
     else explain.push({ title: "Tooth pitch", formula: "Blade maker's tooth chart: round bar by diameter, flat bar by width, tube by wall", plugged: `${size} ${SHAPE_WORD[shape]} → ${blade.pitch} TPI` });
     if (speed.bimetalUnsuitable) warnings.push(`${m.name} is about ${speed.hrc} HRC — too hard for a bi-metal blade. Use a carbide-tipped blade or an abrasive cutoff saw. The speed shown is only a ceiling if you try a bi-metal blade anyway.`);
     else if (speed.beyondChart) warnings.push(`${m.name} is about ${speed.hrc} HRC, past the end of the blade maker's hardness table (40 HRC). Stay at or under this speed with a light feed, or use a carbide-tipped blade.`);
@@ -84,12 +84,17 @@ export default register({
     } else if (Number.isFinite(v.rpm) && v.rpm > 0) {
       warnings.push(`To check ${v.rpm} wheel RPM, also enter the saw wheel diameter (just above it under More options). Blade speed needs both.`);
     }
-    // Names the same blades as the stats above, so the screen gives one answer.
-    if (blade.thin) warnings.push(wood ? `Thin stock: use the finest blade you have (${blade.tpi} TPI) and a light feed, or the teeth will catch.`
-      : `Thin stock: use the finest blade you have (${blade.pitch}, or a ${blade.constant} TPI one-pitch blade) and a light feed, or the teeth will catch.`);
+    // Names the same blades as the stats above, so the screen gives one answer. Thin tube wall (1/16–3/32 in) sits
+    // on the chart's 10/14 row, which isn't its finest pitch: name the finer blades instead of calling 10/14 the finest.
+    const finest = TOOTH_CHART[shape][0][1];
+    if (blade.thin) warnings.push(wood ? `Thin stock: under 3 teeth in the cut even on the finest common blade. Use the finest blade you have (${blade.tpi} TPI) and a light feed, or the teeth will catch.`
+      : blade.pitch === finest ? `Thin stock: use the finest blade you have (${blade.pitch}, or a ${blade.constant} TPI one-pitch blade) and a light feed, or the teeth will catch.`
+      : `Thin stock: the chart's ${blade.pitch} TPI leaves under 3 teeth in the cut. Use a finer blade if you have one (${finest}, or a ${blade.constant} TPI one-pitch blade) and a light feed, or the teeth will catch.`);
     const notes = [`${spUnit} is how fast the blade's edge travels. Most small band saws run ${mm ? "900+ m/min" : "3,000+ FPM"} — fine for wood and aluminum, way too fast for steel. A saw that only does wood speeds needs a speed reducer to cut steel.`];
     if (speed.basis === "chart") notes.push("Speeds are for a bi-metal blade with flood coolant. Spray lube: 15% slower. No coolant: 30–50% slower. Carbon-steel blade: half speed.");
-    if (speed.basis === "wood") notes.push("The metal tooth chart doesn't apply to wood: a hook-tooth blade, about 3–4 TPI, for thick stock; a finer regular-tooth blade for thin stock and tight curves.");
+    // No pitch here: the "Blade to use" stat gives the one pitch for this thickness (a second figure here once disagreed)
+    if (speed.basis === "wood") notes.push("The metal tooth chart doesn't apply to wood: a hook-tooth blade for thick stock, a finer regular-tooth blade for thin stock and tight curves."
+      + (blade.thin ? "" : " The blade shown above keeps at least 3 teeth in the cut."));
     return {
       primary: { label: `Blade speed to start · ${m.name.split(" ")[0]}`, value: fromSfm(speed.start, c.units), unit: spUnit, places: 0 },
       stats, warnings, explain,

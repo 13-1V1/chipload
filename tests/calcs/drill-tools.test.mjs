@@ -412,10 +412,12 @@ test("center drill depth includes the drill point, and the picker reads in mm on
 
 // One rating rule in both tools (drillFeedFactor, _advice.js): a family-scale rating is read on its own scale,
 // so aluminum, magnesium/zinc, plastics and copper alloys rated 80+ take 1.25×. Machinery's Handbook feed at
-// 1/2 in is 0.007 in/rev, so 6061 and C360 get 0.00875; 1018 (B1112 scale, 70%) gets 0.007 × 0.85.
+// 1/2 in is 0.007 in/rev, so 6061 and C360 get 0.00875; 1018 (B1112 scale, 78%) gets 0.007 × (0.5 + 78/200)
+// = 0.007 × 0.89 = 0.00623.
 test("feeds-drill and the job sheet give one drill feed per rev for the same drill and material", () => {
   near(stat(run("feeds-drill", { diameter: "0.5", material: "al6061" }), /^Feed per rev/).value, 0.00875, 1e-12);
   near(stat(run("feeds-drill", { diameter: "0.5", material: "c360" }), /^Feed per rev/).value, 0.00875, 1e-12);
+  near(stat(run("feeds-drill", { diameter: "0.5", material: "s1018" }), /^Feed per rev/).value, 0.007 * 0.89, 1e-12);
   for (const units of ["in", "mm"]) {
     const diameter = units === "in" ? "0.5" : "12";
     for (const material of ["al6061", "c360", "mgAZ31", "pAcetal", "s1018", "ss304", "ti64"]) {

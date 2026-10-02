@@ -6,13 +6,12 @@
 //   note? (a string, or note(ctx) when it carries a unit), threadToSize? (a chart listed by screw size, so
 //   "1/4-20" finds the 1/4 row; chart-filter.js), pro? }
 
-import { fmt } from "../core/format.js";
 import { getSettings, UNIT_LABEL } from "./settings.js";
 import { ICONS } from "./icons.js";
 import { pushRecent } from "./store.js";
 import { helpSeen, markHelpSeen } from "./render.js";
 import { cellAttrs, fitTable } from "./tables.js";
-import { chartFilter } from "./chart-filter.js";
+import { chartFilter, chartCells } from "./chart-filter.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -22,8 +21,8 @@ export function mountChart(def, root, { params = {} } = {}) {
   const units = params.units === "mm" || params.units === "in" ? params.units : settings.units;
   const ctx = { units, L: UNIT_LABEL[units], settings };
   const locked = !!def.pro && !settings.pro;
-  const rows = locked ? [] : def.rows(ctx);
-  const cols = typeof def.columns === "function" ? def.columns(ctx) : def.columns;
+  // Locked: no rows are built. Otherwise the cells are the ones chart-filter.js ranks (chartCells).
+  const { cols, rows, cell, cells } = locked ? { cols: [], rows: [], cell: null, cells: [] } : chartCells(def, ctx);
   const note = typeof def.note === "function" ? def.note(ctx) : def.note;
 
   root.innerHTML = `
@@ -45,8 +44,7 @@ export function mountChart(def, root, { params = {} } = {}) {
   if (locked) return { destroy() {}, toggleHelp, hasHelp: !!helpText };
   const q = root.querySelector("#cq");
   const body = root.querySelector("#cbody");
-  const cell = (r, c) => typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : String(r[c.key] ?? "");
-  const filter = chartFilter(rows.map((r) => cols.map((c) => cell(r, c))), { threadToSize: !!def.threadToSize });
+  const filter = chartFilter(cells, { threadToSize: !!def.threadToSize });
 
   function draw() {
     // G01 matches G1, "1/4-20" finds the 1/4 bolt, the row named what was typed comes first (chart-filter.js)

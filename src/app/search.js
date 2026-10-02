@@ -45,39 +45,60 @@ function normalizeQuery(q) {
 }
 
 const hayFor = (def) => `${def.title} ${def.short || ""} ${(def.keywords || []).join(" ")} ${def.category}`.toLowerCase();
-/** Points for the words a tool matches, and whether it matched every one. Optional words only add points. */
+/**
+ * Points for the words a tool matches, whether it matched every required one, and how many optional (material)
+ * words it matched. Optional words only add points; a tool that matches none of them never deals with the named
+ * material, which only matters to a typed value (see `pre` in searchCalcs).
+ */
 function score(def, terms, optional = []) {
   const hay = hayFor(def);
   const title = def.title.toLowerCase();
   const points = (t) => (title.startsWith(t) ? 5 : title.includes(t) ? 3 : hay.includes(t) ? 1 : 0);
-  let s = 0, matched = 0;
+  let s = 0, matched = 0, opt = 0;
   for (const t of terms) {
     const p = points(t);
     if (p) { s += p; matched++; }
   }
   // A sentence rarely uses every word the catalog does: most of the words is enough to be listed.
-  if (!matched || matched < Math.ceil(terms.length / 2)) return { s: 0, full: false };
-  for (const t of optional) s += points(t);
-  return { s, full: matched === terms.length };
+  if (!matched || matched < Math.ceil(terms.length / 2)) return { s: 0, full: false, opt: 0 };
+  for (const t of optional) {
+    const p = points(t);
+    if (p) { s += p; opt++; }
+  }
+  return { s, full: matched === terms.length, opt };
 }
 
 // A unit word after a number belongs to it ("8.5 mm"), and so does a fraction after a whole number ("1 1/4", "1 1/8-7").
 const UNIT_WORD = /^(?:mm|millimet(?:er|re)s?|in|inch|inches|["″”])$/i;
-const NUMBERISH = /^-?\d[\d.,/]*(?:mm|in|")?$/i;
+const NUMBERISH = /^-?(?:\d|\.\d)[\d.,/]*(?:mm|in|")?$/i; // ".25" is a value, as "0.25" is
 const HYPHEN_MIXED = /^(\d+)-(\d+\/\d+)((?:mm|in|")?)$/i; // "1-1/4" (a size, not a thread: no TPI after it)
 const isValue = (t) => !!parseThreadSpec(t) || NUMBERISH.test(t) || HYPHEN_MIXED.test(t);
 
 const NUMBERED = /^#\d{1,2}$/; // "#10": a screw or number-drill size, not a value on its own
-const FLUTE_WORD = /^(?:flutes?|fl|fluted)$/i;
+const FLUTE_WORD = /^(?:flutes?|fl|fluted|teeth|tooth)$/i;
+// A count of holes or parts: a count, unless the question is about tapping them ("1/4 20 holes to tap"). Only the
+// plural "holes" counts: "a 1/4 20 hole" is shop talk for one tapped hole.
+const PIECE_WORD = /^(?:holes|pcs|pieces?|places|pl|parts?)$/i;
+const THREAD_WORDS = /\b(?:taps?|tapped|tapping|threads?|threaded|unc|unf|unef)\b/;
+// A bolt circle or a saw question has sizes and counts, not threads ("bolt circle 3.5 6 holes", "saw 3/4 10 tpi").
+// A tap word still makes it a thread ("bolt circle 1/2 13 tap 6 holes"), as it does for PIECE_WORD.
+const COUNT_CONTEXT = /\b(?:bolt\s*-?\s*circles?|bhc|pcd|bcd|saws?|bandsaws?|hacksaws?|blades?|patterns?)\b/;
+const COUNT_WORD = new RegExp(`${FLUTE_WORD.source}|${PIECE_WORD.source}|^hole$|^tpi$`, "i"); // "6 hole pattern"
 /**
  * A thread typed with a space before its pitch ("M10 1.25", "1/4 28", "#10 32"), read the way the chart filter
  * reads it: "M10x1.25", "1/4-28", "#10-32". An inch pitch must be a whole TPI that ASME B1.1 lists for that size
- * (1/2-8 isn't: 8-UN starts at 1 in), and a pitch followed by a flute word is a flute count ("3/4 10 flute",
- * "1/2 2 flute" stay sizes). Null when the words aren't one thread.
+ * (1/2-8 isn't: 8-UN starts at 1 in), and a pitch followed by a flute or teeth word is a count ("3/4 10 flute",
+ * "1/2 2 flute", "3/4 10 teeth" stay sizes); so is one followed by holes or parts unless the question is about
+ * tapping. `query` (lowercase) is the whole question; `spaced`: no separator was typed between size and pitch,
+ * so a bolt-circle or saw question keeps the two numbers apart. Null when the words aren't one thread.
  */
-function spacedThread(size, pitch, after) {
+function spacedThread(size, pitch, after, query = "", spaced = true) {
   if (!pitch || !/^\d*\.?\d+$/.test(pitch) || !/^(?:m\d|\d*\.\d|\d+\/\d|#\d)/i.test(size)) return null;
   if (FLUTE_WORD.test(after || "")) return null;
+  // "M8 1.25" and "#10 32" are threads anywhere; only a bare number before another number can be a size and a count.
+  const bare = !/^[m#]/i.test(size);
+  if (bare && PIECE_WORD.test(after || "") && !THREAD_WORDS.test(query)) return null;
+  if (bare && spaced && COUNT_CONTEXT.test(query) && !THREAD_WORDS.test(query)) return null;
   const joined = threadCallout(`${size} ${pitch}`.toLowerCase());
   const t = joined.includes(" ") ? null : parseThreadSpec(joined);
   // A pitch thread.js cautions on ("M10 3": coarser than any standard thread) is two words, not one thread.
@@ -90,12 +111,13 @@ const SEPARATED_PITCH = /^[x×](\d*\.?\d+)$/i; // "M10 x1.25"
 /** The thread starting at tokens[i], with or without a spaced separator: { text, len } (tokens used), or null. */
 function threadTokens(tokens, i) {
   const [size, next, after, after2] = tokens.slice(i, i + 4);
+  const query = tokens.join(" ").toLowerCase();
   if (SEPARATOR.test(next || "")) {
-    const text = spacedThread(size, after, after2);
+    const text = spacedThread(size, after, after2, query, false);
     return text ? { text, len: 3 } : null;
   }
   const glued = (next || "").match(SEPARATED_PITCH);
-  const text = spacedThread(size, glued ? glued[1] : next, after);
+  const text = spacedThread(size, glued ? glued[1] : next, after, query, !glued);
   return text ? { text, len: 2 } : null;
 }
 
@@ -160,20 +182,26 @@ export function searchCalcs(query, defs) {
     if (hit) prefills.set(def, hit);
   }
 
-  const rest = span ? [...rawTokens.slice(0, span.start), ...rawTokens.slice(span.end)] : rawTokens;
+  // A count ("6 holes", "10 teeth", "2 flute") is no catalog word: only the word after it is.
+  const rest = (span ? [...rawTokens.slice(0, span.start), ...rawTokens.slice(span.end)] : rawTokens)
+    .filter((t, i, all) => !(/^\d+$/.test(t) && COUNT_WORD.test(all[i + 1] || "")));
   const { terms, optional } = normalizeQuery(rest.join(" "));
   // A bare grade or angle nobody claimed as a value ("6061", "304", "118") still finds tools that list it.
   const loose = span && /^\d{2,}$/.test(span.text) && !prefills.size ? span.text : null;
   // A size typed next to a chart's name opens that chart filtered to it ("#7 drill", "3/8 bolt clearance").
   const size = span?.text || q.match(/#\s?\d{1,2}\b/)?.[0].replace(/\s/g, "") || null;
   const phrase = terms.join(" ");
+  // A typed thread only prefills thread tools, so it never asks how fast to cut the named material ("1/4-20 drill
+  // aluminum" is the #7 tap drill, not drill speeds with no size).
+  const typedThread = !!(span && parseThreadSpec(span.text));
   for (const def of defs) {
     const hay = hayFor(def);
-    const { s: kw, full } = terms.length ? score(def, terms, optional) : { s: 0, full: false };
+    const { s: kw, full, opt } = terms.length ? score(def, terms, optional) : { s: 0, full: false, opt: 0 };
     const bonus = (phrase && hay.includes(phrase) ? 4 : 0) + (full ? 10 : 0) + (loose && new RegExp(`\\b${loose}\\b`).test(hay) ? 1 : 0);
     let hit = prefills.get(def);
-    // A value only outranks the words around it when there are no other words, or this tool matches all of them.
-    const pre = hit ? ((!terms.length || full) ? 50 : 1) : 0;
+    // A value only outranks the words around it when there are no other words, or this tool matches all of them,
+    // the named material included ("1/2 drill steel" is drill speeds, not the converter or the 1/2 NPT tap).
+    const pre = hit ? ((!terms.length || (full && (typedThread || !optional.length || opt > 0))) ? 50 : 1) : 0;
     if (!hit && def.view === "chart" && size && kw > 0 && chartTakes(def, size)) hit = { params: { q: size }, label: size };
     const s = pre + kw + bonus;
     if (s > 0) out.push({ def, s, params: hit?.params, prefillLabel: hit?.label });

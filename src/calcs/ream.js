@@ -59,7 +59,7 @@ export default register({
         warnings: [`No drill comes near ${fmt(r.preReamDiameter, p)} ${c.L.length}. Drill under size, bore to ${fmt(r.preReamDiameter, p)} ${c.L.length}, then ream.`, ...tooMuch],
         source: "advanced",
         explain: [{ title: "Pre-ream size", formula: "hole = reamed Ø − stock on diameter", plugged: `= ${fmt(v.target, p)} − ${fmt(v.allow, p)} = ${fmt(r.preReamDiameter, p)} ${c.L.length}` }],
-        historyLabel: `Ø${fmt(v.target, p)} → bore ${fmt(r.preReamDiameter, p)}`,
+        historyLabel: `Ø${fmt(v.target, p)} ${c.L.length} → bore ${fmt(r.preReamDiameter, p)} ${c.L.length}`,
       };
     }
     const near = c.units === "in" ? nearestDrillsInch(preIn) : nearestDrillsMm(preIn * 25.4);
@@ -81,7 +81,7 @@ export default register({
         warnings: [`The smallest drill here (${smallest}) is not smaller than the ${fmt(v.target, p)} ${c.L.length} reamed hole, so it would leave nothing to ream. Get a micro drill near ${fmt(r.preReamDiameter, p)} ${c.L.length} from a specialty maker, or skip the reamer and drill to size.`, ...tooMuch],
         source: "advanced",
         explain: [{ title: "Pre-ream size", formula: "drill = reamed Ø − stock on diameter", plugged: `= ${fmt(v.target, p)} − ${fmt(v.allow, p)} = ${fmt(r.preReamDiameter, p)} ${c.L.length}` }],
-        historyLabel: `Ø${fmt(v.target, p)} → no drill small enough`,
+        historyLabel: `Ø${fmt(v.target, p)} ${c.L.length} → no drill small enough`,
       };
     }
     const warnings = [...tooMuch];
@@ -99,7 +99,7 @@ export default register({
       source: "advanced",
       explain: [{ title: "Pre-ream size", formula: "drill = reamed Ø − stock on diameter", plugged: `= ${fmt(v.target, p)} − ${fmt(v.allow, p)} = ${fmt(r.preReamDiameter, p)} ${c.L.length}` }],
       notes: ["Too little stock and the reamer rubs and glazes; too much and it cuts oversize. Soft materials take the high side of the range."],
-      historyLabel: `Ø${fmt(v.target, p)} → ${pick.label}`,
+      historyLabel: `Ø${fmt(v.target, p)} ${c.L.length} → ${pick.label}`,
     };
   },
 });

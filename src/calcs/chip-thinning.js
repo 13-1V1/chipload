@@ -61,7 +61,7 @@ export default register({
     const slowed = fit.rpmCapped || fit.feedCapped;
     const feed = fromIn(fit.feedIpm, c.units);
 
-    const warnings = [...fit.warnings, ...spindleSanity(wantedRpm, m, "mill", c)];
+    const warnings = [...fit.warnings, ...spindleSanity(rpm, m, "mill", c)];
     if (total >= cap) warnings.push(`Thinning capped at ${cap}×. Beyond that, rubbing and chatter set in before the math does.`);
     if (v.woc > v.diameter / 2 && v.edge === "square") warnings.push("Radial cut is over half the diameter — no radial thinning applies.");
     if (v.edge === "lead" && v.lead < 30) warnings.push(`κr ${fmt(v.lead, 0)}° is a high-feed cutter (${fmt(axialRaw, 2)}× the chip). If your catalog angle is measured from the axis (0° = square shoulder), enter ${fmt(90 - v.lead, 0)} instead.`);
@@ -97,7 +97,7 @@ export default register({
         { title: "Feed", formula: `${c.L.feed} = RPM × flutes × fz`, plugged: `= ${fmt(rpm, 0)} RPM × ${v.flutes} × ${chip(fz)} = ${fmt(feed, 1)} ${c.L.feed}${slowed ? ` (${m.name}; wanted ${fmt(wantedRpm, 0)} RPM)` : ""}` },
       ],
       notes: ["HSM (trochoidal / peel milling) lives on this: a light radial cut lets you push feed hard while the chip stays where the insert wants it."],
-      historyLabel: `Ø${fmt(v.diameter, p)} · ae ${fmt(v.woc, p)} · ${fmt(total, 2)}×`,
+      historyLabel: `Ø${fmt(v.diameter, p)} ${c.L.length} · ae ${fmt(v.woc, p)} ${c.L.length} · ${fmt(total, 2)}×`,
     };
   },
 });

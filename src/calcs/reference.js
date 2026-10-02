@@ -61,7 +61,7 @@ register({
   // Listed by screw size, so a thread typed in the filter ("1/4-20", "M8x1.25") finds its size row.
   threadToSize: true,
   // The rows are inch and metric in both modes, so the sink allowance gives both units, the active one first.
-  note: (ctx) => `Counterbore depth = head height (flush). Add ${ctx?.units === "mm" ? "0.25–0.75 mm (0.010–0.030 in)" : "0.010–0.030 in (0.25–0.75 mm)"} if the head must sit below the surface. Inch clearances per ASME B18.2.8 (close / normal / loose, smallest hole for each fit); use Normal for most bolt patterns. Metric per ISO 273 (fine / medium / coarse).`,
+  note: (ctx) => `Counterbore depth = head height (flush). Add ${ctx?.units === "mm" ? "0.25–0.76 mm (0.010–0.030 in)" : "0.010–0.030 in (0.25–0.76 mm)"} if the head must sit below the surface. Inch clearances per ASME B18.2.8 (close / normal / loose, smallest hole for each fit); use Normal for most bolt patterns. Metric per ISO 273 (fine / medium / coarse).`,
 });
 
 register({

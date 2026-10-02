@@ -63,7 +63,7 @@ export default register({
         // name the machine's top and the RPM wanted; the line below says that and what surface speed the ball is left with.
         const fit = fitToMachine(m, wantedRpm, 0, c);
         const rpmFull = rpmFromSfm(toSfm(v.sfm, c.units), toIn(v.diameter, c.units));
-        warnings.push(...spindleSanity(wantedRpm, m, "mill", c));
+        warnings.push(...spindleSanity(fit.rpm, m, "mill", c));
         stats.push({ label: fit.rpmCapped ? "RPM at effective dia (machine max)" : "RPM at effective dia", value: fit.rpm, unit: "RPM", places: 0, clamped: fit.rpmCapped });
         if (fit.rpmCapped) {
           const reached = fromSfm(sfmFromRpm(fit.rpm, toIn(deff, c.units)), c.units);
@@ -86,7 +86,7 @@ export default register({
       stats, explain, warnings,
       source: "advanced",
       notes: ["Shallow 3D finishing cuts near the ball tip at close to zero surface speed — use the effective diameter to set RPM."],
-      historyLabel: `Ø${fmt(v.diameter, p)} · ${v.mode === "stepover" ? `h ${fmt(scallop, 5)}` : `s ${fmt(stepover, p)}`}`,
+      historyLabel: `Ø${fmt(v.diameter, p)} ${c.L.length} · ${v.mode === "stepover" ? `h ${fmt(scallop, 5)}` : `s ${fmt(stepover, p)}`} ${c.L.length}`,
     };
   },
 });

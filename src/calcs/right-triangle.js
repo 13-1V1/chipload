@@ -56,7 +56,7 @@ export default register({
       explain: [
         { title: "Right triangle", formula: "hyp² = run² + rise²   tan A = rise ÷ run   sin A = rise ÷ hyp   cos A = run ÷ hyp", plugged: `${la} = ${fmt(v.a, p)} ${c.L.length}, ${lb} = ${isAngle(v.mode, 1) ? `${fmt(v.b, 3)}°` : `${fmt(v.b, p)} ${c.L.length}`}` },
       ],
-      historyLabel: `${la.split(" ")[0]} ${fmt(v.a, p)} · ${lb.split(" ")[0]} ${fmt(v.b, p)}`,
+      historyLabel: [[la, v.a], [lb, v.b]].map(([l, x], i) => `${l.split(" ")[0]} ${isAngle(v.mode, i) ? `${fmt(x, 3)}°` : `${fmt(x, p)} ${c.L.length}`}`).join(" · "),
     };
   },
 });

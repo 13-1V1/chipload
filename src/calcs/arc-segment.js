@@ -63,7 +63,7 @@ export default register({
       source: "geometry",
       explain: [{ title: "Segment relations", formula: "R = (c²/4h + h) ÷ 2     c = 2 √(2Rh − h²)     θ = 2 asin(c ÷ 2R), or 360° − that when h > R (past a half circle)     arc = R θ", plugged: `R ${fmt(s.radius, p)} ${c.L.length}, c ${fmt(s.chord, p)} ${c.L.length}, h ${fmt(s.height, p)} ${c.L.length}, θ ${fmt(s.angle, 3)}°` }],
       notes,
-      historyLabel: `${PAIRS[v.pair][0]} ${fmt(v.a, 3)} · ${PAIRS[v.pair][1]} ${fmt(v.b, 3)}`,
+      historyLabel: [v.a, v.b].map((x, i) => `${PAIRS[v.pair][i]} ${fmt(x, 3)}${PAIRS[v.pair][i] === "Angle" ? "°" : ` ${c.L.length}`}`).join(" · "),
     };
   },
 });

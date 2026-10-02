@@ -13,16 +13,17 @@ import { lenPlaces } from "./_util.js";
 // sitting on the line just outside it. Here a length keeps up to nine decimals in inches (off by under
 // 0.0000000005 in, 1/2000 of the verdict's 0.000001 in band) and is exact in mm (inches × 25.4 always ends).
 // mm → inch still rounds, so a part within that sliver of the band's edge can still change verdict.
-function convertLength(text, from, to) {
+// Its own memory kind: a flip straight back restores the typing only when this same rule made the text.
+function convertLength(text, from, to, field) {
   if (from === to || String(text ?? "").trim() === "") return text;
-  return convertRemembering("length", text, from, to, (t) => {
+  return convertRemembering("true-position", text, from, to, (t) => {
     const v = parseDimension(t, from);
     if (!Number.isFinite(v)) return t;
     const x = to === "mm" ? v * 25.4 : v / 25.4;
     const most = 9;
     for (let p = 0; p < most; p++) if (Math.abs(Number(x.toFixed(p)) - x) <= Math.abs(x) * 1e-12) return fmt(x, p);
     return fmt(x, most);
-  });
+  }, field);
 }
 
 export default register({
@@ -97,7 +98,7 @@ export default register({
         hasLmc ? "Bonus only counts while the size is inside its limits: it grows from 0 at MMC to the full size tolerance at LMC."
           : "Bonus assumes the size is within its limits — enter LMC to check it and cap the bonus.",
       ],
-      historyLabel: `Δ${fmt(v.dx, p)}, ${fmt(v.dy, p)} → ${fmt(r.deviation, p)}`,
+      historyLabel: `Δ${fmt(v.dx, p)}, ${fmt(v.dy, p)} → ${fmt(r.deviation, pp)} ${u}`,
     };
   },
 });

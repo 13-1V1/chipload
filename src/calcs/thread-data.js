@@ -100,7 +100,10 @@ export default register({
         ...(t.isUn && mm ? [`${t.label} is an inch thread: it is specified in inches (${t.tpi} TPI); the lengths here are converted to mm.`] : []),
         ...(/^UNR/.test(t.suppliedSeries || "") ? ["UNR (ASME B1.1): an external thread with a mandatory rounded root. Same sizes, classes and limits as UN; the root radius is checked separately."] : []),
         ...(/^UNJ/.test(t.suppliedSeries || "") ? ["UNJ (ASME B1.15): same basic diameters as UN, but the external root must have a 0.15011P–0.18042P radius and the internal minor is held larger to clear it. Use UNJ-specific taps and gauges."] : []),
-        "Class limits are ASME B1.1-2003 Table 2: the tolerance formulas, rounded per ASME B1.30 the way that table is. Standard-series threads match it; for a special, check the standard before you accept parts on it.",
+        // the B1.1 note goes with the B1.1 table, which only an inch thread gets; ISO 965 limits live in their own tool
+        ...(t.isUn
+          ? ["Class limits are ASME B1.1-2003 Table 2: the tolerance formulas, rounded per ASME B1.30 the way that table is. Standard-series threads match it; for a special, check the standard before you accept parts on it."]
+          : ["6g / 6H class limits (ISO 965-1): see Metric thread limits."]),
       ],
       historyLabel: series || t.label,
     };

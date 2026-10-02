@@ -59,10 +59,11 @@ export function latheFeedIpr(materialId, cut = "rough") {
 
 /**
  * End-mill cautions. All lengths in inches. `machine` is the mill that applies (machineFor(c, "mill"));
- * `c` is the calculator context, so the spindle wording matches every other tool.
+ * `c` is the calculator context, so the spindle wording matches every other tool. `rpm` is the spindle the
+ * screen shows (after the machine fit), so the too-fast line never flags a speed the max feed already slowed.
  */
-export function millAdvice({ dIn, wocIn, docIn, requestedRpm, machine, c }) {
-  const out = [...spindleSanity(requestedRpm, machine, "mill", c)];
+export function millAdvice({ dIn, wocIn, docIn, rpm, machine, c }) {
+  const out = [...spindleSanity(rpm, machine, "mill", c)];
   if (wocIn >= dIn * 0.95 * (1 - EPS)) out.push("Full-width slot: the chips have nowhere to go. Cut the feed 20–50%, and use a 2- or 3-flute in aluminum.");
   if (docIn > dIn * 2 * (1 + EPS)) out.push("Depth of cut is over 2× the tool diameter. Step down in passes or the tool will deflect and chatter.");
   return out;

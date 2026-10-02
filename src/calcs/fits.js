@@ -59,6 +59,9 @@ export default register({
     ];
     const um = (x) => { const n = Math.round(x * 1e4) / 10; return `${n > 0 ? "+" : ""}${fmt(n, 1)}`; };
     const kindLabel = { clearance: "Clearance", interference: "Interference", transition: "Transition" }[f.kind];
+    // The label keeps the ISO name. Rounding inward can only narrow the range, so in inches a small transition fit
+    // (H7/n6 at 0.12 in: ISO −0.00063 to +0.00016 in) can show one side closed to line-to-line; a note says why.
+    const closed = f.kind !== "transition" ? null : maxClear <= 0 ? "clearance" : minClear >= 0 ? "interference" : null;
     return {
       primary: { label: `${h}/${s} · ${kindLabel} fit`, text: f.kind === "interference" ? `${fmt(-maxClear, lp)} – ${fmt(-minClear, lp)} tight` : `${fmt(minClear, lp)} – ${fmt(maxClear, lp)}`, unit: c.L.length },
       stats: [
@@ -81,9 +84,11 @@ export default register({
         formula: "limit (in) = limit (mm) ÷ 25.4, rounded inward: max down, min up",
         plugged: `${f.hole.spec} ${fmt(L(f.hole.min), 6)} – ${fmt(L(f.hole.max), 6)} in → ${fmt(hl.min, hl.places)} – ${fmt(hl.max, hl.places)} in; ${f.shaft.spec} ${fmt(L(f.shaft.min), 6)} – ${fmt(L(f.shaft.max), 6)} in → ${fmt(sl.min, sl.places)} – ${fmt(sl.max, sl.places)} in`,
       }] : [])],
-      notes: [inch
-        ? "Looked up from the ISO 286 tables in mm, then converted back. Inch limits are rounded inward to 0.0001 in so they stay inside the ISO limits, and the clearance and tolerance are worked from those limits, so they can read up to 0.0002 in tighter than the ISO values."
-        : "Looked up from the ISO 286 tables."],
+      notes: [
+        ...(closed ? [`ISO 286 calls ${h}/${s} a transition fit. At this size the inch limits, rounded inward, leave no ${closed} (${closed === "clearance" ? `max clearance ${fmt(maxClear, lp)}` : `min clearance ${fmt(minClear, lp)}`} ${c.L.length}): made to the limits shown, the parts ${closed === "clearance" ? "never run loose" : "never press together"}.`] : []),
+        inch
+          ? "Looked up from the ISO 286 tables in mm, then converted back. Inch limits are rounded inward to 0.0001 in so they stay inside the ISO limits, and the clearance and tolerance are worked from those limits, so each end of the clearance range can sit up to 0.0002 in inside the ISO range (the loose end reads tighter, the tight end looser), and each tolerance up to 0.0002 in narrower."
+          : "Looked up from the ISO 286 tables."],
       historyLabel: `${fmt(v.nominal, p)} ${c.L.length} ${h}/${s}`,
     };
   },

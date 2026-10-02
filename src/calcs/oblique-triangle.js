@@ -56,7 +56,7 @@ export default register({
       explain: [
         { title: "Law of cosines / sines", formula: "c² = a² + b² − 2ab cos C      a ÷ sin A = b ÷ sin B = c ÷ sin C", plugged: labels.map((l, i) => `${l} = ${isAngle(l) ? `${fmt([v.p1, v.p2, v.p3][i], 3)}°` : `${fmt([v.p1, v.p2, v.p3][i], p)} ${c.L.length}`}`).join(", ") },
       ],
-      historyLabel: `${v.mode} ${fmt(v.p1, 3)}, ${fmt(v.p2, 3)}, ${fmt(v.p3, 3)}`,
+      historyLabel: `${v.mode} ${[v.p1, v.p2, v.p3].map((x, i) => `${fmt(x, 3)}${isAngle(labels[i]) ? "°" : ` ${c.L.length}`}`).join(", ")}`,
     };
   },
 });

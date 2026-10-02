@@ -100,7 +100,7 @@ export default register({
       warnings: [
         ...(caution ? [caution] : []),
         ...fit.warnings,
-        ...spindleSanity(requestedRpm, m, "any", c),
+        ...spindleSanity(rpm, m, "any", c),
         ...(dIn < MICRO_DRILL_IN ? ["Micro drill: peck often (about every half a diameter), use a spindle that runs true, and check the drill maker's chart. The feed here keeps shrinking with the size."] : []),
         ...drillAdvice({ dIn, depthIn }),
       ],

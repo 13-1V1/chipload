@@ -78,6 +78,8 @@ export const SAW_RANGE_FPM = Object.freeze({
   "Stainless": [70, 150], "Cast iron": [95, 225], "Titanium": [65, 85], "Nickel & superalloys": [50, 80],
 });
 
+// Wood takes a wood blade, not the metal tooth chart: Olson Saw, "What band saw blade should I get?" (olsonsaw.net,
+// 2024) — at least 3 teeth in the work, hook tooth for thick wood, 4 TPI from 3/4 in; worked in woodBladeForStock.
 export const WOOD_IDS = Object.freeze(["oHardwood", "oMDF", "oPlywood"]);
 
 /** LENOX size adjustment: [stock size in, % change to chart speed]. */

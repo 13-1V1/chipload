@@ -58,7 +58,7 @@ export default register({
     // Tool-center path at full thread depth: internal the edge reaches the major (D − d); external it reaches
     // the external minor (d3 = D − 1.2269 P, ASME B1.1 / ISO 68-1), so the path is d3 + d. D + d only touches the OD.
     const pathDia = internal ? majorIn - cutterIn : basicThreadGeometry(majorIn, t.pitchIn).externalMinor + cutterIn;
-    const warnings = [...(t.caution ? [t.caution] : []), ...fit.warnings, ...spindleSanity(v.rpm, m, "mill", c)];
+    const warnings = [...(t.caution ? [t.caution] : []), ...fit.warnings, ...spindleSanity(rpm, m, "mill", c)];
     // Tool makers' limit for an internal thread mill: about 75% of the thread's major (nominal) diameter.
     if (internal && cutterIn > majorIn * 0.75 * (1 + 1e-9)) warnings.push(`Thread mill is over 75% of the thread's major diameter (${len(majorIn * 0.75)} max) — expect deflection and a poor form. Use a smaller cutter.`);
     const F = (ipm) => `${fmt(fromIn(ipm, c.units), 2)} ${c.L.feed}`;
@@ -84,7 +84,7 @@ export default register({
           ? { title: "Helix path (full depth)", formula: "path = Dmajor − Dcutter", plugged: `= ${N(majorIn)} − ${N(cutterIn)} = ${len(pathDia)}` }
           : { title: "Helix path (full depth)", formula: "path = external minor + Dcutter = (D − 1.2269 P) + Dcutter", plugged: `= ${N(pathDia - cutterIn)} + ${N(cutterIn)} = ${len(pathDia)}` },
       ],
-      historyLabel: `${t.label} · ${v.side} · Ø${fmt(v.cutter, p)}`,
+      historyLabel: `${t.label} · ${v.side} · Ø${fmt(v.cutter, p)} ${c.L.length}`,
     };
   },
 });

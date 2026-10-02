@@ -47,7 +47,7 @@ export default register({
         { title: "Removal rate", formula: "MRR = ae × ap × feed", plugged: `= ${fmt(v.woc, p)} × ${fmt(v.doc, p)} × ${fmt(v.feed, 1)} = ${fmt(mrr, 3)}` },
         ...(passes > 1 ? [{ title: "Passes", formula: "n = ceil(stock ÷ ap)", plugged: `= ceil(${fmt(v.stock, p)} ÷ ${fmt(v.doc, p)}) = ${passes}` }] : []),
       ],
-      historyLabel: `${fmt(v.length, p)} @ ${fmt(v.feed, 0)} · ${passes} pass${passes > 1 ? "es" : ""}`,
+      historyLabel: `${fmt(v.length, p)} ${c.L.length} @ ${fmt(v.feed, 0)} ${c.L.feed} · ${passes} pass${passes > 1 ? "es" : ""}`,
     };
   },
 });

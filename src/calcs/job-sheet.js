@@ -115,8 +115,8 @@ export default register({
     if (mill && thin > 1) stats.push({ label: "Chip thinning factor", value: thin, unit: "×", places: 2 });
     const next = [];
     // The too-fast-spindle check is spindleSanity's, the same for every op (millAdvice gets no RPM for it).
-    const warnings = [...spindleSanity(requestedRpm, m, work, c), ...fit.warnings];
-    if (mill) warnings.push(...millAdvice({ dIn, wocIn, docIn, requestedRpm: NaN, machine: m, c }));
+    const warnings = [...spindleSanity(rpm, m, work, c), ...fit.warnings];
+    if (mill) warnings.push(...millAdvice({ dIn, wocIn, docIn, rpm: NaN, machine: m, c }));
     if (drill) warnings.push(...drillAdvice({ dIn, depthIn: Number.isFinite(v.depth) ? toIn(v.depth, c.units) : NaN }));
     if (mill && !v.chipAuto && chipIn > Math.max(sp.chipIn * chipLoadScale(dIn) * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), fp)} ${c.L.length} per tooth is a very heavy chip for this tool. Expect it to break.`);
     const caution = toolCaution(v.material, v.toolType, c.units);

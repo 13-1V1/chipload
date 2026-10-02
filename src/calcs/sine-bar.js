@@ -45,7 +45,7 @@ export default register({
         warnings: steepWarning(v.angle),
         source: "geometry",
         explain: [{ title: "Sine bar", formula: "H = L × sin θ", plugged: `= ${fmt(barLen, p)} ${c.L.length} × sin ${fmt(v.angle, 3)}° = ${fmt(h, p)} ${c.L.length}` }],
-        historyLabel: `${fmt(v.angle, 3)}° → ${fmt(h, p)}`,
+        historyLabel: `${fmt(v.angle, 3)}° → ${fmt(h, p)} ${c.L.length}`,
       };
     }
     const a = sineBarAngle({ barLength: barLen, stackHeight: v.height });
@@ -60,7 +60,7 @@ export default register({
       warnings: steepWarning(a),
       source: "geometry",
       explain: [{ title: "Sine bar", formula: "θ = asin(H ÷ L)", plugged: `= asin(${fmt(v.height, p)} ${c.L.length} ÷ ${fmt(barLen, p)} ${c.L.length}) = ${fmt(a, 4)}°` }],
-      historyLabel: `${fmt(v.height, p)} → ${fmt(a, 3)}°`,
+      historyLabel: `${fmt(v.height, p)} ${c.L.length} → ${fmt(a, 3)}°`,
     };
   },
 });

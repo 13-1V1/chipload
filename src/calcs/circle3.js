@@ -43,7 +43,7 @@ export default register({
       ],
       source: "geometry",
       explain: [{ title: "Circumcenter", formula: "Solve (x−a)² + (y−b)² = r² for the three points (perpendicular bisectors meet at the center)" }],
-      historyLabel: `Ø${fmt(r.diameter, p)} at ${fmt(r.x, p)}, ${fmt(r.y, p)}`,
+      historyLabel: `Ø${fmt(r.diameter, p)} ${c.L.length} at ${fmt(r.x, p)}, ${fmt(r.y, p)} ${c.L.length}`,
     };
   },
 });

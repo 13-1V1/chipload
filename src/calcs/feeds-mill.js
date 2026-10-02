@@ -70,7 +70,7 @@ export default register({
     const actualSfm = sfmFromRpm(rpm, dIn);
     const mrr = wocIn > 0 && docIn > 0 ? wocIn * docIn * feedIpm : null;
 
-    const warnings = [...fit.warnings, ...millAdvice({ dIn, wocIn, docIn, requestedRpm, machine: m, c })];
+    const warnings = [...fit.warnings, ...millAdvice({ dIn, wocIn, docIn, rpm, machine: m, c })];
     const caution = toolCaution(v.material, v.toolType, c.units);
     if (caution) warnings.push(caution);
     // The math will happily feed 5× faster if you type 5× the chip load — the tool won't.

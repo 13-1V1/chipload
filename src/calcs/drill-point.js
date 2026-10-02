@@ -48,7 +48,7 @@ export default register({
         { title: "Z depth", formula: v.through === "through" ? "Z = −(depth + point + clearance)" : "Z = −(depth + point)", plugged: `= ${fmt(-z, p)} ${c.L.length}` },
       ],
       notes: ["Blind holes with a tapped depth callout are measured at full diameter — the point adds to the drill depth, not the thread depth."],
-      historyLabel: `Ø${fmt(v.diameter, p)} · ${fmt(angle, 0)}° · ${fmt(v.depth, p)} deep`,
+      historyLabel: `Ø${fmt(v.diameter, p)} ${c.L.length} · ${fmt(angle, 0)}° · ${fmt(v.depth, p)} ${c.L.length} deep`,
     };
   },
 });

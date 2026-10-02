@@ -86,7 +86,7 @@ test("tube uses the wall chart", () => {
 // variable-pitch chart, in the stat, the explain lines and the history label alike.
 test("wood: one blade answer, a wood blade, in both units", () => {
   for (const material of ["oHardwood", "oMDF", "oPlywood"]) {
-    for (const [units, thickness] of [["in", "1"], ["mm", "25"]]) {
+    for (const [units, thickness] of [["in", "1"], ["mm", "30"]]) {
       const out = run({ material, thickness }, units);
       const blades = out.stats.filter((s) => /blade/i.test(s.label));
       assert.deepEqual(blades.map((s) => s.label), ["Blade to use"], `${material} ${units}`);
@@ -97,28 +97,60 @@ test("wood: one blade answer, a wood blade, in both units", () => {
     }
   }
   // the hook-tooth line is the one the explain line states: 19 mm stock gets the hook tooth, 18 mm the regular tooth
-  for (const [thickness, tooth] of [["19", /^Hook tooth, about 3–4 TPI$/], ["18", /^Regular tooth/]]) {
+  // (Olson Saw: 4 TPI from 3/4 in), and 3–4 TPI only from 1 in = 25.4 mm (Olson: 3 TPI from 1 in), where 3 TPI keeps
+  // 3 teeth too. A 25 mm board stays on 4 TPI: 3 TPI × 0.984 in = 2.95 teeth
+  for (const [thickness, tooth] of [["25.4", /^Hook tooth, about 3–4 TPI$/], ["25", /^Hook tooth, about 4 TPI$/], ["24", /^Hook tooth, about 4 TPI$/], ["19", /^Hook tooth, about 4 TPI$/], ["18", /^Regular tooth/]]) {
     const out = run({ material: "oHardwood", thickness }, "mm");
     assert.match(out.stats.find((s) => s.label === "Blade to use").text, tooth, `${thickness} mm`);
-    assert.match(out.explain.find((e) => e.title === "Tooth pitch").formula, /from 19 mm up/);
+    assert.match(out.explain.find((e) => e.title === "Tooth pitch").formula, /from 19 mm up: 4 TPI, or 3–4 TPI from 25\.4 mm up/);
+  }
+  for (const [thickness, text] of [["0.75", "Hook tooth, about 4 TPI"], ["0.9", "Hook tooth, about 4 TPI"], ["0.99", "Hook tooth, about 4 TPI"], ["0.9843", "Hook tooth, about 4 TPI"], ["1", "Hook tooth, about 3–4 TPI"]]) {
+    const out = run({ material: "oPlywood", thickness });
+    assert.equal(out.stats.find((s) => s.label === "Blade to use").text, text, thickness);
+    assert.match(out.explain.find((e) => e.title === "Tooth pitch").formula, /from 3\/4 in up: 4 TPI, or 3–4 TPI from 1 in up/);
+  }
+  // the notes never give a pitch of their own: 3/4 in plywood once read "4 TPI" in the stat and "3–4 TPI" in a note
+  for (const [units, thickness] of [["in", "0.75"], ["in", "0.9"], ["in", "1"], ["in", "0.5"], ["in", "0.1"], ["mm", "19"], ["mm", "24"], ["mm", "25"], ["mm", "3"]]) {
+    const out = run({ material: "oPlywood", thickness }, units);
+    const tpi = out.stats.find((s) => s.label === "Blade to use").text.match(/about ([\d–]+) TPI/)[1];
+    for (const note of out.notes) {
+      assert.doesNotMatch(note, /TPI/, `${thickness} ${units}: ${note}`);
+      if (tpi === "4") assert.doesNotMatch(note, /3–4/, `${thickness} ${units}: ${note}`);
+    }
+    // "keeps at least 3 teeth" only when it does; thin stock gets the warning instead
+    const thinWarn = out.warnings.some((w) => /^Thin stock/.test(w));
+    assert.equal(out.notes.some((n) => /keeps at least 3 teeth/.test(n)), !thinWarn, `${thickness} ${units}`);
   }
   // thin wood: a finer regular-tooth blade with 3 teeth in the cut; under 3/32 in the warning names that same blade
   assert.match(run({ material: "oPlywood", thickness: "0.5" }).stats[1].text, /^Regular tooth, about 6 TPI/);
   const thin = run({ material: "oPlywood", thickness: "0.06" });
   assert.match(thin.stats[1].text, /24 TPI/);
   assert.ok(thin.warnings.some((w) => /24 TPI/.test(w) && !/14\/18/.test(w)), thin.warnings.join(" | "));
+  // under 1/8 in (3 mm too) even 24 TPI leaves under 3 teeth, so the warning fires; from 1/8 in it doesn't
+  for (const [units, thickness] of [["in", "0.1"], ["in", "0.124"], ["mm", "3"]]) {
+    const out = run({ material: "oPlywood", thickness }, units);
+    assert.ok(out.warnings.some((w) => /^Thin stock/.test(w) && /24 TPI/.test(w)), `${thickness} ${units}: ${out.warnings.join(" | ")}`);
+  }
+  assert.ok(!run({ material: "oPlywood", thickness: "0.125" }).warnings.some((w) => /^Thin stock/.test(w)));
 });
 
 // Under 3/32 in the warning and the stats name the same blades: the chart's pitch and 24 TPI one-pitch.
+// "Finest" only ever names the chart's finest pitch, 14/18: tube wall from 1/16 in sits on the 10/14 row
+// (USA Band Saw Blades Tooth Selection Guide p.23), so there the warning points past it to 14/18.
 test("thin stock: the warning names the blades the stats show", () => {
-  for (const [shape, thickness] of [["round", "0.05"], ["flat", "0.05"], ["tube", "0.07"], ["tube", "0.09"]]) {
-    const out = run({ material: "s1018", shape, thickness });
+  for (const [shape, thickness, units] of [["round", "0.05"], ["flat", "0.05"], ["tube", "0.05"], ["tube", "0.07"], ["tube", "0.09"], ["tube", "2", "mm"]]) {
+    const out = run({ material: "s1018", shape, thickness }, units);
     const pitch = out.stats.find((s) => s.label === "Blade to use").text.match(/^([\d./]+) TPI/)[1];
     const one = out.stats.find((s) => s.label === "One-pitch blade instead").text;
     assert.equal(one, "24 TPI", `${shape} ${thickness}`);
     const warn = out.warnings.find((w) => /^Thin stock/.test(w));
     assert.ok(warn, `${shape} ${thickness}`);
-    assert.ok(warn.includes(`(${pitch}, or a 24 TPI one-pitch blade)`), warn);
+    if (pitch === "14/18") assert.ok(warn.includes(`finest blade you have (${pitch}, or a 24 TPI one-pitch blade)`), warn);
+    else {
+      assert.equal(pitch, "10/14", `${shape} ${thickness}`);
+      assert.ok(warn.includes(`the chart's ${pitch} TPI leaves under 3 teeth`) && warn.includes("(14/18, or a 24 TPI one-pitch blade)"), warn);
+    }
+    assert.doesNotMatch(warn, /finest blade you have \((?!14\/18)/, warn);
   }
   assert.ok(!run({ material: "s1018", thickness: "0.1" }).warnings.some((w) => /^Thin stock/.test(w)));
 });

@@ -23,8 +23,8 @@ export default register({
   inputs: [
     { id: "feature", label: "Feature", kind: "segment", default: "chamfer", options: [{ value: "chamfer", label: "Chamfer / taper" }, { value: "radius", label: "Radius" }] },
     { id: "side", label: "Cutting", kind: "segment", default: "od", options: [{ value: "od", label: "Outside (OD)" }, { value: "id", label: "Bore (ID)" }] },
-    // Inch labels until render.js rebuilds segment chips from an options function; then (raw, c) => noseOptions(c?.units).
-    { id: "nose", label: "Nose radius", kind: "segment", default: "0.0312", options: noseOptions("in") },
+    // Labeled in the units on screen (0.8 mm / 1/32"), so the chip picked is the radius the answer uses.
+    { id: "nose", label: "Nose radius", kind: "segment", default: "0.0312", options: (raw, c) => noseOptions(c?.units) },
     { id: "noseCustom", label: "Nose radius", kind: "length", default: "0.0312", defaultMm: "0.8", min: 0.0001, showIf: (r) => r.nose === "custom" },
     { id: "angle", label: "Angle from the Z axis (centerline)", kind: "angle", default: "45", min: 0.1, max: 89.9, showIf: (r) => r.feature === "chamfer", hint: "45° chamfer = 45. A 30° chamfer callout off the face = 60 here." },
     { id: "size", label: "Chamfer size (axial, Z)", kind: "length", default: "0.05", defaultMm: "1", min: 0, showIf: (r) => r.feature === "chamfer" },

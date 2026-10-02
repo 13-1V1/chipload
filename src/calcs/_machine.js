@@ -87,7 +87,9 @@ export function maxRpmAtFeed(m, iprIn) {
 /**
  * No top spindle speed to go on (no machine set, or a profile saved with Max spindle blank) and the spindle
  * number is beyond what most machines of this kind turn: say so instead of handing over a confident RPM
- * nobody can run.
+ * nobody can run. Pass the RPM the screen shows (fitToMachine's `rpm`), not the one the surface speed asked
+ * for: a profile with a max feed but no max spindle may already have slowed the spindle to a speed it can run.
+ * @param {number} rpm  spindle speed as fitted
  * @param {"mill"|"lathe"|"any"} work
  */
 export function spindleSanity(rpm, m, work, c) {

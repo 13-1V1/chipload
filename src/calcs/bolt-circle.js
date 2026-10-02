@@ -83,11 +83,14 @@ export default register({
       const check = partial ? "Check Partial circle sweep (degrees from the first hole to the last) and the number of holes." : "Check the bolt circle diameter and the number of holes.";
       warnings.push(lead(`neighbor holes are ${apart(chord)}, so neighbors land on top of each other. ${check}`));
     }
+    // The gap is never zero on a partial circle: one too small for fmtSig's 12 places reads "a hair", never "0°".
+    const gapText = partial ? (fmtSig(360 - v.sweep, 3) === "0" ? "a hair" : `only ${fmtSig(360 - v.sweep, 3)}°`) : "";
     if (wrapStack) {
-      warnings.push(lead(`the last hole is only ${fmtSig(360 - v.sweep, 3)}° short of the first, so the two are ${apart(wrapChord)}: the last lands on top of the first. For holes evenly all the way round, leave Partial circle sweep blank.`));
-    } else if (partial && v.holes > 1 && 360 - v.sweep < step / 2) {
+      warnings.push(lead(`the last hole is ${gapText} short of the first, so the two are ${apart(wrapChord)}: the last lands on top of the first. For holes evenly all the way round, leave Partial circle sweep blank.`));
+    } else if (partial && v.holes > 2 && 360 - v.sweep < step / 2) {
       // The last hole of a partial circle closer to the first than the holes are to each other is almost always a typo for a full circle.
-      warnings.push(`The last hole lands only ${fmtSig(360 - v.sweep, 3)}° short of the first, closer than the ${fmt(step, 3)}° between the others. For holes evenly all the way round, leave Partial circle sweep blank.`);
+      // Like wrapStack, it needs 3 holes: two are one pair, already the neighbors, with no "others" to be closer than.
+      warnings.push(`The last hole lands ${gapText} short of the first, closer than the ${fmt(step, 3)}° between the others. For holes evenly all the way round, leave Partial circle sweep blank.`);
     }
     // The program is a mill program (X/Y moves; drill and peck add T M6 and G43 H). A lathe profile doesn't apply: say so and post for a mill.
     const m = machineFor(c, "mill");
@@ -107,8 +110,9 @@ export default register({
         // Fit S and F inside the machine the same way every speeds & feeds tool does: the control would clamp
         // S but run F as written, and the drill's feed per rev would jump by that ratio.
         const toIn = c.units === "in" ? 1 : 1 / 25.4;
-        // This screen has no chip load or feed per rev field: name the two fields it does have.
-        const fit = fitToMachine(m, v.spindle, (v.feed * toIn) / v.spindle, c, { keep: "the feed per rev", check: "Spindle and Feed" });
+        // This screen has no chip load or feed per rev field: the cantRun fix names the two fields it does have,
+        // in one sentence with the swap they almost always are.
+        const fit = fitToMachine(m, v.spindle, (v.feed * toIn) / v.spindle, c, { keep: "the feed per rev", check: `that Spindle and Feed aren't swapped (Spindle is RPM, Feed is per minute, ${c.L.feed})` });
         if (fit.rpmCapped || fit.feedCapped) {
           // A whole RPM at or under the cap, and F figured from that S so the feed per rev is exactly the one typed.
           spindle = Math.floor(fit.rpm + 1e-9);
@@ -118,7 +122,7 @@ export default register({
           // Both are almost always Spindle and Feed typed into each other's boxes.
           const swapped = `Check that Spindle and Feed aren't swapped: Spindle is RPM, Feed is per minute (${c.L.feed}).`;
           const fWord = feedWordProblem(feed, c.units);
-          if (fit.cantRun) blocked = `${fit.problem} ${swapped}`;
+          if (fit.cantRun) blocked = fit.problem;
           else if (spindle < 1) blocked = `${m.name} tops out under 1 RPM, so no whole spindle speed can run it. Check the max RPM in Shop.`;
           else if (fWord) blocked = `at ${fmt(spindle, 0)} RPM${fit.feedCapped ? "" : ` (${m.name}'s top speed)`} the same feed per rev comes to ${fmtSig(feed, 3)} ${c.L.feed}, which ${fWord}. ${swapped}`;
           if (blocked) warnings.push(`G-code not written: ${blocked}`);

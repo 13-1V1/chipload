@@ -159,17 +159,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       control = document.createElement("div");
       control.className = "seg";
       control.setAttribute("role", "group");
-      for (const o of input.options) {
-        const b = document.createElement("button");
-        b.type = "button"; b.dataset.v = o.value; b.textContent = o.label;
-        b.setAttribute("aria-pressed", String(o.value === raw[input.id]));
-        b.addEventListener("click", () => {
-          raw[input.id] = o.value;
-          control.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-          recalc();
-        });
-        control.append(b);
-      }
+      fillSegment(input, control, optionsFor(input, raw, ctx()));
       label.htmlFor = "";
     } else if (input.kind === "textarea") {
       control = document.createElement("textarea");
@@ -406,6 +396,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       if (typeof input.label === "function") labelTexts[input.id].nodeValue = labelOf(input, raw);
       if (typeof input.as === "function") unitLabels[input.id].textContent = unitFor(input, units, raw);
       if (input.kind === "select" && typeof input.options === "function") syncOptions(input, el, c, clean[input.id]);
+      if (input.kind === "segment" && typeof input.options === "function") syncSegment(input, el, c, clean[input.id]);
       if (el.tagName === "INPUT") {
         // a locked tool's worked-out values are part of its answer: say "auto" without the number
         const ph = locked && /^auto /.test(placeholder[input.id] ?? "") ? "auto" : placeholder[input.id];
@@ -445,6 +436,42 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     // checked even when the list didn't change: a history row or a Reset can bring a value it doesn't hold
     if (!opts.some((o) => o.value === raw[input.id])) raw[input.id] = opts.some((o) => o.value === computed) ? computed : (opts[0]?.value ?? "");
     if (el.value !== raw[input.id]) el.value = raw[input.id];
+  }
+
+  /** A segment's chips, one button per option, the chosen one pressed. */
+  function fillSegment(input, el, opts) {
+    el.dataset.sig = JSON.stringify(opts);
+    el.replaceChildren(...opts.map((o) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.v = o.value; b.textContent = o.label;
+      b.setAttribute("aria-pressed", String(o.value === raw[input.id]));
+      b.addEventListener("click", () => {
+        raw[input.id] = o.value;
+        el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        recalc();
+      });
+      return b;
+    }));
+  }
+
+  /**
+   * syncOptions for segment chips whose options come from a function (a nose radius reads 0.8 mm on a metric
+   * screen and 1/32" on an inch one). The same choices with new words only relabel the chips, so a chip that
+   * has focus keeps it; a different set of choices rebuilds them. A choice no longer offered falls back the
+   * same way a select's does.
+   */
+  function syncSegment(input, el, c, computed) {
+    const opts = optionsFor(input, raw, c) || [];
+    if (!opts.some((o) => o.value === raw[input.id])) raw[input.id] = opts.some((o) => o.value === computed) ? computed : (opts[0]?.value ?? "");
+    const sig = JSON.stringify(opts);
+    const buttons = [...el.querySelectorAll("button")];
+    if (el.dataset.sig !== sig) {
+      if (buttons.length === opts.length && buttons.every((b, k) => b.dataset.v === opts[k].value)) {
+        el.dataset.sig = sig;
+        buttons.forEach((b, k) => { b.textContent = opts[k].label; });
+      } else { fillSegment(input, el, opts); return; }
+    }
+    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === raw[input.id])));
   }
 
   function renderEmpty(msg) {

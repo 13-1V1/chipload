@@ -46,7 +46,7 @@ export default register({
       explain: [{ title: "60° countersink depth", formula: "point = Dpilot ÷ (2 tan 59°);  cone = (Dcsk − Dpilot) ÷ (2 tan 30°);  Z (from the tip) = C + point + cone",
         plugged: `cone = (${N(cskIn)} − ${N(d.pilot)}) ÷ 1.1547 = ${N(cone)}; Z = ${N(d.pilotLen)} + ${N(point)} + ${N(cone)} = ${N(total)} ${c.L.length}` }],
       notes: ["Pilot length varies by maker — the depth here assumes the catalog drill length C, measured to the lip corners. Watch the countersink diameter, not the Z number, on the first part."],
-      historyLabel: `${d.size} → Ø${fmt(v.csk, p)} csk`,
+      historyLabel: `${d.size} → Ø${fmt(v.csk, p)} ${c.L.length} csk`,
     };
   },
 });

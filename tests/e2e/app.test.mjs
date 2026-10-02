@@ -1083,3 +1083,32 @@ test("Pro turning on keeps what was typed on a tool opened from a link", async (
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+// ISO 1832 corner code 08 (0.8 mm) is the ANSI 1/32" insert: on a metric screen the chip reads the size the
+// answer computes with, and the unit switch relabels the chips without losing the pick.
+test("nose radius chips read in the units on screen and keep the pick through a unit switch", async () => {
+  const { page, ctx, errors } = await open("/calc/surface-finish", { pro: true });
+  const chips = () => page.locator("#f-surface-finish-nose button").allTextContents();
+  const pressed = () => page.locator('#f-surface-finish-nose button[aria-pressed="true"]').textContent();
+  const nose = () => page.evaluate(() => [...document.querySelectorAll(".stat")].find((s) => /^Nose radius/.test(s.textContent))?.textContent);
+  assert.deepEqual(await chips(), ['1/64"', '1/32"', '3/64"', '1/16"', "Other"]);
+  assert.equal(await pressed(), '1/32"');
+  await page.locator("#f-surface-finish-nose button").first().evaluate((b) => { b.dataset.before = "1"; });
+  await page.locator('.calc > .seg [data-u="mm"]').click();
+  assert.deepEqual(await chips(), ["0.4 mm", "0.8 mm", "1.2 mm", "1.6 mm", "Other"]);
+  assert.equal(await page.locator("#f-surface-finish-nose button[data-before]").count(), 1, "same choices: relabeled, not rebuilt");
+  assert.equal(await pressed(), "0.8 mm");
+  assert.match(await nose(), /0\.8\s*mm/);
+  await page.locator("#f-surface-finish-nose button", { hasText: "1.2 mm" }).click();
+  assert.equal(await pressed(), "1.2 mm");
+  assert.match(await nose(), /1\.2\s*mm/);
+  await page.locator('.calc > .seg [data-u="in"]').click();
+  assert.equal(await pressed(), '3/64"');
+  // a tool opened on a metric screen draws its chips in mm from the start
+  await page.evaluate(() => localStorage.setItem("chipload.settings.v1", JSON.stringify({ units: "mm", theme: "dark", glove: false, pro: true })));
+  await page.goto(`${BASE}?e2e=nose-mm#/calc/tnr-comp`);
+  await page.waitForLoadState("networkidle");
+  assert.deepEqual(await page.locator("#f-tnr-comp-nose button").allTextContents(), ["0.4 mm", "0.8 mm", "1.2 mm", "1.6 mm", "Other"]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

@@ -58,7 +58,7 @@ export default register({
     if (v.op === "turn") {
       const wanted = v.speedMode === "css" ? Math.min(rpmFromSfm(sfm, odIn), g50) : v.rpm;
       const fit = fitted(m, wanted, iprIn, c);
-      warnings.push(...fit.warnings, ...spindleSanity(wanted, m, "lathe", c));
+      warnings.push(...fit.warnings, ...spindleSanity(fit.rpm, m, "lathe", c));
       spindle = { label: "Spindle used", value: fit.rpm, clamped: fit.rpmCapped || fit.feedCapped };
       usedRpm = fit.rpm;
       perPass = turningTime({ length: toIn(v.length, c.units), ipr: iprIn, rpm: fit.rpm });
@@ -74,7 +74,7 @@ export default register({
         const peak = Math.min(g50, inner > 0 ? rpmFromSfm(sfm, inner) : Infinity); // fastest the cut asks for
         if (Number.isFinite(peak)) {
           const fit = fitted(m, peak, iprIn, c);
-          warnings.push(...fit.warnings, ...spindleSanity(peak, m, "lathe", c));
+          warnings.push(...fit.warnings, ...spindleSanity(fit.rpm, m, "lathe", c));
         } else if (machineTop < maxRpmOf(m)) {
           // The machine's top feed, not its top speed, is what stops the spindle at this feed per rev.
           const feedText = `${fmt(inch ? maxFeedIpmOf(m) : maxFeedIpmOf(m) * 25.4, 1)} ${c.L.feed}`;
@@ -100,7 +100,7 @@ export default register({
         }
       } else {
         const fit = fitted(m, v.rpm, iprIn, c);
-        warnings.push(...fit.warnings, ...spindleSanity(v.rpm, m, "lathe", c));
+        warnings.push(...fit.warnings, ...spindleSanity(fit.rpm, m, "lathe", c));
         spindle = { label: "Spindle used", value: fit.rpm, clamped: fit.rpmCapped || fit.feedCapped };
         usedRpm = fit.rpm;
         perPass = facingTimeRpm({ outerDia: odIn, innerDia: inner, ipr: iprIn, rpm: fit.rpm });

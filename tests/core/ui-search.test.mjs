@@ -69,7 +69,7 @@ function chartRows(id, q) {
   const def = getCalc(id);
   const { cells } = chartCells(def, { units: "in", L: UNIT_LABEL.in, settings: { units: "in", pro: true } });
   // the chart screen passes the definition's own flag (chart.js)
-  return chartFilter(cells, { threadToSize: def.threadToSize })(q).map(({ i, hit }) => [cells[i][0], hit]);
+  return chartFilter(cells, { threadToSize: !!def.threadToSize })(q).map(({ i, hit }) => [cells[i][0], hit]);
 }
 
 test("G-code reference: leading zeros are optional, as on the control", () => {

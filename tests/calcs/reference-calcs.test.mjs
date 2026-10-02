@@ -368,9 +368,72 @@ test("fits: in inches, the clearance and tolerance add up from the limits shown"
 test("shcs chart: the sink allowance reads in the active unit, and the chart looks a thread up by size", () => {
   const shcs = getCalc("shcs");
   assert.equal(typeof shcs.note, "function");
-  assert.match(shcs.note({ units: "mm" }), /Add 0\.25–0\.75 mm \(0\.010–0\.030 in\)/);
-  assert.match(shcs.note({ units: "in" }), /Add 0\.010–0\.030 in \(0\.25–0\.75 mm\)/);
+  assert.match(shcs.note({ units: "mm" }), /Add 0\.25–0\.76 mm \(0\.010–0\.030 in\)/);
+  assert.match(shcs.note({ units: "in" }), /Add 0\.010–0\.030 in \(0\.25–0\.76 mm\)/);
   assert.equal(shcs.threadToSize, true);
   // every other chart keeps a plain-string note
   for (const id of ["gdt", "materials"]) assert.equal(typeof getCalc(id).note, "string", id);
+});
+
+// ISO 286-1, 3–6 mm: H7 = +12/0 µm, n6 = +16/+8 µm, so 0.12 in (3.048 mm) H7/n6 is a transition fit, −16 to +4 µm
+// (−0.00063 to +0.00016 in). Rounded inward the limits are hole 0.1200–0.1204, shaft 0.1204–0.1206: max clearance 0.
+// The label keeps the ISO name, and a note says why the numbers shown never run loose.
+test("fits: a transition fit whose inch limits close one side says so", () => {
+  const out = run("fits", { nominal: "0.12", fit: "H7/n6" }).out;
+  assert.equal(out.primary.label, "H7/n6 · Transition fit");
+  assert.equal(out.primary.text, "-0.0006 – 0");
+  assert.match(out.notes.join(" "), /ISO 286 calls H7\/n6 a transition fit.*leave no clearance \(max clearance 0 in\).*never run loose/);
+  // every preset, inch sizes up to 19.6 in: a transition label next to numbers that aren't a transition carries the note
+  const fits = getCalc("fits").inputs.find((i) => i.id === "fit").options.map((o) => o.value).filter((f) => f !== "custom");
+  for (let n = 0.01; n < 19.6; n += 0.01) {
+    for (const fit of fits) {
+      const o = run("fits", { nominal: n.toFixed(2), fit }).out;
+      const stat = (label) => o.stats.find((s) => s.label.startsWith(label)).value;
+      const shown = stat("Min clearance") >= 0 ? "Clearance" : stat("Max clearance") <= 0 ? "Interference" : "Transition";
+      if (!o.primary.label.endsWith(`${shown} fit`)) {
+        assert.match(o.primary.label, /Transition fit/, `${n.toFixed(2)} ${fit}`);
+        assert.match(o.notes[0], /^ISO 286 calls .* a transition fit/, `${n.toFixed(2)} ${fit}`);
+      } else assert.doesNotMatch(o.notes.join(" "), /ISO 286 calls/, `${n.toFixed(2)} ${fit}`);
+    }
+  }
+  // mm shows the ISO values, so the label and numbers always agree there
+  assert.doesNotMatch(run("fits", { nominal: "3.048", fit: "H7/n6" }, "mm").out.notes.join(" "), /ISO 286 calls/);
+});
+
+// 1 in H7/g6: ISO min clearance 7 µm = 0.000276 in shows 0.0003 (looser); 0.5 in H7/s6: ISO max interference
+// 39 µm = 0.001535 in shows 0.0015 (less; ISO min 10 µm = 0.00039 in shows 0.0005). Both ends move inward, so the note says narrower, never "tighter".
+test("fits: the inch note says the range narrows at both ends", () => {
+  const note = run("fits", { nominal: "1", fit: "H7/g6" }).out.notes.join(" ");
+  assert.match(note, /each end of the clearance range can sit up to 0\.0002 in inside the ISO range/);
+  assert.doesNotMatch(note, /tighter than the ISO values/);
+  near(run("fits", { nominal: "1", fit: "H7/g6" }).out.stats.find((s) => s.label.startsWith("Min clearance")).value, 0.0003, 1e-12);
+  assert.equal(run("fits", { nominal: "0.5", fit: "H7/s6" }).out.primary.text, "0.0005 – 0.0015 tight");
+});
+
+// mm steel 250 mm, 20 → 37.75 °C: 11.7 × 10⁻⁶ × 250 × 17.75 = 0.0519 mm. ΔT keeps its typed 17.75, so the
+// plugged line multiplies out to the answer (17.8 would give 0.0521).
+test("thermal: a two-decimal temperature change still multiplies out", () => {
+  for (const [units, raw] of [["mm", { material: "steel", length: "250", from: "20", to: "37.75" }], ["in", { material: "steel", length: "10", from: "68", to: "99.95" }]]) {
+    const out = run("thermal", raw, units).out;
+    const m = out.explain[0].plugged.match(/= ([\d.]+) × 10⁻⁶ \/°[FC] × ([\d.]+) (?:in|mm) × ([\d.]+) °[FC] = ([\d.]+)/);
+    assert.ok(m, out.explain[0].plugged);
+    assert.equal(fmt(Number(m[1]) * 1e-6 * Number(m[2]) * Number(m[3]), units === "in" ? 5 : 4), m[4], out.explain[0].plugged);
+    const dT = out.stats.find((s) => s.label === "Temperature change");
+    assert.equal(fmt(dT.value, dT.places), m[3], units);
+  }
+  assert.match(run("thermal", { material: "steel", length: "250", from: "20", to: "37.75" }, "mm").out.explain[0].plugged, / × 17\.75 °C = 0\.0519 mm$/);
+});
+
+// A history row reads on its own: every length in it carries its unit, metric in mm mode.
+test("reference tools: history labels give lengths with their unit", () => {
+  for (const units of ["in", "mm"]) {
+    const u = units === "mm" ? "mm" : "in";
+    for (const id of ["fits", "thermal", "true-position", "saw-speed"]) {
+      const label = run(id, {}, units).out.historyLabel;
+      assert.match(label, new RegExp(`\\d ${u}\\b`), `${id} ${units}: ${label}`);
+      assert.doesNotMatch(label, new RegExp(`\\d ${units === "mm" ? "in" : "mm"}\\b`), `${id} ${units}: ${label}`);
+    }
+  }
+  assert.equal(run("true-position", { dx: "0.003", dy: "0.004", tol: "0.014" }).out.historyLabel, "Δ0.003, 0.004 → 0.01 in");
+  assert.equal(run("thermal", { material: "steel", length: "250", from: "20", to: "37.75" }, "mm").out.historyLabel, "Carbon / alloy steel 250 mm · 20→37.8 °C");
 });

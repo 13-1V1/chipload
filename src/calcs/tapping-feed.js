@@ -44,7 +44,7 @@ export default register({
         { label: "Thread", text: `${t.label} · ${t.pitchLabel}` },
         { label: metric ? "Time for 25 mm of thread" : "Time for 1 in of thread", value: 60 * timeLen / feedOut, unit: "sec", places: 1 },
       ],
-      warnings: [...(t.caution ? [t.caution] : []), ...fit.warnings, ...spindleSanity(v.rpm, m, "any", c)],
+      warnings: [...(t.caution ? [t.caution] : []), ...fit.warnings, ...spindleSanity(rpm, m, "any", c)],
       source: "advanced",
       explain: [{ title: "Synchronized tapping", formula: "feed = RPM × lead   (lead = 1 ÷ TPI, or pitch for metric)",
         plugged: `= ${rpm} × ${fmt(fromIn(leadIn, c.units), 4)} ${c.L.length} = ${fmt(fromIn(feedOut, c.units), 2)} ${c.L.feed}` }],

@@ -8,6 +8,7 @@ import { bandSawSpeed, bladeForStock, woodBladeForStock, bladeSpeedFromWheel, wh
 import { MATERIALS, materialById } from "../../src/data/materials-library.js";
 import { SAW_CHART_FPM } from "../../src/data/saw.js";
 import { GLOSSARY } from "../../src/data/glossary.js";
+import { fmt } from "../../src/core/format.js";
 
 const speed = (id, t = 4) => bandSawSpeed(materialById(id), t);
 
@@ -120,6 +121,36 @@ test("wood blade: hook tooth for thick stock, enough teeth for thin", () => {
   assert.equal(woodBladeForStock(0.05).thin, true);
   for (const t of [0.125, 0.2, 0.3, 0.5, 0.7]) assert.ok(woodBladeForStock(t).teethInCut >= 3 - 1e-9, String(t));
   assert.equal(woodBladeForStock(0), null);
+});
+
+// Olson Saw, "What band saw blade should I get?": at least 3 teeth in the work; 4 TPI from 3/4 in, 6 from 1/2,
+// 8 from 3/8, 10 from 5/16, 14 from 1/4. So 3 TPI only from 1 in (3 × 1 = 3 teeth), and under 1/8 in even 24 TPI
+// leaves fewer than 3 teeth (24 × 0.1 = 2.4): that stock is thin and gets the warning.
+test("wood blade: every pitch offered keeps 3 teeth, and stock too thin for that is marked thin", () => {
+  assert.deepEqual([woodBladeForStock(0.75).tooth, woodBladeForStock(0.75).tpi], ["hook", "4"]);
+  assert.equal(woodBladeForStock(0.9).tpi, "4");                       // 3 TPI × 0.9 in = 2.7 teeth: not offered
+  assert.equal(woodBladeForStock(1).tpi, "3–4");
+  assert.equal(woodBladeForStock(25.4 / 25.4).tpi, "3–4");             // 25.4 mm = 1 in, Olson's 3 TPI line
+  assert.equal(woodBladeForStock(25 / 25.4).tpi, "4");                 // 25 mm: 3 TPI × 0.984 in = 2.95 teeth
+  assert.equal(woodBladeForStock(0.99).tpi, "4");                      // under 1 in, as the "from 1 in up" line says
+  assert.equal(woodBladeForStock(24 / 25.4).tpi, "4");
+  for (const [t, tpi] of [[0.5, "6"], [0.375, "8"], [5 / 16, "10"], [0.25, "14"]]) assert.equal(woodBladeForStock(t).tpi, tpi, String(t));
+  // the 3-tooth rule, whatever pitch is named (4 TPI from 19 mm to the figure shown; 3 TPI exactly, from 1 in)
+  for (let t = 0.75; t < 3; t += 0.001) {
+    const b = woodBladeForStock(t);
+    if (b.tpi === "3–4") assert.ok(3 * t >= 3 - 1e-9, `${t} in → 3–4 TPI`);
+  }
+  for (let t = 0.125; t < 3; t += 0.001) {
+    const b = woodBladeForStock(t);
+    const coarsest = b.tpi === "3–4" ? 3 : Number(b.tpi);
+    assert.ok(Number(fmt(coarsest * t, 1)) >= 3, `${t} in → ${b.tpi} TPI`);
+    assert.equal(b.thin, false, String(t));
+  }
+  assert.equal(woodBladeForStock(0.1).thin, true);                     // 24 × 0.1 = 2.4 teeth
+  assert.equal(woodBladeForStock(3 / 25.4).thin, true);                // 3 mm plywood: 2.8 teeth
+  assert.equal(woodBladeForStock(0.124).thin, true);
+  assert.equal(woodBladeForStock(0.125).thin, false);                  // 24 × 1/8 = 3 teeth
+  assert.equal(woodBladeForStock(1).thin, false);
 });
 
 // 14 in wheel at 60 RPM → π × 14 × 60 ÷ 12 = 219.9 FPM

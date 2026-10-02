@@ -227,15 +227,17 @@ test("bolt circle G-code: a fitted S under 1 or an F that posts as zero is not w
       const out = run("bolt-circle", { gcode, ...over }, units, vf2).out;
       const said = out.warnings.join(" | ");
       assert.equal(out.code.length, 0, `${gcode} ${JSON.stringify(over)} ${units}: ${out.code[0]?.text}`);
-      assert.match(said, /G-code not written: .*Check that Spindle and Feed aren't swapped: Spindle is RPM, Feed is per minute/, said);
+      assert.match(said, /G-code not written: .*Check that Spindle and Feed aren't swapped(: | \()Spindle is RPM, Feed is per minute/, said);
+      assert.equal(said.match(/Check/g).length, 1, `one fix sentence: ${said}`);
       assert.doesNotMatch(said, /\bS0\b|F0\.0|program posts/, said);
     }
   }
   // One turn longer than the machine's top feed (cantRun): the fix names this screen's own fields. Bolt circle has
-  // Spindle and Feed (per minute), no feed per rev field to check.
-  for (const [over, units] of [[{ spindle: "5", feed: "5000" }, "in"], [{ spindle: "5", feed: "127000" }, "mm"]]) {
+  // Spindle and Feed (per minute), no feed per rev field to check — in one fix sentence, not two naming the same fields.
+  for (const [over, units, feedUnit] of [[{ spindle: "5", feed: "5000" }, "in", "IPM"], [{ spindle: "5", feed: "127000" }, "mm", "mm\\/min"]]) {
     const said = run("bolt-circle", { gcode: "drill", ...over }, units, vf2).out.warnings.join(" | ");
-    assert.match(said, /G-code not written: VF-2 max feed is [^|]*less than one turn at [^|]*Check Spindle and Feed, or the max feed in Shop\. Check that Spindle and Feed aren't swapped/, said);
+    assert.match(said, new RegExp(`G-code not written: VF-2 max feed is [^|]*less than one turn at [^|]*\\. Check that Spindle and Feed aren't swapped \\(Spindle is RPM, Feed is per minute, ${feedUnit}\\), or the max feed in Shop\\.$`), said);
+    assert.equal(said.match(/Check/g).length, 1, said);
     assert.doesNotMatch(said, /feed per rev,/, said);
   }
   // An F that rounds up after the fit: the ratio is against the fitted feed, which nobody typed, so the sentence
@@ -296,6 +298,25 @@ test("bolt circle: a sweep a hair under 360 puts the last hole on the first and 
   const none = run("bolt-circle", { holes: "4", sweep: "359.99999" }).out;
   assert.match(none.warnings[0], /^The last hole is only 0\.00001° short of the first/);
   assert.equal(none.warnings.length, 1, "one sentence, not the near-360 one as well");
+  // 13 nines: 360 − sweep = 1.1e-13°, under fmtSig's 12 places. Still a real gap, so it reads "a hair", never 0°.
+  for (const units of ["in", "mm"]) {
+    const hair = run("bolt-circle", { holes: "4", sweep: "359.9999999999999", gcode: "drill" }, units).out;
+    assert.equal(hair.code.length, 0);
+    assert.match(hair.warnings[0], /^G-code not written: the last hole is a hair short of the first, so the two are less than/);
+    assert.doesNotMatch(hair.warnings.join(" | "), / 0° |only 0°/);
+  }
+  // Two holes on a partial circle are one pair: the neighbor sentence alone, in inch and mm, with or without a program,
+  // never the near-360 one about "the others" on top of it.
+  for (const units of ["in", "mm"]) {
+    for (const gcode of ["none", "drill"]) {
+      const pair = run("bolt-circle", { holes: "2", sweep: "359.99999", gcode }, units).out;
+      assert.equal(pair.code.length, 0);
+      assert.equal(pair.warnings.length, 1, pair.warnings.join(" | "));
+      assert.match(pair.warnings[0], /neighbor holes are less than/i);
+    }
+  }
+  // two holes 60° apart the short way (300° sweep) are a normal layout: no "others", nothing said
+  for (const sweep of ["300", "270", "359"]) assert.deepEqual(run("bolt-circle", { holes: "2", sweep }).out.warnings, [], sweep);
   // 359.99° on 4 in: the gap is 0.00035 in, separate holes — still posted, with the near-360 note
   const near360 = run("bolt-circle", { holes: "4", sweep: "359.99", gcode: "drill" }).out;
   assert.equal(near360.code.length, 1);

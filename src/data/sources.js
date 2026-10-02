@@ -6,7 +6,7 @@
 export const CALCULATION_SOURCES = Object.freeze({
   tapDrill: {
     title: "Tap drill guidance",
-    source: "At 75% thread with a cutting tap: the standard tap drill chart (inch: Machinery's Handbook / ASME B1.1 sizes; metric: ISO 2306). Metric fine pitches follow DIN 336 / ISO 2306, drill = D − P. Any other percent, or a form tap, uses the percent-thread formula and the nearest stock drill (ASME B94.11M sizes).",
+    source: "At 75% thread with a cutting tap: the standard tap drill chart (inch: Machinery's Handbook / ASME B1.1 sizes; metric: ISO 2306). Metric fine pitches follow DIN 336 / ISO 2306, drill = D − P, or the next 0.1 mm size down where D − P isn't a stock drill. Any other percent, or a form tap, uses the percent-thread formula and the nearest stock drill (ASME B94.11M inch sizes, ISO 235 metric). Past either end of the drill chart it gives the size to bore or the micro drill to look for.",
     confidence: "Shop starting point",
   },
   hardness: {
@@ -21,7 +21,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   fits: {
     title: "ISO 286 limits and fits",
-    source: "ISO 286-1 / ISO 286-2 tolerance grade and fundamental deviation tables, looked up by size step. Inch sizes are converted to mm for the lookup, then back.",
+    source: "ISO 286-1 / ISO 286-2 tolerance grade and fundamental deviation tables, looked up by size step. Inch sizes are converted to mm for the lookup, then back, with the limits rounded inward to 0.0001 in so they stay inside the ISO ones.",
     confidence: "Published table values",
   },
   sti: {
@@ -46,7 +46,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   threadGeometry: {
     title: "60 degree thread geometry",
-    source: "Basic 60 degree Unified and ISO metric geometry. Metric limits are the ISO 965-1 table values (Tables 1, 3–6), the same ones ISO 965-2 builds 6g/6H from, or, where the tables have no row for that size and pitch, its §13 formulas, rounded to the R 40 series the way the tables were made; Unified limits are the ASME B1.1 formulas with the tables' rounding, and the few hand-adjusted table values used as printed.",
+    source: "Basic 60 degree Unified and ISO metric geometry. Metric limits are the ISO 965-1 table values (Tables 1, 3–6), the same ones ISO 965-2 builds 6g/6H from, or, where the tables have no row for that size and pitch, its §13 formulas, rounded to the R 40 series the way the tables were made. Unified limits are ASME B1.1-2003 Table 2: the B1.1 formulas rounded per ASME B1.30 the way that table is (the pre-2003 Table E-1 values some handbooks and gauge charts reprint differ by up to 0.001 in). Measure over wires uses the three-wire formula M = E + 3W − 0.86603 P (between balls on an internal thread, M = E − 3W + 0.86603 P) with no lead-angle correction, best wire 0.57735 P.",
     confidence: "Reference geometry",
   },
   feeds: {
@@ -56,7 +56,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   saw: {
     title: "Band saw blades",
-    source: "LENOX Guide to Band Sawing p.21 bi-metal speed chart, with its size, cutting-fluid and heat-treat adjustments; tooth pitch from the USA Band Saw Blades Tooth Selection Guide p.23, checked against the LENOX tooth chart.",
+    source: "LENOX Guide to Band Sawing p.21 bi-metal speed chart, with its size, cutting-fluid and heat-treat adjustments; tooth pitch from the USA Band Saw Blades Tooth Selection Guide p.23, checked against the LENOX tooth chart. Materials the LENOX chart doesn't list (aluminum, magnesium and zinc, plastics, other) get a typical speed range, placed by the material's rating; wood starts near 3,000 FPM (900 m/min) in a 2,500 to 5,000 FPM (760 to 1,520 m/min) range and uses a hook-tooth or regular-tooth wood blade, not the metal tooth chart.",
     confidence: "Blade maker's starting point",
   },
   centerDrill: {

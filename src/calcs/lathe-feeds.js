@@ -57,7 +57,7 @@ export default register({
     // isn't advice; the chuck's rating is the number to use.
     const g50Wild = !Number.isFinite(maxRpmOf(m)) && g50 > LATHE_SANE_RPM;
     const caution = toolCaution(v.material, v.toolType, c.units);
-    const sanity = spindleSanity(requestedRpm, m, "lathe", c);
+    const sanity = spindleSanity(rpm, m, "lathe", c);
     const wildWhy = smallIn > 0
       ? `G96 would ask for ${fmt(jobCap, 0)} RPM at Ø${fmt(fromIn(smallIn, c.units), p)} ${c.L.length}.`
       : "Facing to center, G96 keeps speeding up all the way to X0.";

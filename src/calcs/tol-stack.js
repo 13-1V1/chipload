@@ -81,7 +81,7 @@ export default register({
         { title: "Root sum square", formula: "T = √(Σ tᵢ²)", plugged: `= √(${items.map((i) => `${fmt(i.tolerance, p)}²`).join(" + ")}) = ${fmt(r.rssTolerance, p)}` },
       ],
       notes: ["RSS assumes each dimension varies independently and normally. Use worst case for safety-critical fits or short runs."],
-      historyLabel: `${items.length} dims · ${fmt(r.nominal, p)} ± ${fmt(r.worstCaseTolerance, p)}`,
+      historyLabel: `${items.length} dims · ${fmt(r.nominal, p)} ± ${fmt(r.worstCaseTolerance, p)} ${c.L.length}`,
     };
   },
 });
