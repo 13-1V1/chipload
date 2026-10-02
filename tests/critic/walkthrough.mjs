@@ -201,6 +201,72 @@ async function walk(tool) {
   if (errors.length) flag(tool, `console errors: ${[...new Set(errors)].slice(0, 3).join(" | ")}`);
 }
 
+// ── Every screen scrolls far enough to show its last line ──────────────────────────────────────────
+// Brennan's phone: the job sheet's last line sat under the answer bar and no amount of scrolling freed it.
+// The gesture bar can't be faked through env() in a desktop browser, so --inset-bottom stands in for it.
+if (!only) {
+  await fresh("/");
+  const routes = await page.evaluate(async () => {
+    const { allCalcs } = await import("./src/app/registry.js");
+    const { CATEGORIES } = await import("./src/app/icons.js");
+    return [...allCalcs().map((d) => `/calc/${d.id}`), "/", ...CATEGORIES.filter((c) => c.id !== "shop").map((c) => `/cat/${c.id}`), "/shop/machines", "/shop/tools", "/shop/jobs", "/settings", "/pro", "/privacy", "/licenses"];
+  });
+  const SETUPS = [
+    { name: "375x812", w: 375, h: 812, glove: false, inset: 0 },
+    { name: "412x915 + gesture bar", w: 412, h: 915, glove: false, inset: 24 },
+    { name: "glove + gesture bar", w: 375, h: 812, glove: true, inset: 24 },
+    { name: "sideways + gesture bar", w: 812, h: 375, glove: false, inset: 16 },
+  ];
+  const lastLine = (inset) => page.evaluate(async (inset) => {
+    document.documentElement.style.setProperty("--inset-bottom", `${inset}px`);
+    // a phone has its gesture bar from the start; give the page two frames to measure the taller answer bar
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    let cover = innerHeight - inset;
+    const answer = document.querySelector(".answer");
+    if (answer && !answer.hidden) cover = Math.min(cover, answer.getBoundingClientRect().top);
+    const pad = document.querySelector(".numpad.open");
+    if (pad) { const p = pad.getBoundingClientRect(); if (p.left < innerWidth / 2) cover = Math.min(cover, p.top); } // a side column covers nothing below
+    let lowest = null, bottom = -Infinity;
+    for (const el of document.querySelectorAll("main *")) {
+      if (el.closest("details:not([open]) > :not(summary)") || !el.checkVisibility()) continue;
+      const r = el.getBoundingClientRect();
+      const leaf = !el.children.length || /^(INPUT|SELECT|TEXTAREA|BUTTON|svg)$/.test(el.tagName);
+      if (leaf && r.width && r.height && r.bottom > bottom) { bottom = r.bottom; lowest = el; }
+    }
+    return { bottom: Math.round(bottom), cover: Math.round(cover), what: (lowest?.textContent || lowest?.tagName || "").trim().slice(0, 40) };
+  }, inset);
+  let checked = 0;
+  for (const s of SETUPS) {
+    await page.setViewportSize({ width: s.w, height: s.h });
+    for (const route of routes) {
+      await page.goto(BASE);
+      await page.evaluate((glove) => {
+        localStorage.clear();
+        localStorage.setItem("chipload.settings.v1", JSON.stringify({ units: "in", theme: "dark", glove, pro: true, tips: true }));
+        localStorage.setItem("chipload.blob.machines", JSON.stringify([{ id: "m1", name: "Haas VF-2", type: "mill", maxRpm: 8100, maxFeed: 650, controller: "haas", units: "in" }, { id: "m2", name: "Bridgeport", type: "mill", maxRpm: 2720, maxFeed: 30, controller: "other", units: "in" }]));
+        localStorage.setItem("chipload.blob.tools", JSON.stringify([{ id: "t1", name: '1/2" 4FL carbide', kind: "endmill", diameter: 0.5, flutes: 4, toolType: "carbide", note: "AlTiN", units: "in" }]));
+        localStorage.setItem("chipload.blob.jobs", JSON.stringify([{ id: "j1", at: Date.now(), calcId: "bolt-circle", name: "Pump flange · 8 holes", raw: { diameter: "6.5", holes: "8" }, units: "in", primary: "X3.25 Y0" }]));
+      }, s.glove);
+      await page.goto(`${BASE}?bottom=${Math.random()}#${route}`, { waitUntil: "load" });
+      await page.waitForTimeout(120);
+      const r = await lastLine(s.inset);
+      checked++;
+      if (r.bottom > r.cover + 1) flag(route, `${s.name}: last line "${r.what}" ends at ${r.bottom}px but the screen is covered from ${r.cover}px — can't scroll to it`);
+      // and with the number pad up (calculators)
+      const firstField = (await shownFields())[0];
+      if (firstField) {
+        await page.locator(`#${firstField}`).click();
+        await page.waitForTimeout(250);
+        const p = await lastLine(s.inset);
+        checked++;
+        if (p.bottom > p.cover + 1) flag(route, `${s.name}, pad open: last line "${p.what}" ends at ${p.bottom}px but the screen is covered from ${p.cover}px`);
+      }
+    }
+  }
+  console.log(`Checked the bottom of ${checked} screens (${routes.length} screens × ${SETUPS.length} phone setups, tools also with the pad open).`);
+}
+
 await browser.close(); server.kill();
 console.log(`Walked ${ids.length} tools. ${problems.length} problem${problems.length === 1 ? "" : "s"}.`);
 for (const p of problems) console.log(`PROBLEM  ${p}`);

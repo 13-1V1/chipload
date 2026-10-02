@@ -646,3 +646,24 @@ test("hold backspace clears the field it was held on, and only that field", asyn
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+// Brennan's phone: the job sheet's last line sat under the answer bar and couldn't be scrolled into view.
+// The bar is taller than any fixed guess on a phone with a gesture bar or in glove mode; the page now
+// saves the bar's measured height. (tests/critic/walkthrough.mjs checks every screen this way.)
+test("the last line of a tool scrolls clear of the answer bar on a phone with a gesture bar, and in glove mode", async () => {
+  for (const [w, h, glove] of [[412, 915, false], [375, 812, true]]) {
+    const { page, ctx, errors } = await open("/calc/job-sheet");
+    await page.setViewportSize({ width: w, height: h });
+    if (glove) await page.locator("#gloveBtn").click();
+    const r = await page.evaluate(async () => {
+      document.documentElement.style.setProperty("--inset-bottom", "24px"); // stands in for Android's gesture bar
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      const note = document.querySelector(".calc > .note").getBoundingClientRect();
+      return { noteBottom: note.bottom, barTop: document.querySelector(".answer").getBoundingClientRect().top };
+    });
+    assert.ok(r.noteBottom <= r.barTop, `${w}x${h}${glove ? " glove" : ""}: last line ends at ${r.noteBottom}, bar starts at ${r.barTop}`);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});

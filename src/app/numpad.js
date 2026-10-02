@@ -84,7 +84,7 @@ function setPadHeight() {
   root.style.setProperty("--pad-h", `${h}px`);
   document.querySelector(".answer")?.classList.toggle("up", h > 0);
   const main = document.querySelector("main");
-  if (h > 0) main?.style.setProperty("padding-bottom", `calc(var(--answer-h) + var(--gutter) + ${h}px)`);
+  if (h > 0) main?.style.setProperty("padding-bottom", `calc(var(--answer-space) + var(--gutter) + ${h}px)`);
   else main?.style.removeProperty("padding-bottom"); // back to the stylesheet, which knows whether this screen has an answer bar
 }
 

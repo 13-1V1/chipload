@@ -236,7 +236,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
 
   // ── Answer bar ──
   let answer = document.querySelector(".answer");
-  if (!answer) { answer = document.createElement("div"); document.body.append(answer); }
+  if (!answer) { answer = document.createElement("div"); document.body.append(answer); trackAnswerHeight(answer); }
   answer.className = "answer";
   answer.innerHTML = `
     <div class="big"><span class="val num" id="answerVal"></span><span class="unit" id="answerUnit"></span></div>
@@ -525,6 +525,17 @@ export function mountCalculator(def, root, { params = {} } = {}) {
 /** Per-tool "Got it" memory for the help card. */
 export function helpSeen(id) { return loadStrings("helpSeen").includes(id); }
 export function markHelpSeen(id) { const list = loadStrings("helpSeen"); if (!list.includes(id)) saveBlob("helpSeen", [...list, id]); }
+
+/**
+ * Save exactly the answer bar's real height at the bottom of the page. A fixed guess left the last line
+ * of every calculator under the bar on phones with a gesture bar, in glove mode, or with a two-line label.
+ */
+function trackAnswerHeight(bar) {
+  const save = () => { const h = bar.offsetHeight; if (h) document.documentElement.style.setProperty("--answer-space", `${h}px`); };
+  // the whole box: the gesture bar's room is padding, which a content-box watch never sees change
+  new ResizeObserver(save).observe(bar, { box: "border-box" });
+  save();
+}
 
 export function hideAnswerBar() {
   const a = document.querySelector(".answer");
