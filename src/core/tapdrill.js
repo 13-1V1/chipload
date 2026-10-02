@@ -28,9 +28,8 @@ export function formTapDrillByPercent(major, pitch, percent) {
   return major - (0.0068 * percent * pitch);
 }
 
-/** Published stock drill for a UN size (~75%), or null. */
+/** Published stock drill for a UN size (~75%), or null. Half-thread pitches (2-4.5, 2-1/4-4.5 UNC) are on the chart too. */
 export function lookupTapDrillUN(majorIn, tpi) {
-  if (!Number.isInteger(tpi)) return null; // the chart only lists whole-number pitches
   const key = `${majorIn.toFixed(4)}|${tpi}`;
   const row = TAP_DRILL_UN_TABLE[key];
   return row ? { size: row[0], label: row[1], percent: row[2] } : null;

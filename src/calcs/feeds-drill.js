@@ -47,9 +47,12 @@ export default register({
     { id: "diameter", label: "Drill diameter", kind: "length", default: "0.25", defaultMm: "6", min: 0.0001 },
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Drill", kind: "segment", default: "hss",
-      options: [{ value: "hss", label: "HSS / cobalt" }, { value: "carbide", label: "Carbide" }] },
+      // Coated carbide is its own choice: the library's coated drill speed is 1.25 × the carbide one for every
+      // material without a published carbide drill speed (materialSpeeds), and a coated drill skips the
+      // "uncoated carbide wears out fast" caution on hardened steel. A drill saved in Shop as coated opens as coated.
+      options: [{ value: "hss", label: "HSS / cobalt" }, { value: "carbide", label: "Carbide" }, { value: "coated", label: "Coated carbide" }] },
     { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0,
-      auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType === "carbide" ? "carbide" : "hss").drillSfm, c.units),
+      auto: (raw, c) => fromSfm(materialSpeeds(raw.material, ["hss", "carbide", "coated"].includes(raw.toolType) ? raw.toolType : "hss").drillSfm, c.units),
       hint: "Leave blank to use the table value." },
     { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 5,
       auto: (raw, c, v) => fromIn(drillFeedPerRev(toIn(Number.isFinite(v.diameter) ? v.diameter : 0.25, c.units)) * drillFeedFactor(materialSpeeds(raw.material).material.rating), c.units),
@@ -64,17 +67,23 @@ export default register({
     const m = machineFor(c, "any");
     const fit = fitToMachine(m, requestedRpm, iprIn, c);
     const rpm = fit.rpm;
+    // A feed per rev bigger than the machine's whole max feed leaves no spindle speed at all: say so, don't show 0 RPM.
+    if (fit.cantRun) throw new Error(fit.problem);
     const slowed = fit.rpmCapped || fit.feedCapped;
     const feedIpm = fit.feedIpm;
     const pointLen = dIn * 0.3; // 118° point ≈ 0.3 D
     const depthIn = Number.isFinite(v.depth) ? toIn(v.depth, c.units) : NaN;
     const timeMin = Number.isFinite(depthIn) ? (depthIn + pointLen) / feedIpm : null;
-    const caution = toolCaution(v.material, v.toolType);
+    const caution = toolCaution(v.material, v.toolType, c.units);
     const metric = c.units === "mm";
     const len = (x) => fmt(fromIn(x, c.units), metric ? 2 : 4);
     // Places for the feed per rev in the "Feed rate" line: enough that its rounding times the RPM stays under
     // a tenth of the feed's last digit (0.005), so the line works out to the feed it prints, micro drills included.
     const revPlaces = Math.max(4, Math.min(8, Math.ceil(Math.log10(200 * rpm)) || 4));
+    // And places for the RPM in that line: a whole-number RPM times a big metric feed per rev (0.34 mm/rev on a
+    // 60 mm drill) is off by up to 0.17 mm/min, so give the RPM decimals until its rounding moves the product
+    // under 0.01 (whole RPM for inch feeds, up to 2 places for metric). fmt drops trailing zeros.
+    const rpmPlaces = Math.max(0, Math.min(3, Math.ceil(Math.log10(50 * fromIn(iprIn, c.units))) || 0));
 
     const stats = [
       { label: slowed ? "Spindle (machine limit)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped: slowed },
@@ -97,12 +106,12 @@ export default register({
       explain: metric
         ? [
             { title: "Spindle speed", formula: "RPM = (1000 × Vc) ÷ (π × D)", plugged: `= (1000 × ${fmt(fromSfm(sfm, "mm"), 3)}) ÷ (π × ${len(dIn)}) = ${fmt(requestedRpm, 0)}` },
-            { title: "Feed rate", formula: "feed = RPM × feed per rev", plugged: `= ${fmt(rpm, 0)} × ${fmt(fromIn(iprIn, "mm"), revPlaces)} = ${fmt(fromIn(feedIpm, "mm"), 1)} mm/min` },
+            { title: "Feed rate", formula: "feed = RPM × feed per rev", plugged: `= ${fmt(rpm, rpmPlaces)} × ${fmt(fromIn(iprIn, "mm"), revPlaces)} = ${fmt(fromIn(feedIpm, "mm"), 1)} mm/min` },
             ...(timeMin != null ? [{ title: "Time per hole", formula: "t = (depth + 0.3 D) ÷ feed", plugged: `= (${len(depthIn)} + ${len(pointLen)}) ÷ ${fmt(fromIn(feedIpm, "mm"), 1)} = ${fmt(timeMin, 3)} min` }] : []),
           ]
         : [
             { title: "Spindle speed", formula: "RPM = (SFM × 12) ÷ (π × D)", plugged: `= (${fmt(sfm, 0)} × 12) ÷ (π × ${len(dIn)}) = ${fmt(requestedRpm, 0)}` },
-            { title: "Feed rate", formula: "IPM = RPM × IPR", plugged: `= ${fmt(rpm, 0)} × ${fmt(iprIn, revPlaces)} = ${fmt(feedIpm, 1)} IPM` },
+            { title: "Feed rate", formula: "IPM = RPM × IPR", plugged: `= ${fmt(rpm, rpmPlaces)} × ${fmt(iprIn, revPlaces)} = ${fmt(feedIpm, 1)} IPM` },
             ...(timeMin != null ? [{ title: "Time per hole", formula: "t = (depth + 0.3 D) ÷ IPM", plugged: `= (${len(depthIn)} + ${len(pointLen)}) ÷ ${fmt(feedIpm, 1)} = ${fmt(timeMin, 3)} min` }] : []),
           ],
       historyLabel: `${fmt(v.diameter, c.units === "in" ? 4 : 2)} ${c.L.length} · ${materialSpeeds(v.material).material.name}`,

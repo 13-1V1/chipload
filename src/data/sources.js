@@ -6,7 +6,7 @@
 export const CALCULATION_SOURCES = Object.freeze({
   tapDrill: {
     title: "Tap drill guidance",
-    source: "At 75% thread with a cutting tap: the standard tap drill chart (inch: Machinery's Handbook / ASME B1.1 sizes; metric: ISO 2306). Any other percent, or a form tap, uses the percent-thread formula and the nearest stock drill (ASME B94.11M sizes).",
+    source: "At 75% thread with a cutting tap: the standard tap drill chart (inch: Machinery's Handbook / ASME B1.1 sizes; metric: ISO 2306). Metric fine pitches follow DIN 336 / ISO 2306, drill = D − P. Any other percent, or a form tap, uses the percent-thread formula and the nearest stock drill (ASME B94.11M sizes).",
     confidence: "Shop starting point",
   },
   hardness: {
@@ -26,7 +26,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   sti: {
     title: "Screw thread insert (STI) tap drill",
-    source: "ASME B18.29.1 (inch) and B18.29.2M / insert-maker charts (metric) for listed sizes; otherwise the first stock drill at or above the STI minor diameter, D + 0.2165 × pitch.",
+    source: "ASME B18.29.1 suggested drills (inch) and the Heli-Coil metric drilling chart (metric holes per ASME B18.29.2M) for listed sizes; otherwise the first stock drill at or above the STI minor diameter, D + 0.2165 × pitch.",
     confidence: "Chart value, or an estimate — confirm with the insert maker's chart",
   },
   acme: {
@@ -36,7 +36,7 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   npt: {
     title: "NPT pipe thread",
-    source: "ASME B1.20.1 tapered pipe thread (60 degree form, 1 in 16 taper on diameter).",
+    source: "ASME B1.20.1 tapered pipe thread (60 degree form, 1 in 16 taper on diameter); tap drills from the published NPT tap drill charts.",
     confidence: "Published table values",
   },
   weight: {
@@ -46,13 +46,28 @@ export const CALCULATION_SOURCES = Object.freeze({
   },
   threadGeometry: {
     title: "60 degree thread geometry",
-    source: "Basic 60 degree Unified and ISO metric geometry. Unified class limits follow the ASME B1.1 formulas; metric limits follow the ISO 965 formulas, within a few microns of the tables.",
+    source: "Basic 60 degree Unified and ISO metric geometry. Metric limits are the ISO 965-1 table values (Tables 1, 3–6), the same ones ISO 965-2 builds 6g/6H from, or, where the tables have no row for that size and pitch, its §13 formulas, rounded to the R 40 series the way the tables were made; Unified limits are the ASME B1.1 formulas with the tables' rounding, and the few hand-adjusted table values used as printed.",
     confidence: "Reference geometry",
   },
   feeds: {
     title: "Speeds and feeds",
     source: "Conservative built-in starting values or user/tool-library overrides, constrained by the active machine profile.",
     confidence: "Starting point; verify with tool-maker data",
+  },
+  saw: {
+    title: "Band saw blades",
+    source: "LENOX Guide to Band Sawing p.21 bi-metal speed chart, with its size, cutting-fluid and heat-treat adjustments; tooth pitch from the USA Band Saw Blades Tooth Selection Guide p.23, checked against the LENOX tooth chart.",
+    confidence: "Blade maker's starting point",
+  },
+  centerDrill: {
+    title: "Center drill depth",
+    source: "Combined drill and countersink sizes (body, pilot, drill length C) from ASME B94.11M and common maker charts; depth from the 60° countersink and 118° point geometry.",
+    confidence: "Calculated from catalog sizes; pilot length varies by maker, so check the countersink diameter on the first part",
+  },
+  quote: {
+    title: "Quote arithmetic",
+    source: "Your times and rates: (run + setup) ÷ 60 × shop rate + material, tooling and outside services, × (1 + markup on cost). Nothing is looked up.",
+    confidence: "Exact arithmetic; the price is only as good as the cycle time and rates entered",
   },
   geometry: {
     title: "Shop geometry",

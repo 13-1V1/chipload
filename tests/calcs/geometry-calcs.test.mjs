@@ -173,6 +173,50 @@ test("bolt circle G-code: a feed typed as feed per rev is caught, never posted a
   assert.match(run("bolt-circle", { gcode: "drill" }).out.code[0].text, /\nG20 G17 G40 G49 G80 G90 G94\n[^]*\nG91 G28 Z0\.0\nG90\nM30\n%$/);
 });
 
+// After the machine fit, the S and F the control reads get the same check as the typed ones. Spindle and Feed typed
+// into each other's boxes on a VF-2 (6000 RPM, 200 IPM): 30000 IPM at 100 RPM is 300 IPR, more than the machine
+// moves in a minute (S would floor to 0); 0.0002 IPM at 30000 RPM, capped to 6000, is 0.00004 IPM (F would read 0).
+test("bolt circle G-code: a fitted S under 1 or an F that posts as zero is not written", () => {
+  for (const [over, units] of [[{ spindle: "100", feed: "30000" }, "in"], [{ spindle: "30000", feed: "0.0002" }, "in"], [{ spindle: "100", feed: "800000" }, "mm"], [{ spindle: "30000", feed: "0.002" }, "mm"]]) {
+    for (const gcode of ["drill", "peck"]) {
+      const out = run("bolt-circle", { gcode, ...over }, units, vf2).out;
+      const said = out.warnings.join(" | ");
+      assert.equal(out.code.length, 0, `${gcode} ${JSON.stringify(over)} ${units}: ${out.code[0]?.text}`);
+      assert.match(said, /G-code not written: .*Check that Spindle and Feed aren't swapped: Spindle is RPM, Feed is per minute/, said);
+      assert.doesNotMatch(said, /\bS0\b|F0\.0|program posts/, said);
+    }
+  }
+  // the coordinates are still there
+  assert.equal(run("bolt-circle", { gcode: "drill", spindle: "100", feed: "30000" }, "in", vf2).out.tables[0].rows.length, 6);
+  // a fit that still posts real numbers is unchanged: 12000 → 6000 RPM, F30
+  assert.match(run("bolt-circle", { gcode: "drill", spindle: "12000", feed: "60" }, "in", vf2).out.code[0].text, /\nS6000 M3\n[^]* F30\.0\n/);
+});
+
+// A sweep so small the holes land on each other: chord D sin(step/2) under the last written digit (0.0001 in / 0.001 mm).
+// 4 in circle, 0.0001° sweep, 4 holes: step 0.0000333°, chord 4 × sin(0.0000167°) = 0.0000012 in.
+test("bolt circle: holes closer than the last written digit are flagged and get no program", () => {
+  const tiny = run("bolt-circle", { holes: "4", sweep: "0.0001", gcode: "drill" }, "in", vf2).out;
+  assert.equal(tiny.code.length, 0);
+  assert.match(tiny.warnings.join(" "), /G-code not written: neighbor holes are less than 0\.0001 in apart[^]*neighbors land on top of each other\. Check Partial circle sweep/);
+  const coords = run("bolt-circle", { holes: "4", sweep: "0.0001" }).out;
+  // no G-code prefix: the sentence still starts with a capital
+  assert.match(coords.warnings.join(" "), /^Neighbor holes are less than 0\.0001 in apart/);
+  // only neighbors stack; a many-hole pattern still spreads out, so never claim every hole is on one spot
+  // (360 holes over 1° on a 4 in circle: first X2 Y0, last X1.99970 Y0.03490, neighbors 0.0001 in apart)
+  const spread = run("bolt-circle", { holes: "360", sweep: "1" }).out;
+  assert.match(spread.warnings.join(" "), /^Neighbor holes are less than/);
+  for (const w of [tiny, coords, spread, run("bolt-circle", { diameter: "0.01", holes: "360" }).out]) assert.doesNotMatch(w.warnings.join(" "), /every hole|same spot/);
+  assert.match(run("bolt-circle", { holes: "4", sweep: "0.0001" }, "mm").out.warnings.join(" "), /less than 0\.001 mm apart/);
+  assert.equal(run("bolt-circle", { holes: "4", sweep: "0.0001", gcode: "positions" }).out.code.length, 0);
+  // a full circle that small says to check the diameter, not the sweep
+  assert.match(run("bolt-circle", { diameter: "0.0001", holes: "360" }).out.warnings.join(" "), /Check the bolt circle diameter/);
+  // 0.01° on a 4 in circle: chord 0.00035 in, still separate holes, nothing said
+  assert.deepEqual(run("bolt-circle", { holes: "2", sweep: "0.01" }).out.warnings, []);
+  assert.equal(run("bolt-circle", { holes: "2", sweep: "0.01", gcode: "drill" }).out.code.length, 1);
+  // one hole has no neighbor
+  assert.deepEqual(run("bolt-circle", { holes: "1" }).out.warnings, []);
+});
+
 test("bolt circle: the angle column reads 0 to under 360", () => {
   const rows = run("bolt-circle", { holes: "6", start: "300" }).out.tables[0].rows;
   assert.deepEqual(rows.map((h) => Math.round(h.angleDeg)), [300, 0, 60, 120, 180, 240]);

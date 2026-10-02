@@ -125,7 +125,7 @@ test("true position: a unit switch never flips the verdict of a part on the line
     const mm = run("true-position", c, "mm").out;
     assert.equal(mm.primary.label, "Position (in tolerance)", JSON.stringify(c));
     const inch = switched(c, "mm", "in");
-    if (c.dx === "0.08") assert.equal(inch.dx, "0.0031496");
+    if (c.dx === "0.08") assert.equal(inch.dx, "0.003149606");
     assert.equal(run("true-position", inch, "in").out.primary.label, "Position (in tolerance)", JSON.stringify(inch));
     // ...and straight back gives the typed mm text again
     assert.deepEqual(Object.fromEntries(Object.entries(switched(inch, "in", "mm")).filter(([k]) => k in c)), c);
@@ -136,6 +136,72 @@ test("true position: a unit switch never flips the verdict of a part on the line
   const mmText = switched(onLine, "in", "mm");
   assert.deepEqual([mmText.dx, mmText.dy, mmText.tol], ["0.0762", "0.1016", "0.254"]);
   assert.equal(run("true-position", mmText, "mm").out.primary.label, "Position (in tolerance)");
+});
+
+// One physical band (0.000001 in = 0.0000254 mm). mm 0.110 / 0.150 on a 0.372 zone: TP 0.3720215 mm, 0.0000215 mm
+// (0.00000085 in) past the line. A band of 1e-6 of the active unit called that OUT in mm and IN after the switch.
+test("true position: a part within a millionth of an inch of the line keeps its verdict on a unit switch", () => {
+  const def = getCalc("true-position");
+  const switched = (over, from, to) => {
+    const raw = defaultRaw(def, over, from), out = {};
+    for (const i of def.inputs) out[i.id] = convertInput(i, raw[i.id], from, to, raw);
+    return out;
+  };
+  // Right at the band's edge, where seven-decimal inches flipped the verdict:
+  // 0.002 / 0.156 on 0.312: TP 0.3120256 mm, 0.0000256 mm past the line (just outside the 0.0000254 band) → OUT.
+  // 0.001 / 0.008 on 0.0161: TP 0.0161245 mm, 0.0000245 mm past (inside the band) → in tolerance.
+  // 0.002 / 0.149 on 0.298: TP 0.2980268 mm, 0.0000268 mm past → OUT.
+  for (const [c, want] of [
+    [{ dx: "0.110", dy: "0.150", tol: "0.372" }, "Position (in tolerance)"],
+    [{ dx: "0.110", dy: "0.150", tol: "0.3719" }, "Position (OUT)"],
+    [{ dx: "0.002", dy: "0.156", tol: "0.312" }, "Position (OUT)"],
+    [{ dx: "0.001", dy: "0.008", tol: "0.0161" }, "Position (in tolerance)"],
+    [{ dx: "0.002", dy: "0.149", tol: "0.298" }, "Position (OUT)"],
+  ]) {
+    const mm = run("true-position", c, "mm").out;
+    const inch = run("true-position", switched(c, "mm", "in"), "in").out;
+    assert.equal(mm.primary.label, want, `mm ${JSON.stringify(c)}`);
+    assert.equal(inch.primary.label, want, `in ${JSON.stringify(c)}`);
+    // the red Margin flag follows the verdict, in both systems
+    for (const out of [mm, inch]) assert.equal(out.stats.find((s) => s.label === "Margin").clamped, out.primary.label !== "Position (in tolerance)");
+  }
+});
+
+test("true position: the Margin stat is red exactly when the headline says out of position", () => {
+  // 0.0000005 in past a 0.010 zone: inside the band, so in tolerance, and Margin (slightly negative) is not red
+  const onLine = run("true-position", { dx: "0.003", dy: "0.0040004", tol: "0.010" }).out;
+  assert.equal(onLine.primary.label, "Position (in tolerance)");
+  assert.ok(onLine.stats.find((s) => s.label === "Margin").value < 0);
+  assert.equal(onLine.stats.find((s) => s.label === "Margin").clamped, false);
+  const out = run("true-position", { dx: "0.003", dy: "0.00401", tol: "0.010" }).out;
+  assert.equal(out.stats.find((s) => s.label === "Margin").clamped, true);
+  // out on size only: the position margin stays green, the Size stat carries the red
+  const size = run("true-position", { mmc: "mmc", lmc: "0.255", actual: "0.256" }).out;
+  assert.equal(size.stats.find((s) => s.label === "Margin").clamped, false);
+  assert.equal(size.stats.find((s) => s.label === "Size").clamped, true);
+});
+
+// The size check uses the verdict's band. A hole 0.00001 mm under MMC 6.00 (or 0.0000005 in under 0.250) is inside
+// the 0.0000254 mm / 0.000001 in band: in size, so no "rejected" warning may contradict an in-tolerance headline.
+test("true position: a size inside the band gets no out-of-size warning, in either unit", () => {
+  const cases = [
+    ["mm", { mmc: "mmc", mmcSize: "6.00", lmc: "6.05", actual: "5.99999" }],
+    ["mm", { mmc: "mmc", feature: "pin", mmcSize: "6.00", lmc: "5.95", actual: "6.00001" }],
+    ["in", { mmc: "mmc", mmcSize: "0.250", lmc: "0.255", actual: "0.2499995" }],
+    ["in", { mmc: "mmc", feature: "pin", mmcSize: "0.250", lmc: "0.245", actual: "0.2500005" }],
+  ];
+  for (const [units, c] of cases) {
+    const out = run("true-position", c, units).out;
+    assert.equal(out.primary.label, "Position (in tolerance)", `${units} ${JSON.stringify(c)}`);
+    assert.equal(out.stats.find((s) => s.label === "Size").text, "Within MMC–LMC");
+    assert.doesNotMatch(out.warnings.join(" "), /out of size|rejected/, `${units} ${JSON.stringify(c)}`);
+  }
+  // past the band it is out of size, the warning shows, and the headline agrees
+  for (const [units, c] of [["mm", { mmc: "mmc", mmcSize: "6.00", lmc: "6.05", actual: "5.9999" }], ["in", { mmc: "mmc", mmcSize: "0.250", lmc: "0.255", actual: "0.249998" }]]) {
+    const out = run("true-position", c, units).out;
+    assert.equal(out.primary.label, "Position OK, size OUT", units);
+    assert.match(out.warnings.join(" "), /Hole is smaller than its MMC size — out of size/, units);
+  }
 });
 
 // Absolute zero: −459.67 °F = −273.15 °C (exact, SI Brochure 9th ed. §2.3.1)
@@ -186,4 +252,43 @@ test("source lines name the standard each tool uses", () => {
   assert.match(CALCULATION_SOURCES.hardness.confidence, /Approximate/);
   assert.doesNotMatch(CALCULATION_SOURCES.tapDrill.source, /explicitly selected/);
   for (const id of ["hardness", "material-weight", "thermal", "fits", "true-position"]) assert.ok(CALCULATION_SOURCES[run(id).out.source], id);
+  // ISO 965-1 tables for metric limits; DIN 336 / ISO 2306 D − P for metric fine tap drills
+  assert.match(CALCULATION_SOURCES.threadGeometry.source, /ISO 965-1 table values/);
+  // M10x0.5, M3x0.2 etc. have no table row; iso965Tolerances falls back to the formulas, and the source says so
+  assert.match(CALCULATION_SOURCES.threadGeometry.source, /no row for that size and pitch, its §13 formulas/);
+  assert.doesNotMatch(CALCULATION_SOURCES.threadGeometry.source, /within a few microns/);
+  assert.match(CALCULATION_SOURCES.tapDrill.source, /DIN 336 \/ ISO 2306, drill = D − P/);
+  assert.match(CALCULATION_SOURCES.sti.source, /Heli-Coil metric/);
+  assert.match(CALCULATION_SOURCES.npt.source, /tap drill charts/);
+  // tools whose numbers come from their own source point at it
+  assert.equal(run("saw-speed").out.source, "saw");
+  assert.match(CALCULATION_SOURCES.saw.source, /LENOX Guide to Band Sawing p\.21[^]*Tooth Selection Guide p\.23/);
+  assert.equal(run("center-drill").out.source, "centerDrill");
+  assert.match(CALCULATION_SOURCES.centerDrill.source, /B94\.11M/);
+  assert.equal(run("quote").out.source, "quote");
+  for (const key of ["saw", "centerDrill", "quote"]) assert.ok(CALCULATION_SOURCES[key].title && CALCULATION_SOURCES[key].confidence, key);
+});
+
+test("material library: count, per-family rating scales, and cost in dollars and cents", () => {
+  const lib = getCalc("materials");
+  const count = lib.rows({ units: "in" }).length;
+  assert.match(lib.help, new RegExp(`for ${count} materials`));
+  assert.match(lib.short, new RegExp(`^${count} materials`));
+  // AISI B1112 for steels, CDA C36000 for copper alloys, own family for the rest (materials-library.js ratingScale)
+  assert.doesNotMatch(lib.note, /Rating is vs\. B1112 = 100%\./);
+  assert.match(lib.note, /Carbon steel[^.]*stainless[^.]*: vs\. B1112 steel = 100%/);
+  assert.match(lib.note, /Copper alloys: vs\. C360 brass = 100/);
+  assert.match(lib.note, /Aluminum[^.]*: ranked within its own family only/);
+  // Money reads like a quote: always cents, thousands grouped (_money.js), never "$18.4" or "$7350.1".
+  const cost = (price, units = "in") => {
+    const out = run("material-weight", { price }, units).out;
+    return { text: out.stats.find((s) => s.label === "Material cost").text, weight: out.primary.value };
+  };
+  const dollars = (x) => `$${(Math.round(x * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  for (const [price, units] of [["4.10", "in"], ["5", "in"], ["2000", "in"], ["10", "mm"]]) {
+    const { text, weight } = cost(price, units);
+    assert.equal(text, dollars(weight * Number(price)), `${price} ${units}`);
+    assert.match(text, /^\$[\d,]+\.\d\d$/);
+  }
+  assert.match(cost("2000").text, /^\$\d,\d{3}\.\d\d$/);
 });

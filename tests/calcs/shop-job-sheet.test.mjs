@@ -128,3 +128,62 @@ test("mm mode: the explain lines are written in m/min, mm and mm/min", () => {
   // the feed line ends on the number in the answer bar
   assert.ok(out.explain[1].plugged.endsWith(`${fmt(out.primary.value, 1)} mm/min`));
 });
+
+// ── round 2: turning speed, hard turning feed, machine that can't run the cut, family-scale drill feeds ──
+import { materialSpeeds as speeds2, materialById as byId2, toolCaution as caution2 } from "../../src/data/materials-library.js";
+import { drillFeedPerRev as dfr2 } from "../../src/calcs/feeds-drill.js";
+import { drillFeedFactor, latheFeedIpr } from "../../src/calcs/_advice.js";
+
+test("lathe: the sheet turns at the library turning speed and takes the same blank feed as Speeds & feeds — lathe", () => {
+  const ipr = latheFeeds.inputs.find((i) => i.id === "ipr");
+  for (const [material, toolType] of [["s1018", "carbide"], ["tHard55", "coated"], ["tHard45", "carbide"], ["al6061", "hss"]]) {
+    const out = run({ op: "lathe", material, toolType, diameter: "2" });
+    // 2 in part: surface speed used = the turning speed (RPM from SFM and back)
+    near(stat(out, /Surface speed used/).value, speeds2(material, toolType).turnSfm, 1e-9, `${material} ${toolType}`);
+    near(stat(out, /Feed per rev/).value, ipr.auto({ material, cut: "rough" }, ctx()), 1e-12, `${material}: same blank feed`);
+  }
+  // hardened 55–60 HRC: 0.004 in/rev = 0.10 mm/rev, inside the published 0.05–0.15 mm/rev (Tungaloy hard turning)
+  near(stat(run({ op: "lathe", material: "tHard55", diameter: "2" }), /Feed per rev/).value, 0.004, 1e-12);
+  near(latheFeedIpr("tHard55", "finish"), 0.002, 1e-12);
+  near(latheFeedIpr("s1018", "finish"), 0.004, 1e-12);
+  assert.ok(byId2("tHard55").hrc >= 45 && byId2("ss174h").hrc < 45);
+});
+
+test("a feed per rev the machine can't move once per minute is a plain message, not 0 RPM", () => {
+  const lathe = { name: "Lathe 5", type: "lathe", maxRpm: 2000, maxFeed: 5, units: "in" };
+  const c = ctx("in", lathe);
+  const values = buildValues(jobSheet, defaultRaw(jobSheet, { op: "lathe", chip: "7", length: "4" }, "in"), c).values;
+  assert.throws(() => jobSheet.compute(values, c), /Lathe 5 max feed is 5 IPM, less than one turn at 7 IPR\. Check the feed per rev, or the max feed in Shop\./);
+});
+
+test("the hard-material caution on the sheet is in the units on screen", () => {
+  for (const units of ["in", "mm"]) {
+    const out = run({ op: "mill", material: "tHard55", toolType: "carbide" }, ctx(units));
+    assert.ok(out.warnings.includes(caution2("tHard55", "carbide", units)), units);
+  }
+});
+
+// Drill feed factor: the AISI scale (B1112 = 100%) for steels; aluminum, magnesium, zinc and plastics are ranked
+// in their own family and all cut far easier than B1112, so they take the top 1.25×; C360 brass (copper scale 100)
+// too. Before, 6061 (90 in its family) read as 90% of B1112: 0.95×, about 24% low.
+test("drill feed factor reads each family's rating on its own scale", () => {
+  near(drillFeedFactor(speeds2("s1018").material), 0.5 + 78 / 200, 1e-12, "1018 on B1112");
+  near(drillFeedFactor(78), 0.89, 1e-12, "a bare rating is still B1112 %");
+  for (const id of ["al6061", "al7075", "mgAZ31", "znZamak3", "pAcetal", "c360", "c353", "c544"]) near(drillFeedFactor(speeds2(id).material), 1.25, 1e-12, id);
+  near(drillFeedFactor(speeds2("c110").material), 0.6, 1e-12, "gummy pure copper stays conservative");
+  near(drillFeedFactor(speeds2("ni718").material), 0.55, 1e-12);
+  const out = run({ op: "drill", material: "al6061", diameter: "0.25" });
+  near(stat(out, /Feed per rev/).value, dfr2(0.25) * 1.25, 1e-12, "the sheet's aluminum drill feed");
+});
+
+test("drilling to exactly 3× diameter is not a peck hole in mm either (no float noise past the line)", () => {
+  // 0.25 in drill 0.75 in deep = 3.0×; 4 mm drill 12 mm deep = 3.0× too, which the inch round trip made 3.0000000000000004
+  const peck = (out) => out.warnings.some((w) => /peck/.test(w));
+  assert.equal(peck(run({ op: "drill", diameter: "0.25", depth: "0.75" })), false);
+  for (const [d, depth] of [["4", "12"], ["1", "3"], ["5.5", "16.5"]]) assert.equal(peck(run({ op: "drill", diameter: d, depth }, ctx("mm"))), false, `${d} mm × ${depth} mm`);
+  // exactly 5× and 8× stay in the band below: the plain peck line, then the 20% line
+  const said = (d, depth) => run({ op: "drill", diameter: d, depth }, ctx("mm")).warnings.find((w) => /peck/.test(w));
+  assert.match(said("2", "10"), /^5× diameter deep: peck \(G83\) to clear the chips\.$/);
+  assert.match(said("2", "16"), /about 20%/);
+  assert.equal(peck(run({ op: "drill", diameter: "4", depth: "12.1" }, ctx("mm"))), true);
+});

@@ -32,10 +32,18 @@ export default register({
     const t = threadFromSpec(v.thread);
     const p = lenPlaces(c.units), u = c.L.length;
     const show = (inches, places = p) => fmt(fromIn(inches, c.units), places);
-    // a reading just past a limit: add places until the two numbers read differently
-    const showApart = (a, b) => { let k = p; while (k < p + 3 && show(a, k) === show(b, k)) k++; return [show(a, k), show(b, k)]; };
+    // One slack, used both to round the limits shown and to call a part out of them: a millionth of the last shown
+    // digit, which only soaks up inch ⇄ mm float noise.
+    const SLACK = 1e-6;
+    const slackIn = toIn(SLACK * 10 ** -p, c.units);
     // a limit shown rounded toward the inside of the band (min up, max down), so a reading at the shown limit passes
-    const showInward = (inches, up) => { const s = 10 ** p, x = fromIn(inches, c.units) * s; return fmt((up ? Math.ceil(x - 1e-6) : Math.floor(x + 1e-6)) / s, p); };
+    const showInward = (inches, up) => { const s = 10 ** p, x = fromIn(inches, c.units) * s; return fmt((up ? Math.ceil(x - SLACK) : Math.floor(x + SLACK)) / s, p); };
+    // a value just past a shown limit: add places until it reads past that limit (never equal to it)
+    const showPast = (inches, limitText, under) => {
+      for (let k = p; k <= p + 4; k++) { const s = show(inches, k); if (under ? Number(s) < Number(limitText) : Number(s) > Number(limitText)) return s; }
+      const s = 10 ** (p + 4), x = fromIn(inches, c.units) * s;
+      return fmt((under ? Math.floor(x) : Math.ceil(x)) / s, p + 4);
+    };
     const wireIn = toIn(v.wire, c.units);
     const range = wireRange(t.pitchIn);
     const ext = v.side === "external";
@@ -90,12 +98,17 @@ export default register({
       { label: "Basic pitch diameter", value: fromIn(basicThreadGeometry(t.majorIn, t.pitchIn).pitchDiameter, c.units), unit: u, places: p },
     ];
     if (limits) {
-      const [mLo, mHi] = [solveM(limits.pdMin), solveM(limits.pdMax)].sort((a, b) => a - b);
-      stats.push({ label: `${limits.cls} PD limits`, text: `${showInward(limits.pdMin, true)} – ${showInward(limits.pdMax, false)} ${u}` });
+      // The PD limits as shown (rounded inward) are the band everything else uses: the measurement limits are
+      // figured from them, and the verdict and its wording use them too. M moves one-for-one with PD (M = E ± 3W ∓
+      // 0.86603 P), so a reading at a shown measurement limit is inside, and one a digit outside it is called.
+      const pdLo = showInward(limits.pdMin, true), pdHi = showInward(limits.pdMax, false);
+      const pdLoIn = toIn(Number(pdLo), c.units), pdHiIn = toIn(Number(pdHi), c.units);
+      const [mLo, mHi] = [solveM(pdLoIn), solveM(pdHiIn)].sort((a, b) => a - b);
+      stats.push({ label: `${limits.cls} PD limits`, text: `${pdLo} – ${pdHi} ${u}` });
       stats.push({ label: `${limits.cls} measurement limits`, text: `${showInward(mLo, true)} – ${showInward(mHi, false)} ${u}` });
       // a measured part gets a verdict, not just two numbers to compare by eye
-      if (v.mode === "e" && eIn < limits.pdMin - 5e-7) { const [a, b] = showApart(eIn, limits.pdMin); warnings.push(`Pitch diameter ${a} ${u} is under the ${limits.cls} minimum ${b} ${u}: the thread is ${ext ? "undersize (cut too deep)" : "tight (a GO plug won't enter)"}.`); }
-      if (v.mode === "e" && eIn > limits.pdMax + 5e-7) { const [a, b] = showApart(eIn, limits.pdMax); warnings.push(`Pitch diameter ${a} ${u} is over the ${limits.cls} maximum ${b} ${u}: the thread is ${ext ? "oversize (a GO ring won't go on)" : "loose (cut too deep)"}.`); }
+      if (v.mode === "e" && eIn < pdLoIn - slackIn) warnings.push(`Pitch diameter ${showPast(eIn, pdLo, true)} ${u} is under the ${limits.cls} minimum ${pdLo} ${u}: the thread is ${ext ? "undersize (cut too deep)" : "tight (a GO plug won't enter)"}.`);
+      if (v.mode === "e" && eIn > pdHiIn + slackIn) warnings.push(`Pitch diameter ${showPast(eIn, pdHi, false)} ${u} is over the ${limits.cls} maximum ${pdHi} ${u}: the thread is ${ext ? "oversize (a GO ring won't go on)" : "loose (cut too deep)"}.`);
     }
     const K = 0.86603;
     const w = show(wireIn), pp = show(t.pitchIn), e = show(eIn), m = show(mIn);

@@ -34,11 +34,16 @@ const OVER = 1 + 1e-9;
  * than the machine can move, the spindle slows (to a whole RPM) until it isn't. Feed per rev never changes,
  * so the chip load holds — full RPM with a capped feed would rub a thin chip and dull the tool.
  * With no machine (m = null) the cut comes back as asked.
+ *
+ * When one turn of the spindle already moves more than the machine's top feed per minute (a feed per rev
+ * typed in the feed field, say), no whole RPM can run the cut. Then rpm and feedIpm are 0, `cantRun` is
+ * true and `problem` says why in the user's units. Callers show that message instead of numbers:
+ * `if (fit.cantRun) throw new Error(fit.problem);` — a 0 RPM answer turns into Infinity times and F0 blocks.
  * @param {object|null} m   machine profile from machineFor()
  * @param {number} wantedRpm  spindle speed the surface speed asks for
  * @param {number} iprIn      feed per revolution in inches (flutes × chip load for a mill, lead for a tap)
  * @param {object} c          calculator context (units and labels for the warning text)
- * @returns {{ rpm: number, feedIpm: number, wantedRpm: number, wantedFeedIpm: number, rpmCapped: boolean, feedCapped: boolean, warnings: string[] }}
+ * @returns {{ rpm: number, feedIpm: number, wantedRpm: number, wantedFeedIpm: number, rpmCapped: boolean, feedCapped: boolean, cantRun: boolean, problem: string|null, warnings: string[] }}
  */
 export function fitToMachine(m, wantedRpm, iprIn, c) {
   const maxRpm = maxRpmOf(m);
@@ -48,13 +53,31 @@ export function fitToMachine(m, wantedRpm, iprIn, c) {
   let rpm = rpmCapped ? maxRpm : wantedRpm;
   const feedAtRpm = rpm * iprIn;
   const feedCapped = feedAtRpm > maxFeed * OVER;
-  if (feedCapped) rpm = Math.floor(maxFeed / iprIn);
+  // OVER again: 30 IPM ÷ 0.015 IPR may land a hair under 2000 and must still give 2000 RPM.
+  if (feedCapped) rpm = Math.floor((maxFeed / iprIn) * OVER);
+  const cantRun = feedCapped && rpm < 1;
+  if (cantRun) rpm = 0;
   const feedIpm = rpm * iprIn;
-  const feedText = (ipm) => `${fmt(c.units === "in" ? ipm : ipm * 25.4, 1)} ${c.L.feed}`;
+  const inch = c.units === "in";
+  const feedText = (ipm) => `${fmt(inch ? ipm : ipm * 25.4, 1)} ${c.L.feed}`;
+  const problem = cantRun
+    ? `${m.name} max feed is ${feedText(maxFeed)}, less than one turn at ${fmt(inch ? iprIn : iprIn * 25.4, inch ? 4 : 3)} ${c.L.feedRev}. Check the feed per rev, or the max feed in Shop.`
+    : null;
   const warnings = [];
-  if (rpmCapped) warnings.push(`${m.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(wantedRpm, 0)}. Feed is figured at ${fmt(maxRpm, 0)} RPM so the chip load holds.`);
-  if (feedCapped) warnings.push(`${m.name} max feed is ${feedText(maxFeed)}. This cut needs ${feedText(feedAtRpm)}, so the spindle drops to ${fmt(rpm, 0)} RPM to keep the chip load.`);
-  return { rpm, feedIpm, wantedRpm, wantedFeedIpm, rpmCapped, feedCapped, warnings };
+  // With both caps hit, the feed line says where the spindle lands; this one only says the machine's top.
+  if (rpmCapped) warnings.push(`${m.name} tops out at ${fmt(maxRpm, 0)} RPM. Wanted ${fmt(wantedRpm, 0)}.${feedCapped || !(iprIn > 0) ? "" : ` Feed is figured at ${fmt(maxRpm, 0)} RPM so the chip load holds.`}`);
+  if (cantRun) warnings.push(problem);
+  else if (feedCapped) warnings.push(`${m.name} max feed is ${feedText(maxFeed)}. This cut needs ${feedText(feedAtRpm)}, so the spindle drops to ${fmt(rpm, 0)} RPM to keep the chip load.`);
+  return { rpm, feedIpm, wantedRpm, wantedFeedIpm, rpmCapped, feedCapped, cantRun, problem, warnings };
+}
+
+/**
+ * The fastest whole RPM a machine can run at this feed per rev without passing its top feed (Infinity when
+ * nothing limits it); 0 when even one RPM is too fast — fitToMachine then reports `cantRun`.
+ */
+export function maxRpmAtFeed(m, iprIn) {
+  const byFeed = iprIn > 0 ? Math.floor((maxFeedIpmOf(m) / iprIn) * OVER) : Infinity;
+  return Math.min(maxRpmOf(m), byFeed);
 }
 
 /**

@@ -56,6 +56,22 @@ test("thread data shows the percent the chart drill really gives", () => {
 test("a very coarse pitch is flagged on every thread screen", () => {
   assert.match(run("thread-data", { thread: "1/4-10" }).warnings.join(" "), /coarser than any standard/);
   assert.match(run("mow", { thread: "1/4-10" }).warnings.join(" "), /coarser than any standard/);
+  // every tool that reads a thread shows the parser's caution, once
+  const tools = [["tap-drill", {}], ["sti", {}], ["tapping-feed", {}], ["thread-mill", { side: "external" }], ["mow", {}], ["thread-data", {}]];
+  for (const [id, over] of tools) {
+    const hits = run(id, { ...over, thread: "1/4-10" }).warnings.filter((w) => /coarser than any standard/.test(w));
+    assert.equal(hits.length, 1, `${id}: ${hits.length} coarse-pitch cautions`);
+  }
+  assert.match(run("tap-drill", { thread: "M100x9" }).warnings.join(" "), /ISO metric threads run from 0\.2 to 8 mm pitch/);
+});
+
+// A callout that can't exist (60° form: D − 1.226869 P ≤ 0, ASME B1.1 / ISO 68-1) is refused with the plain reason,
+// not "type a thread like…"; text that isn't a thread at all still gets the how-to.
+test("an impossible thread says why on every thread screen", () => {
+  for (const id of ["tap-drill", "sti", "tapping-feed", "thread-mill", "mow", "thread-data"]) {
+    assert.throws(() => run(id, { thread: "1/4-4" }), /1\/4-4 can't be cut: that pitch is too coarse for the diameter/, id);
+    assert.throws(() => run(id, { thread: "banana" }), /Type a thread like 1\/4-20/, id);
+  }
 });
 
 // ISO 965-2: M10x1.5 6g PD 8.862–8.994, 6H 9.026–9.206. ISO 965-1 Tables 8 / 9 recommend 4g 4h 6e 6f 6g 6h 8e 8g
@@ -129,23 +145,31 @@ test("thread data: standard fine and UNEF sizes show their chart drill, huge hol
 
 // The shown limits round toward the inside of the band, so a part read at exactly the shown limit passes and one read
 // a digit outside it is called. 1/4-20 2A PD 0.2127–0.2164 (ASME B1.1): true M limits 0.2560012–0.2597 in with the
-// 0.02887 in best wire; M10x1.5 6g PD 8.862–8.994 mm (ISO 965-2): true M min 10.161031 mm.
+// 0.02887 in best wire; M10x1.5 6g PD 8.862–8.994 mm (ISO 965-2): true M min 10.161031 mm. The verdict names the PD
+// limit the stat shows: M10x1.5 6g PD max 8.994 mm = 0.354094 in reads 0.354 (rounded inward), never 0.3541.
+// M12x1.75 in inches and 5/8-18 internal in mm are the cases where a reading a digit under got no verdict.
 test("measure over wires: a reading at the shown measurement limit gets no verdict", () => {
-  const cases = [["1/4-20", "in", "2A"], ["1/4-20", "mm", "2A"], ["M10x1.5", "mm", "6g"], ["M10x1.5", "in", "6g"], ["1/2-13", "in", "2A"], ["M6", "mm", "6g"]];
+  const cases = [["1/4-20", "in", "2A"], ["1/4-20", "mm", "2A"], ["M10x1.5", "mm", "6g"], ["M10x1.5", "in", "6g"], ["1/2-13", "in", "2A"], ["M6", "mm", "6g"],
+    ["M12x1.75", "in", "6g"], ["5/8-18", "mm", "2A"]];
   for (const [thread, units, cls] of cases) {
     for (const side of ["external", "internal"]) {
-      const shown = stat(run("mow", { thread, side }, units), `${side === "external" ? cls : cls.replace("A", "B").replace("g", "H")} measurement limits`).text;
-      const [lo, hi] = shown.match(/[\d.]+/g);
+      const label = side === "external" ? cls : cls.replace("A", "B").replace("g", "H");
+      const base = run("mow", { thread, side }, units);
+      const [lo, hi] = stat(base, `${label} measurement limits`).text.match(/[\d.]+/g);
+      const [pdLo, pdHi] = stat(base, `${label} PD limits`).text.match(/[\d.]+/g);
       const at = `${thread} ${side} ${units}`;
       assert.deepEqual(run("mow", { thread, side, mode: "e", m: lo }, units).warnings, [], `${at} at shown min ${lo}`);
       assert.deepEqual(run("mow", { thread, side, mode: "e", m: hi }, units).warnings, [], `${at} at shown max ${hi}`);
       const step = units === "mm" ? 0.001 : 0.0001;
-      assert.match(run("mow", { thread, side, mode: "e", m: String(Number(lo) - step) }, units).warnings.join(" "), /under the/, `${at} a digit under`);
-      assert.match(run("mow", { thread, side, mode: "e", m: String(Number(hi) + step) }, units).warnings.join(" "), /over the/, `${at} a digit over`);
+      const under = run("mow", { thread, side, mode: "e", m: String(Number(lo) - step) }, units).warnings.join(" ");
+      const over = run("mow", { thread, side, mode: "e", m: String(Number(hi) + step) }, units).warnings.join(" ");
+      assert.match(under, new RegExp(`under the ${label} minimum ${pdLo.replace(".", "\\.")} ${units}:`), `${at} a digit under: ${under}`);
+      assert.match(over, new RegExp(`over the ${label} maximum ${pdHi.replace(".", "\\.")} ${units}:`), `${at} a digit over: ${over}`);
     }
   }
   assert.equal(stat(run("mow", { thread: "1/4-20" }), "2A measurement limits").text, "0.2561 – 0.2597 in");
   assert.equal(stat(run("mow", { thread: "M10x1.5" }, "mm"), "6g measurement limits").text.split(" ")[0], "10.162");
+  assert.equal(stat(run("mow", { thread: "M10x1.5" }), "6g PD limits").text, "0.3489 – 0.354 in");
 });
 
 // ASME B1.1: 1/4-20 2A PD 0.2127–0.2164. A slipped decimal can't give a confident answer; an out-of-class part gets a verdict.

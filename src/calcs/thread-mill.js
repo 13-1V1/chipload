@@ -50,13 +50,15 @@ export default register({
     const m = machineFor(c, "mill");
     const fit = fitToMachine(m, v.rpm, perRevIn, c);
     const rpm = fit.rpm;
+    // A centerline feed per rev bigger than the machine's whole max feed leaves no spindle speed: say so, don't show 0 RPM.
+    if (fit.cantRun) throw new Error(fit.problem);
     const slowed = fit.rpmCapped || fit.feedCapped;
     const surface = rpm * v.flutes * chipIn;
     const centerline = fit.feedIpm;
     // Tool-center path at full thread depth: internal the edge reaches the major (D − d); external it reaches
     // the external minor (d3 = D − 1.2269 P, ASME B1.1 / ISO 68-1), so the path is d3 + d. D + d only touches the OD.
     const pathDia = internal ? majorIn - cutterIn : basicThreadGeometry(majorIn, t.pitchIn).externalMinor + cutterIn;
-    const warnings = [...fit.warnings, ...spindleSanity(v.rpm, m, "mill", c)];
+    const warnings = [...(t.caution ? [t.caution] : []), ...fit.warnings, ...spindleSanity(v.rpm, m, "mill", c)];
     if (internal && cutterIn > majorIn * 0.75 * (1 + 1e-9)) warnings.push("Thread mill is over 75% of the hole size — expect deflection and a poor form. Use a smaller cutter.");
     const F = (ipm) => `${fmt(fromIn(ipm, c.units), 2)} ${c.L.feed}`;
     const N = (x) => fmt(fromIn(x, c.units), p);

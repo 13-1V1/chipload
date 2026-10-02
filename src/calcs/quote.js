@@ -54,7 +54,7 @@ export default register({
         { label: "Break-even at qty 1 (cost, no markup)", text: money(costOne) },
         { label: "Price at qty 1 (with markup)", text: money(costOne * (1 + v.markup / 100)) },
       ],
-      source: "advanced",
+      source: "quote",
       explain: [
         { title: "Price", formula: "cost = (run + setup) ÷ 60 × rate + (material + tooling + outside) × qty;  price = cost × (1 + markup on cost)", plugged: `run ${fmt(runMin, 0)} min + setup ${fmt(v.setup, 0)} min at ${money(v.rate)}/hr = ${money(labor)}; direct ${money(direct)}; cost ${money(cost)} × ${fmt(1 + v.markup / 100, 3)} = ${money(price)}` },
       ],

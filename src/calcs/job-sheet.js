@@ -12,7 +12,7 @@ import { TOOL_LABELS } from "../data/materials.js";
 import { drillFeedPerRev } from "./feeds-drill.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
-import { drillFeedFactor, millAdvice, drillAdvice } from "./_advice.js";
+import { drillFeedFactor, millAdvice, drillAdvice, latheFeedIpr, LATHE_ROUGH_IPR } from "./_advice.js";
 import { machineFor, fitToMachine, spindleSanity, maxRpmOf, maxFeedIpmOf } from "./_machine.js";
 import { money } from "./_money.js";
 
@@ -22,15 +22,15 @@ const isLathe = (r) => r.op === "lathe";
 // Optional fields stay out of the way until they hold a value or the user taps "add …" for them.
 const want = (r, id) => String(r[id] ?? "").trim() !== "" || String(r.shown || "").split(",").includes(id);
 // The sheet's lathe line is a stock-removal plan, so it takes the roughing feed Speeds & feeds — lathe uses
-// (0.012 in/rev; Machinery's Handbook bases its turning speed tables on 0.012 in/rev at 0.125 in depth).
-export const LATHE_ROUGH_IPR = 0.012;
+// (latheFeedIpr in _advice.js: 0.012 in/rev, or the hard-turning feed at 45 HRC and up). Re-exported for tests.
+export { LATHE_ROUGH_IPR };
 
 /** Library feed in inches: chip load per tooth before thinning (mill), or feed per rev (drill, lathe). */
 function libraryFeedIn(r, dIn) {
   const sp = materialSpeeds(r.material, r.toolType);
   if (isMill(r)) return sp.chipIn * chipLoadScale(dIn);
-  if (isDrill(r)) return drillFeedPerRev(dIn) * drillFeedFactor(sp.material.rating);
-  return LATHE_ROUGH_IPR;
+  if (isDrill(r)) return drillFeedPerRev(dIn) * drillFeedFactor(sp.material);
+  return latheFeedIpr(r.material, "rough");
 }
 
 /** The Machine stat: the profile in play and its limits in words, or why none applies. */
@@ -81,7 +81,7 @@ export default register({
     const wocIn = Number.isFinite(v.woc) ? toIn(v.woc, c.units) : NaN, docIn = Number.isFinite(v.doc) ? toIn(v.doc, c.units) : NaN;
     const sp = materialSpeeds(v.material, v.toolType);
     const lathe = v.op === "lathe", drill = v.op === "drill", mill = v.op === "mill";
-    const baseSfm = Number.isFinite(v.sfm) ? toSfm(v.sfm, c.units) : (drill ? sp.drillSfm : lathe ? sp.sfm * 1.2 : sp.sfm);
+    const baseSfm = Number.isFinite(v.sfm) ? toSfm(v.sfm, c.units) : (drill ? sp.drillSfm : lathe ? sp.turnSfm : sp.sfm);
     const requestedRpm = rpmFromSfm(baseSfm, dIn);
     if (mill && wocIn > dIn * 1.0001) throw new Error("Width of cut can't be more than the tool diameter");
 
@@ -99,6 +99,7 @@ export default register({
     const work = mill ? "mill" : lathe ? "lathe" : "any";
     const m = machineFor(c, work);
     const fit = fitToMachine(m, requestedRpm, iprIn, c);
+    if (fit.cantRun) throw new Error(fit.problem);
     const rpm = fit.rpm, feedOut = fit.feedIpm;
     const spindleCapped = fit.rpmCapped || fit.feedCapped;
     const fp = c.units === "in" ? 4 : 3;
@@ -115,10 +116,10 @@ export default register({
     const next = [];
     // The too-fast-spindle check is spindleSanity's, the same for every op (millAdvice gets no RPM for it).
     const warnings = [...spindleSanity(requestedRpm, m, work, c), ...fit.warnings];
-    if (mill) warnings.push(...millAdvice({ dIn, wocIn, docIn, requestedRpm: NaN, machine: m }));
+    if (mill) warnings.push(...millAdvice({ dIn, wocIn, docIn, requestedRpm: NaN, machine: m, c }));
     if (drill) warnings.push(...drillAdvice({ dIn, depthIn: Number.isFinite(v.depth) ? toIn(v.depth, c.units) : NaN }));
     if (mill && !v.chipAuto && chipIn > Math.max(sp.chipIn * chipLoadScale(dIn) * 3, dIn * 0.02)) warnings.push(`${fmt(fromIn(chipIn, c.units), fp)} ${c.L.length} per tooth is a very heavy chip for this tool. Expect it to break.`);
-    const caution = toolCaution(v.material, v.toolType);
+    const caution = toolCaution(v.material, v.toolType, c.units);
     if (caution) warnings.push(caution);
 
     // ── what the cut adds ──

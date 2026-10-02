@@ -16,6 +16,8 @@ import { UNIT_LABEL } from "../../src/app/settings.js";
 import { drillFeedPerRev } from "../../src/calcs/feeds-drill.js";
 import { reamAllowanceOnDia } from "../../src/calcs/ream.js";
 import { NPT_TABLE } from "../../src/data/npt.js";
+import { toolFeedsParams } from "../../src/app/shop-forms.js";
+import { materialSpeeds } from "../../src/data/materials-library.js";
 
 const ctx = (units = "in", machine = null) => ({ units, L: UNIT_LABEL[units], settings: { units, pro: true }, machine, fmt });
 const run = (id, over = {}, units = "in", machine = null) => {
@@ -106,6 +108,10 @@ test("drill working reads in metric on a metric screen", () => {
   assert.match(text, /mm\/min/);
   assert.match(text, /π × 6\)/);
   assert.doesNotMatch(text, /IPM|IPR|SFM/);
+  // the hard-material caution follows the screen's units too (toolCaution gets c.units)
+  const hard = run("feeds-drill", { material: "tHard55", toolType: "carbide" }, "mm").warnings.join(" ");
+  assert.match(hard, /m\/min/);
+  assert.doesNotMatch(hard, /IPM|IPR|SFM/);
 });
 
 // The spindle line's own arithmetic has to land on the RPM it prints, even on tiny drills where
@@ -119,16 +125,58 @@ test("metric drill spindle line adds up to the RPM it shows", () => {
 });
 
 // Same rule for the "Feed rate" line: RPM × feed per rev, as printed, has to land on the feed it shows
-// (to the 0.1 it is printed to), down to the micro sizes where 2 significant figures were ~3% off.
+// (to the 0.1 it is printed to), down to the micro sizes where 2 significant figures were ~3% off, and up to the
+// big metric drills where a whole-number RPM times 0.2–0.34 mm/rev was 0.1–0.2 mm/min off (25 mm, 60 mm).
 test("drill feed line adds up to the feed it shows, micro drills included", () => {
-  for (const [d, u] of [["0.02", "in"], ["0.0135", "in"], ["0.25", "in"], ["0.3", "mm"], ["0.5", "mm"], ["6", "mm"]]) {
+  const cases = [["0.02", "in"], ["0.0135", "in"], ["0.25", "in"], ["1.5", "in"], ["0.3", "mm"], ["0.5", "mm"], ["6", "mm"], ["20", "mm"], ["25", "mm"], ["32", "mm"], ["60", "mm"]];
+  for (const [d, u] of cases) {
     const out = run("feeds-drill", { diameter: d }, u);
     const line = out.explain.find((e) => e.title === "Feed rate").plugged;
-    const [, rpm, rev, shown] = line.match(/= ([\d,]+) × ([\d.]+) = ([\d.]+)/);
+    const [, rpm, rev, shown] = line.match(/= ([\d.]+) × ([\d.]+) = ([\d.]+)/);
     assert.equal(Number(shown), Number(fmt(out.primary.value, 1)), `${d} ${u}: line shows the answer`);
-    // rev is printed to within 0.005 of the feed; the whole-number RPM adds up to half a rev's worth.
-    near(Number(rpm.replace(/,/g, "")) * Number(rev), out.primary.value, 0.005 + Number(rev) / 2 + 1e-9, `${d} ${u}: ${line}`);
+    // RPM × feed per rev, as printed, lands on the exact feed within 0.0125 and on the printed feed within 0.05.
+    const product = Number(rpm) * Number(rev);
+    near(product, out.primary.value, 0.0125 + 1e-9, `${d} ${u}: ${line}`);
+    assert.ok(Math.abs(product - Number(shown)) < 0.05, `${d} ${u}: ${line} works out to ${product}`);
   }
+  // Inch feeds keep a whole-number RPM in the line (0.5 in drill: 611 × 0.00623).
+  assert.match(run("feeds-drill", { diameter: "0.5" }).explain.find((e) => e.title === "Feed rate").plugged, /^= \d+ × /);
+});
+
+// The library's coated drill speed is its own number: 1.25 × the carbide one for every material without a
+// published carbide drill speed (1018: 80 / 320 / 400 SFM for HSS / carbide / coated), the same as hardened
+// steel's one carbide drill speed (tHard55). So the drill tool offers coated, and a drill saved in Shop as coated
+// opens as coated, at the coated drill speed, with no note and no "uncoated carbide" caution.
+test("a coated drill from Shop opens as coated at the coated drill speed", () => {
+  const def = getCalc("feeds-drill");
+  assert.deepEqual(def.inputs.find((i) => i.id === "toolType").options.map((o) => o.value), ["hss", "carbide", "coated"]);
+  const { params, note } = toolFeedsParams({ kind: "drill", diameter: 0.5, flutes: 2, toolType: "coated", units: "in" }, def);
+  assert.equal(params.toolType, "coated");
+  assert.equal(note, null);
+  const rpmAt = (sfm) => sfm * 12 / (Math.PI * 0.5);
+  const opened = run("feeds-drill", { diameter: params.diameter, toolType: params.toolType, material: "s1018" });
+  near(stat(opened, /^Spindle/).value, rpmAt(materialSpeeds("s1018", "coated").drillSfm), 1e-6);
+  // Each choice runs at its own library drill speed: coated faster than carbide, carbide faster than HSS.
+  const spin = (toolType, material = "s1018") => stat(run("feeds-drill", { diameter: "0.5", toolType, material }), /^Spindle/).value;
+  for (const material of ["s1018", "al6061"]) {
+    const [hss, carbide, coated] = ["hss", "carbide", "coated"].map((t) => spin(t, material));
+    near(coated, rpmAt(materialSpeeds(material, "coated").drillSfm), 1e-6);
+    near(carbide, rpmAt(materialSpeeds(material, "carbide").drillSfm), 1e-6);
+    assert.ok(coated > carbide && carbide > hss, `${material}: ${hss} / ${carbide} / ${coated}`);
+  }
+  // Hardened steel: the coated drill gets the hard-material advice but not the "uncoated carbide" lead.
+  const hardCoated = run("feeds-drill", { material: "tHard55", toolType: "coated" }).warnings.join(" ");
+  assert.match(hardCoated, /hardened steel/);
+  assert.doesNotMatch(hardCoated, /Uncoated carbide/);
+  assert.match(run("feeds-drill", { material: "tHard55", toolType: "carbide" }).warnings.join(" "), /Uncoated carbide/);
+});
+
+// A feed per rev bigger than the machine's whole max feed has no spindle speed to give: the tool says so instead
+// of showing 0 RPM (Bridgeport 30 IPM at 40 IPR, the fuzzer's case).
+test("drill feed refuses a feed per rev the machine can't move at any speed", () => {
+  const bridgeport = { name: "Bridgeport", maxRpm: 2720, maxFeed: 30, units: "in" };
+  assert.throws(() => run("feeds-drill", { ipr: "40" }, "in", bridgeport), /Bridgeport max feed is 30 IPM, less than one turn at 40 IPR/);
+  assert.equal(stat(run("feeds-drill", {}, "in", bridgeport), /Spindle/).value > 0, true);
 });
 
 // ── Tapping ──────────────────────────────────────────────────────────────────
@@ -171,6 +219,8 @@ test("thread mill: metric defaults open clean, a cutter bigger than the hole is 
   const out = run("thread-mill", { thread: "M6", cutter: "0.18", rpm: "10000" }, "in", { name: "Tormach", maxRpm: 5140, maxFeed: 110, units: "in", type: "mill" });
   assert.equal(stat(out, /Spindle/).value, 5140);
   assert.ok(out.warnings.some((w) => /5140 RPM/.test(w)));
+  // A centerline feed per rev bigger than the machine's whole max feed (the 1 RPM / 1 IPM profile) has no speed: refused, not 0 RPM.
+  assert.throws(() => run("thread-mill", { side: "external", chip: "1.5" }, "in", { name: "Tiny", maxRpm: 1, maxFeed: 1, units: "in", type: "mill" }), /Tiny max feed is 1 IPM, less than one turn/);
 });
 
 // ── Tap drill ────────────────────────────────────────────────────────────────
@@ -198,6 +248,77 @@ test("tap drill names no metric drill past the metric chart, and mm drills don't
   assert.equal(m10.primary.unit, undefined);
   assert.equal(stat(m10, /One size smaller/).text, "8.4 mm");
   assert.equal(stat(run("tap-drill", { thread: "1/4-20" }), /One size smaller/).text, "#8 · 0.199 in");
+});
+
+// Tap drill and STI have no inch/mm switch (units: false): the app hands them "in" and the unit setting separately.
+// ASME B94.11M: #7 = 0.2010 in = 5.105 mm; 17/64 = 0.2656 in = 6.747 mm (the 1/4-20 STI drill, ASME B18.29.1).
+const runApp = (id, over, setting) => {
+  const def = getCalc(id);
+  const c = { units: "in", L: UNIT_LABEL.in, settings: { units: setting, pro: true }, machine: null, fmt };
+  return def.compute(buildValues(def, defaultRaw(def, over, "in"), c).values, c);
+};
+test("tap drill and STI read in mm when the app is set to mm, inch threads included", () => {
+  const tap = runApp("tap-drill", { thread: "1/4-20" }, "mm");
+  assert.equal(tap.primary.text, "#7");
+  assert.equal(tap.primary.unit, "(5.105 mm)");
+  assert.equal(stat(tap, /One size smaller/).text, "#8 · 5.055 mm"); // #8 = 0.1990 in
+  assert.match(stat(tap, /Calculated diameter/).text, /^5\.113 mm/);
+  assert.match(tap.explain[0].plugged, /= 6\.35 − \(75 ÷ 76\.98\) × 1\.27 = 5\.113 mm/);
+  assert.equal(run("tap-drill", { thread: "1/4-20" }, "mm").primary.unit, "(5.105 mm)");
+  assert.equal(runApp("tap-drill", { thread: "1/4-20" }, "in").primary.unit, "(0.201 in)");
+  assert.match(runApp("tap-drill", { thread: "4-4" }, "mm").primary.text, /^Bore to 95\.41 mm/);
+  const sti = runApp("sti", { thread: "1/4-20" }, "mm");
+  assert.equal(sti.primary.unit, "(6.747 mm)");
+  assert.equal(stat(sti, /Chart value/).unit, "mm");
+  assert.match(stat(sti, /Insert lengths/).text, /^1D = 6\.35 mm/);
+  assert.equal(runApp("sti", { thread: "1/4-20" }, "in").primary.unit, "(0.2656 in)");
+  for (const out of [tap, sti]) assert.doesNotMatch([out.primary.unit, ...out.stats.flatMap((s) => [s.text, s.unit]), ...out.explain.map((e) => e.plugged)].filter(Boolean).join(" | "), /\d in\b|\(\d[\d.]* in\)/);
+});
+
+// The UN chart drill comes from the Machinery's Handbook / ASME B1.1 tap drill chart; B94.11M only sizes the drills.
+test("tap drill names the chart it read", () => {
+  assert.equal(stat(run("tap-drill", { thread: "1/4-20" }), /^From$/).text, "Machinery's Handbook / ASME B1.1 tap drill chart");
+  assert.equal(stat(run("tap-drill", { thread: "M10" }), /^From$/).text, "ISO 2306 tap drill chart");
+});
+
+// M0.2x0.05 at 75%: 0.2 − (75 ÷ 76.98) × 0.05 = 0.151 mm, under the 0.2 mm smallest ISO 235 drill (which would
+// leave 0% thread). No drill to name, no "consider a smaller drill": the hole size for a micro drill.
+test("tap drill under the smallest drill names none and gives the micro-drill size", () => {
+  const out = run("tap-drill", { thread: "M0.2x0.05" }, "mm");
+  assert.equal(out.primary.text, "0.151 mm");
+  assert.match(out.primary.label, /Micro drill/);
+  assert.equal(stat(out, /Smallest drill on the chart/).text, "0.2 mm");
+  const w = out.warnings.join(" ");
+  assert.match(w, /micro drill near 0\.151 mm/);
+  assert.doesNotMatch(w, /Consider a smaller drill/);
+  // The smallest real threads still get a chart drill: M1x0.25 → 0.75 mm (ISO 2306), #0-80 → 3/64" (Machinery's Handbook).
+  assert.equal(run("tap-drill", { thread: "M1x0.25" }).primary.text, "0.75 mm");
+  assert.equal(run("tap-drill", { thread: "0-80" }).primary.text, '3/64"');
+});
+
+// ASME B1.1 Table 1 lists 2-4.5 UNC; Machinery's Handbook's tap drill for it is 1-25/32".
+test("tap drill finds the half-thread UNC rows on the chart", () => {
+  const out = run("tap-drill", { thread: "2-4.5" });
+  assert.equal(out.primary.text, '1-25/32"');
+  assert.match(stat(out, /^From$/).text, /tap drill chart/);
+  assert.equal(run("tap-drill", { thread: "2-1/4-4.5" }).primary.text, '2-1/32"');
+});
+
+// The tap drill chart: 4-4 UNC (75% hole 3.756 in) and M64 fine (past 60 mm, the end of ISO 235) say bore; sizes
+// read in the screen's unit.
+test("tap drill chart lists every thread, bores the ones past the drill chart, and reads in mm on a mm screen", () => {
+  const def = getCalc("tap-drill-chart");
+  const rows = def.rows({ units: "in" });
+  const row = (name) => rows.find((r) => r.thread === name);
+  assert.match(row("4-4 UNC").drill, /^Bore to 3\.756\d in$/);
+  assert.match(row("M64x2 (fine)").drill, /^Bore to 62\.05 mm$/);
+  assert.equal(row("2-4.5 UNC").drill, '1-25/32"');
+  near(row("1/4-20 UNC").dec, 0.201, 1e-9);
+  const mmRows = def.rows({ units: "mm" });
+  near(mmRows.find((r) => r.thread === "1/4-20 UNC").dec, 5.1054, 1e-9);
+  assert.match(mmRows.find((r) => r.thread === "4-4 UNC").drill, /^Bore to 95\.41 mm$/);
+  assert.equal(def.columns({ units: "mm" })[2].label, "mm");
+  assert.equal(def.columns({ units: "in" })[2].label, "Decimal");
 });
 
 // ── Ream ─────────────────────────────────────────────────────────────────────

@@ -296,6 +296,22 @@ test("a limit in a message is never rounded to 0 and carries its unit", () => {
   assert.equal(invalidReason(spindle, 0, "0", {}, "in"), "Spindle can't be less than 1 RPM");
 });
 
+test("a unit that follows the system (a function of it) still reaches the limit message", () => {
+  // Surface finish Target Ra: µin in inch mode, µm in mm (ASME B46.1 / ISO 4287 Ra units)
+  const ra = getCalc("surface-finish").inputs.find((i) => i.id === "ra");
+  assert.equal(invalidReason(ra, 0.0005, "0.0005", { mode: "feed" }, "in"), "Target Ra can't be less than 0.001 µin");
+  assert.equal(invalidReason(ra, 0.0005, "0.0005", { mode: "feed" }, "mm"), "Target Ra can't be less than 0.001 µm");
+  // Material weight price: $/lb in inch mode, $/kg in mm
+  const price = getCalc("material-weight").inputs.find((i) => i.id === "price");
+  assert.equal(invalidReason(price, -1, "-1", {}, "in"), "Material price can't be less than 0 $/lb");
+  assert.equal(invalidReason(price, -1, "-1", {}, "mm"), "Material price can't be less than 0 $/kg");
+  // and through buildValues: the system it checked in is the one the message quotes
+  const def = getCalc("surface-finish");
+  const built = buildValues(def, defaultRaw(def, { mode: "feed", ra: "0.0001" }, "mm"), ctxFor("mm"));
+  assert.ok(built.invalid.has("ra"));
+  assert.match(invalidReason(ra, built.values.ra, "0.0001", built.raw), / µm$/);
+});
+
 // Letter drill Q = 0.332 in (ASME B94.11M; Machinery's Handbook letter-drill table). 8.5 mm = 0.33465 in → 21/64 (−0.0065).
 test("fraction converter: a size typed with its unit opens on that unit", () => {
   const fc = getCalc("fraction-converter");

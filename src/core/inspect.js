@@ -11,15 +11,16 @@ import { IT_STEPS, IT_TABLE, DEVIATION_STEPS, SHAFT_DEVIATION } from "../data/is
  * pin: MMC − actual). It only exists inside the size limits, so it tops out at the size tolerance |LMC − MMC|.
  * A feature past either size limit is out of size (sizeOk false) and fails whatever its position.
  * Leave lmc out and the bonus is not capped — the caller must then know the size is within its limits.
- * Limits are compared to a millionth of the unit in use (0.000001 in or mm), far below what any gauge reads, so a
- * part exactly on the line stays on it after a unit switch rewrites its inputs to a finite number of decimals.
+ * Limits are compared with a band of `eps` (in the caller's unit), far below what any gauge reads, so a part exactly
+ * on the line stays on it after a unit switch rewrites its inputs to a finite number of decimals. The band must be
+ * the same physical size in both systems or a part just past the line flips verdict on a switch: pass 0.000001 in
+ * work in inches, 0.0000254 for mm (the default, 1e-6, is the inch band).
  */
-export function truePosition({ dx, dy, tolerance, mmc = null, lmc = null, actualSize = null, internal = true }) {
+export function truePosition({ dx, dy, tolerance, mmc = null, lmc = null, actualSize = null, internal = true, eps = 1e-6 }) {
   const radial = Math.hypot(dx, dy);
   const deviation = 2 * radial;
   let bonus = 0;
   let sizeOk = true;
-  const eps = 1e-6;
   if (Number.isFinite(mmc) && Number.isFinite(actualSize)) {
     const fromMmc = internal ? actualSize - mmc : mmc - actualSize; // + toward LMC
     if (fromMmc < -eps) sizeOk = false;

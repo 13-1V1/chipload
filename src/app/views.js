@@ -153,6 +153,11 @@ export function renderPro(root) {
     // Only Play knows the price in this country and currency: show none until it answers.
     const price = b.price ? ` — ${esc(b.price)}` : "";
     const noStore = b.error === "no-store";
+    // What stands between this user and Pro right now, in the order it matters.
+    const hint = noStore ? "Pro is sold through Google Play. Install Chipload from the Play Store to unlock."
+      : !s.pro && b.pending ? "Payment pending — Pro unlocks as soon as Google Play confirms it."
+      : !s.pro && !b.ready ? "Can't reach Google Play right now — check your connection. The price and Unlock work as soon as Play answers."
+      : "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back.";
     root.innerHTML = `
     <div class="about">
       <p style="font-size:1.125rem;color:var(--text)"><b>Every tool, one price, forever.</b> No subscription. No ads. Works offline.</p>
@@ -164,7 +169,7 @@ export function renderPro(root) {
       : `<button type="button" class="btn primary block" id="buy">Unlock Pro${price}</button>
          <div style="height:10px"></div>
          <button type="button" class="btn block" id="restore">Restore purchase</button>`}
-    <p class="hint" style="margin-top:14px">${noStore ? "Pro is sold through Google Play. Install Chipload from the Play Store to unlock." : "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back."}</p>
+    <p class="hint" id="proHint" style="margin-top:14px">${hint}</p>
     ${isTestBuild() && !s.pro ? `<div class="help"><div><b>Test build.</b> Buying needs the Play Store version. To try the Pro tools now, turn Pro on here. Turn it off again in Settings → Test build.</div><div class="row"><button type="button" class="btn small primary" id="testPro">Turn on Pro for testing</button></div></div>` : ""}`;
     root.querySelector("#buy")?.addEventListener("click", () => window.chiploadBilling?.buy?.());
     root.querySelector("#restore")?.addEventListener("click", () => window.chiploadBilling?.restore?.());
@@ -179,7 +184,7 @@ export function renderPro(root) {
 
 export function renderStatic(root, kind) {
   if (kind === "privacy") {
-    root.innerHTML = `<div class="about"><h3>Privacy</h3><p>Chipload does not collect, store, or share any personal data. Everything you enter stays on your device. There are no accounts, no analytics, and no network requests except the one Google Play makes to confirm a purchase.</p><p>If Android backup is turned on for your Google account, Android keeps a private copy of the app's data (your machines, tools, and saved jobs) with your other phone backups, so they come back on a new phone. Chipload never sees it.</p></div>`;
+    root.innerHTML = `<div class="about"><h3>Privacy</h3><p>Chipload does not collect, store, or share any personal data. Everything you enter stays on your device. There are no accounts, no analytics, and no network requests except Google Play's own for the Pro unlock. Chipload only learns whether your Google account owns Pro, and keeps that answer on the phone so Pro works offline. When the app starts and Google Play can be reached, it asks again, so a refunded purchase turns Pro back off. Chipload never sees your payment details.</p><p>If Android backup is turned on for your Google account, Android keeps a private copy of the app's data (your machines, tools, and saved jobs) with your other phone backups, so they come back on a new phone. Chipload never sees it.</p></div>`;
     return;
   }
   root.innerHTML = `<div class="about"><h3>Chipload</h3><p>MIT License. Copyright © 2026 Brennan Meyer.</p><h3>Marcos's Calculator</h3><p>MIT License. Copyright © ianarsenault-tn. Chipload started as a fork of this project.</p><h3>IBM Plex Sans &amp; IBM Plex Mono</h3><p>Copyright © 2017 IBM Corp. Licensed under the SIL Open Font License 1.1.</p><pre class="lic" id="ofl">Loading…</pre></div>`;

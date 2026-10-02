@@ -255,3 +255,54 @@ test("circle-interp: a tool-center feed over the machine max is capped with a sp
   assert.equal(ok.primary.clamped, false);
   near(ok.primary.value, 20, 1e-9);
 });
+
+// ── machine fit and units (round 2) ──
+
+// 3/8 in, 1000 SFM wants 10186 RPM; 0.004 in/tooth thinned at 0.05 in WOC (×1.471) is 0.0235 in/rev on
+// 4 flutes, 64 IPM at 2720 RPM, so the spindle drops to floor(30 ÷ 0.02353) = 1274 RPM.
+test("feeds-mill on a Bridgeport, both caps hit: the warnings don't contradict each other", () => {
+  const out = run("feeds-mill", { diameter: "0.375", sfm: "1000", chip: "0.004", woc: "0.05" }, "in", bridgeport);
+  const text = out.warnings.join(" | ");
+  assert.match(text, /Bridgeport tops out at 2720 RPM\. Wanted 10186\./);
+  assert.match(text, /drops to 1274 RPM/);
+  assert.doesNotMatch(text, /figured at 2720 RPM/);
+  assert.equal(stat(out, /^Spindle/).value, 1274);
+});
+
+test("feeds-mill: a cut no whole RPM can feed says so instead of 0 RPM", () => {
+  const tiny = { name: "Tiny", type: "mill", maxRpm: 1, maxFeed: 1, units: "in" };
+  const { def, c, values } = build("feeds-mill", { chip: "0.5" }, "in", tiny);
+  assert.throws(() => def.compute(values, c), /Tiny max feed is 1 IPM, less than one turn at 2 IPR\. Check the feed per rev, or the max feed in Shop\./);
+  const mm = build("feeds-mill", { chip: "12.7" }, "mm", tiny);
+  assert.throws(() => mm.def.compute(mm.values, mm.c), /Tiny max feed is 25\.4 mm\/min, less than one turn at 50\.8 mm\/rev/);
+});
+
+test("feeds-mill: the hard-material caution reads in the units on screen only", () => {
+  const inch = run("feeds-mill", { material: "tHard55", toolType: "carbide" }, "in").warnings.join(" ");
+  const mm = run("feeds-mill", { material: "tHard55", toolType: "carbide" }, "mm").warnings.join(" ");
+  assert.match(inch, /SFM/);
+  assert.doesNotMatch(inch, /m\/min|mm\/rev/);
+  assert.match(mm, /m\/min/);
+  assert.doesNotMatch(mm, /\bSFM\b|\bIPR\b/);
+});
+
+// The full-slot line is at 95% of the tool: 9.5 mm on a 10 mm tool sits on it in mm, the same as 0.35625 in
+// on a 3/8 in tool; the inch ⇄ mm round trip must not drop it on one side.
+test("feeds-mill: the full-slot warning lands the same at the line in inch and mm", () => {
+  const slot = /Full-width slot/;
+  // 26.25 / 24.9375 mm and the others: (24.9375 ÷ 25.4) < (26.25 ÷ 25.4) × 0.95 by float noise alone
+  for (const d of [2, 10, 12, 26.25, 35.75, 38.75, 40.25]) {
+    const out = run("feeds-mill", { diameter: String(d), woc: String(+(d * 0.95).toFixed(6)) }, "mm");
+    assert.ok(out.warnings.some((w) => slot.test(w)), `${d} mm tool at 95% WOC`);
+  }
+  assert.ok(run("feeds-mill", { diameter: "0.375", woc: "0.35625" }, "in").warnings.some((w) => slot.test(w)));
+  assert.ok(!run("feeds-mill", { diameter: "10", woc: "9.4" }, "mm").warnings.some((w) => slot.test(w)));
+});
+
+test("circle-interp: the tool-center feed is held to the machine's max feed in mm too", () => {
+  // 1000 mm/min edge feed, 25 mm boss, 12 mm tool outside: 1000 × 37 ÷ 25 = 1480 mm/min; a 30 IPM (762 mm/min) mill caps it
+  const out = run("circle-interp", { side: "external" }, "mm", bridgeport);
+  assert.equal(out.primary.clamped, true);
+  near(out.primary.value, 762, 1e-9);
+  assert.match(out.warnings[0], /Bridgeport max feed is 762 mm\/min; this circle needs 1480 mm\/min/);
+});

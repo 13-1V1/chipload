@@ -71,6 +71,11 @@ test("tool caution: HSS on stock about as hard as the cutter", () => {
   assert.match(toolCaution("tHard45", "hss") || "", /HSS barely cuts/);
   assert.match(toolCaution("tHard55", "coated") || "", /light cuts/);
   assert.match(toolCaution("tHard55", "carbide") || "", /Uncoated carbide/);
+  // Mill, drill, lathe and job-sheet screens all show it: the lead names a coated tool for each, not only a mill cutter.
+  const lead = toolCaution("tHard55", "carbide", "in");
+  assert.match(lead, /^Uncoated carbide wears out fast this hard; use coated \(AlTiN\) carbide: a hard-milling end mill, a coated insert, or a carbide drill made for hardened steel\. /);
+  assert.doesNotMatch(lead, /hard-milling cutter/);
+  assert.match(toolCaution("tHard55", "hss"), /end mill, a coated insert, or a carbide drill/);
   assert.equal(toolCaution("s1018", "hss"), null);
   assert.equal(toolCaution("al6061", "coated"), null);
   assert.equal(toolCaution("tHard45", "carbide"), null);

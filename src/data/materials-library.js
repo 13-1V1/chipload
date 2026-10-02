@@ -23,7 +23,7 @@ const B1112_GROUPS = ["Carbon steel", "Alloy steel", "Tool steel", "Stainless", 
 /** What a material's rating is measured against, in words for the Reference table. */
 export function ratingScale(group) {
   if (B1112_GROUPS.includes(group)) return "vs. B1112 steel = 100%";
-  if (group === "Copper alloys") return "copper scale: C360 brass = 100";
+  if (group === "Copper alloys") return "vs. C360 brass = 100 (copper scale)";
   return "ranked within its own family only";
 }
 
@@ -276,7 +276,8 @@ export function toolCaution(id, toolType = "carbide", units) {
     return null;
   }
   if (m.hrc >= 55) {
-    const lead = toolType === "coated" ? "" : "Uncoated carbide wears out fast this hard; use a coated (AlTiN) hard-milling cutter. ";
+    // Every speeds & feeds screen (mill, drill, lathe, job sheet) shows this, so the lead names the coated tool for each.
+    const lead = toolType === "coated" ? "" : "Uncoated carbide wears out fast this hard; use coated (AlTiN) carbide: a hard-milling end mill, a coated insert, or a carbide drill made for hardened steel. ";
     // Turning at these speeds: coated carbide hard turning runs up to about 50 m/min (Tungaloy "Hard
     // Turning", AH8000 grades) at 0.05–0.15 mm/rev. Stated here because a lathe screen that still scales
     // the milling SFM would show far more.
@@ -292,7 +293,7 @@ export function toolCaution(id, toolType = "carbide", units) {
 const both = (units, inch, mm) => (units === "in" ? inch : units === "mm" ? mm : `${inch} (${mm})`);
 
 const NO_HSS = Object.freeze({
-  tHard55: "at 55–60 HRC the part is nearly as hard as the cutter. Use coated carbide (a hard-milling end mill) or CBN.",
+  tHard55: "at 55–60 HRC the part is nearly as hard as the cutter. Use coated carbide (a hard-milling end mill, a coated insert, or a carbide drill made for hardened steel) or CBN.",
   ciWhite: "white / chilled iron is about as hard as the cutter. Use carbide, ceramic or CBN, or grind it.",
   niStellite: "Stellite wears HSS out in a few inches. Use carbide.",
   pG10: "the glass fiber dulls HSS almost at once. Use carbide.",

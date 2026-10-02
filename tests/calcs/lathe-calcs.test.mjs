@@ -16,7 +16,7 @@ import { getCalc } from "../../src/app/registry.js";
 import { buildValues, defaultRaw, convertInput } from "../../src/app/values.js";
 import { UNIT_LABEL } from "../../src/app/settings.js";
 import { fmt } from "../../src/core/format.js";
-import { toolCaution } from "../../src/data/materials-library.js";
+import { toolCaution, materialSpeeds } from "../../src/data/materials-library.js";
 import { meetsCallout } from "../../src/calcs/surface-finish.js";
 import { near } from "../helpers.mjs";
 
@@ -137,8 +137,11 @@ test("lathe feeds: no machine and a speed beyond any lathe — warn, and never h
 test("lathe feeds: a tool caution for the material reaches the warnings", () => {
   for (const material of ["s1018", "tHard55", "ti64", "ni718", "al6061"]) {
     for (const toolType of ["hss", "carbide", "coated"]) {
-      const caution = toolCaution(material, toolType);
-      if (caution) assert.ok(run("lathe-feeds", { material, toolType }).warnings.includes(caution), `${material} ${toolType}`);
+      for (const units of ["in", "mm"]) {
+        // the caution is written in the units on screen only
+        const caution = toolCaution(material, toolType, units);
+        if (caution) assert.ok(run("lathe-feeds", { material, toolType }, units).warnings.includes(caution), `${material} ${toolType} ${units}`);
+      }
     }
   }
 });
@@ -221,4 +224,83 @@ test("on a metric screen every lathe number is metric", () => {
     const shown = JSON.stringify({ ...out, code: (out.code || []).map((b) => b.title) });
     assert.doesNotMatch(shown, inchy, `${id} ${JSON.stringify(over)}: ${shown.match(inchy)?.[0]}`);
   }
+});
+
+// ── round 2: machine fit, G97 OD, turning defaults ──
+const lathe5 = { name: "Lathe 5", type: "lathe", maxRpm: 2000, maxFeed: 5, units: "in" };
+const throwsFor = (id, over, units, machine, re) => {
+  const def = getCalc(id), ctx = { units, L: UNIT_LABEL[units], settings: { units, pro: true }, machine, fmt };
+  const built = buildValues(def, defaultRaw(def, over, units), ctx);
+  assert.equal(built.invalid.size, 0);
+  assert.throws(() => def.compute(built.values, ctx), re);
+};
+
+test("lathe cycle: a feed per rev past the machine's whole max feed says so, never 0 RPM and Infinity time", () => {
+  const why = /Lathe 5 max feed is 5 IPM, less than one turn at 7 IPR\. Check the feed per rev, or the max feed in Shop\./;
+  for (const op of ["turn", "face", "groove", "cutoff"]) {
+    for (const speedMode of ["css", "rpm"]) throwsFor("lathe-cycle", { op, speedMode, ipr: "7" }, "in", lathe5, why);
+  }
+  throwsFor("lathe-cycle", { op: "face", ipr: "177.8" }, "mm", lathe5, /Lathe 5 max feed is 127 mm\/min, less than one turn at 177\.8 mm\/rev/);
+  // one turn's worth exactly still runs, at 1 RPM
+  const out = run("lathe-cycle", { op: "turn", speedMode: "rpm", ipr: "5" }, "in", lathe5);
+  assert.equal(stat(out, /Spindle used/).value, 1);
+});
+
+// At a typed G97 RPM the OD gives the surface speed the edge runs: SFM = π D N ÷ 12 (Machinery's Handbook).
+// 2 in at 800 RPM = π × 2 × 800 ÷ 12 = 418.9 SFM; 50 mm at 800 RPM = π × 50 × 800 ÷ 1000 = 125.7 m/min.
+test("lathe cycle: turning at a G97 RPM shows the surface speed at the OD, and the OD changes it", () => {
+  const inch = run("lathe-cycle", { op: "turn", speedMode: "rpm", rpm: "800", od: "2" });
+  near(stat(inch, /Surface speed at the OD/).value, Math.PI * 2 * 800 / 12, 1e-9);
+  assert.equal(stat(inch, /Surface speed at the OD/).unit, "SFM");
+  assert.match(inch.explain.map((e) => e.plugged).join(" "), /= 419 SFM/);
+  const big = run("lathe-cycle", { op: "turn", speedMode: "rpm", rpm: "800", od: "4" });
+  near(stat(big, /Surface speed at the OD/).value, 2 * stat(inch, /Surface speed at the OD/).value, 1e-9);
+  const mm = run("lathe-cycle", { op: "turn", speedMode: "rpm", rpm: "800", od: "50" }, "mm");
+  near(stat(mm, /Surface speed at the OD/).value, Math.PI * 50 * 800 / 1000, 1e-4); // fromSfm uses 3.28084 ft/m
+  assert.equal(stat(mm, /Surface speed at the OD/).unit, "m/min");
+  assert.match(mm.explain.map((e) => `${e.formula} ${e.plugged}`).join(" "), /m\/min = π × D × N ÷ 1000.*126 m\/min/);
+  // the spindle the machine actually runs: an 800 RPM ask on a 500 RPM lathe is figured at 500
+  const capped = run("lathe-cycle", { op: "turn", speedMode: "rpm", rpm: "800", od: "2" }, "in", { name: "Old", type: "lathe", maxRpm: 500, units: "in" });
+  near(stat(capped, /Surface speed at the OD/).value, Math.PI * 2 * 500 / 12, 1e-9);
+  // G96: the typed surface speed is the answer already, no extra line
+  assert.equal(stat(run("lathe-cycle", { op: "turn" }), /Surface speed at the OD/), undefined);
+});
+
+// Turning speed blank = the library turning speed (materialSpeeds().turnSfm). Hardened 55–60 HRC tool steel
+// with a coated insert: 165 SFM (Tungaloy hard turning, up to about 50 m/min), not the milling SFM × 1.2 (360).
+test("lathe feeds: blank surface speed is the library turning speed", () => {
+  for (const [material, toolType] of [["s1018", "coated"], ["al6061", "hss"], ["tHard55", "coated"], ["tHard55", "carbide"]]) {
+    const out = run("lathe-feeds", { material, toolType });
+    near(stat(out, /G96 S/).value, materialSpeeds(material, toolType).turnSfm, 1e-9, `${material} ${toolType}`);
+  }
+  near(stat(run("lathe-feeds", { material: "tHard55", toolType: "coated" }), /G96 S/).value, 165, 1e-9);
+});
+
+// Hard turning feeds: 0.05–0.15 mm/rev (Tungaloy "Hard Turning", AH8000 grades). At 45 HRC and up the blank
+// feed is 0.004 in/rev rough (0.10 mm/rev) and 0.002 in/rev finish (0.05 mm/rev); softer stock keeps 0.012 / 0.004.
+test("lathe feeds: hardened stock (45 HRC and up) gets the hard-turning feed per rev", () => {
+  const ipr = (over, units = "in") => {
+    const out = run("lathe-feeds", over, units);
+    return Number(out.explain[1].plugged.match(units === "in" ? /× ([\d.]+) IPR/ : /× ([\d.]+) mm\/rev/)[1]);
+  };
+  for (const material of ["tHard45", "tHard55", "ciWhite"]) {
+    near(ipr({ material, cut: "rough" }), 0.004, 1e-12, `${material} rough`);
+    near(ipr({ material, cut: "finish" }), 0.002, 1e-12, `${material} finish`);
+    const mm = ipr({ material, cut: "rough" }, "mm");
+    assert.ok(mm >= 0.05 && mm <= 0.15, `${material} ${mm} mm/rev is inside the published 0.05–0.15`);
+  }
+  near(ipr({ material: "s1018", cut: "rough" }), 0.012, 1e-12);
+  near(ipr({ material: "s1018", cut: "finish" }), 0.004, 1e-12);
+  near(ipr({ material: "ss174h", cut: "rough" }), 0.012, 1e-12, "44 HRC is under the line");
+});
+
+test("lathe feeds: the machine's max feed slows the spindle so the feed per rev holds", () => {
+  // 1 in 1018 at the coated turning speed wants far more than 5 IPM at 0.012 IPR: floor(5 ÷ 0.012) = 416 RPM
+  const out = run("lathe-feeds", { diameter: "1", material: "s1018" }, "in", lathe5);
+  assert.equal(out.primary.value, 416);
+  assert.equal(out.primary.clamped, true);
+  assert.ok(stat(out, /^Feed/).value <= 5 + 1e-9);
+  assert.match(out.warnings.join(" "), /Lathe 5 max feed is 5 IPM/);
+  assert.ok(stat(out, /G50/).value <= 416);
+  throwsFor("lathe-feeds", { ipr: "7" }, "in", lathe5, /less than one turn at 7 IPR/);
 });

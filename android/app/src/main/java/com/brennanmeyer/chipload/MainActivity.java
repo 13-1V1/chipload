@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         // App-local plugins have to be registered before the bridge starts.
         registerPlugin(PrintPlugin.class);
         registerPlugin(BuildInfoPlugin.class);
+        registerPlugin(ShareFilePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

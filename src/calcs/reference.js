@@ -6,11 +6,21 @@
 import { register } from "../app/registry.js";
 import { GDT_SYMBOLS } from "../data/gdt.js";
 import { SHCS_INCH, SHCS_METRIC } from "../data/shcs.js";
-import { MATERIALS, materialOptions, materialById } from "../data/materials-library.js";
+import { MATERIALS, MATERIAL_GROUPS, materialOptions, materialById, ratingScale } from "../data/materials-library.js";
 import { convertHardness } from "../data/hardness.js";
 import { GLOSSARY } from "../data/glossary.js";
 import { fmt, parseFraction } from "../core/format.js";
 import { lenPlaces } from "./_util.js";
+import { money } from "./_money.js";
+
+// The rating column isn't one scale: say which families share which, from the library's own ratingScale().
+function ratingScaleNote() {
+  const byScale = new Map();
+  for (const g of MATERIAL_GROUPS) byScale.set(ratingScale(g), [...(byScale.get(ratingScale(g)) || []), g.toLowerCase()]);
+  const parts = [...byScale].sort((a, b) => b[1].length - a[1].length)
+    .map(([scale, groups]) => { const g = groups.join(", "); return `${g[0].toUpperCase()}${g.slice(1)}: ${scale}.`; });
+  return `Rating is per family; compare it only within one. ${parts.join(" ")}`;
+}
 
 register({
   id: "gdt",
@@ -55,7 +65,7 @@ register({
   id: "materials",
   title: "Material library",
   short: `${MATERIALS.length} materials: machinability, SFM, chip load, density`,
-  help: "The machinability library behind the speeds & feeds tools: ratings, speeds, chip loads, density for 196 materials.",
+  help: `The machinability library behind the speeds & feeds tools: ratings, speeds, chip loads, density for ${MATERIALS.length} materials.`,
   category: "reference",
   keywords: ["material", "machinability", "library", "sfm", "4140", "6061", "304", "inconel", "titanium", "density", "rating"],
   view: "chart",
@@ -78,7 +88,7 @@ register({
       chip: mm ? fmt(m.chipIn * 25.4, 3) : fmt(m.chipIn, 4), density: mm ? m.density * 27.68 : m.density,
     }));
   },
-  note: "Conservative starting points (low end of handbook ranges). Rating is vs. B1112 = 100%. Chip load is per tooth for a 3/8\" (9.5 mm) end mill; the speeds & feeds tools scale it to your tool. Every speeds & feeds tool pulls from this list.",
+  note: `Conservative starting points (low end of handbook ranges). ${ratingScaleNote()} Chip load is per tooth for a 3/8" (9.5 mm) end mill; the speeds & feeds tools scale it to your tool. Every speeds & feeds tool pulls from this list.`,
 });
 
 register({
@@ -170,7 +180,7 @@ register({
         { label: "Cross-section", value: area, unit: c.L.area, places: p },
         { label: "Density", value: c.units === "in" ? m.density : m.density * 27.68, unit: c.units === "in" ? "lb/in³" : "g/cm³", places: 3 },
         { label: c.units === "in" ? "Per foot" : "Per meter", value: c.units === "in" ? lb / v.len * 12 : lb * 0.453592 / v.len * 1000, unit: c.units === "in" ? "lb/ft" : "kg/m", places: 3 },
-        ...(cost != null ? [{ label: "Material cost", text: `$${fmt(cost, 2)}` }] : []),
+        ...(cost != null ? [{ label: "Material cost", text: money(cost) }] : []),
       ],
       source: "weight",
       explain: [{ title: "Weight", formula: "W = area × length × density", plugged: c.units === "in"

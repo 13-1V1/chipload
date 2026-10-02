@@ -5,10 +5,17 @@
 
 import { register } from "../app/registry.js";
 import { turningTime, facingTimeRpm, facingTimeCss } from "../core/lathe.js";
-import { rpmFromSfm } from "../core/feeds.js";
+import { rpmFromSfm, sfmFromRpm } from "../core/feeds.js";
 import { fmt } from "../core/format.js";
-import { toIn, fromIn, toSfm, lenPlaces } from "./_util.js";
-import { machineFor, fitToMachine, maxRpmOf, maxFeedIpmOf, spindleSanity } from "./_machine.js";
+import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
+import { machineFor, fitToMachine, maxRpmOf, maxFeedIpmOf, maxRpmAtFeed, spindleSanity } from "./_machine.js";
+
+/** The fitted cut, or the plain reason it can't run (one turn already moves more than the machine's top feed). */
+function fitted(m, rpm, iprIn, c) {
+  const fit = fitToMachine(m, rpm, iprIn, c);
+  if (fit.cantRun) throw new Error(fit.problem);
+  return fit;
+}
 
 export default register({
   id: "lathe-cycle",
@@ -47,12 +54,13 @@ export default register({
     const m = machineFor(c, "lathe");
     const g50 = Number.isFinite(v.maxRpm) ? v.maxRpm : Infinity; // the user's clamp, never replaced by the machine's
     const warnings = [];
-    let perPass, how, spindle = null;
+    let perPass, how, spindle = null, usedRpm = null;
     if (v.op === "turn") {
       const wanted = v.speedMode === "css" ? Math.min(rpmFromSfm(sfm, odIn), g50) : v.rpm;
-      const fit = fitToMachine(m, wanted, iprIn, c);
+      const fit = fitted(m, wanted, iprIn, c);
       warnings.push(...fit.warnings, ...spindleSanity(wanted, m, "lathe", c));
       spindle = { label: "Spindle used", value: fit.rpm, clamped: fit.rpmCapped || fit.feedCapped };
+      usedRpm = fit.rpm;
       perPass = turningTime({ length: toIn(v.length, c.units), ipr: iprIn, rpm: fit.rpm });
       how = { formula: "t = L ÷ (f × N)", plugged: `= ${D(toIn(v.length, c.units))} ÷ (${f} × ${fmt(fit.rpm, 0)} RPM) = ${fmt(perPass, 3)} min` };
     } else {
@@ -60,11 +68,12 @@ export default register({
       if (v.speedMode === "css") {
         // CSS until the spindle stops climbing, then constant RPM the rest of the way in. It stops at the G50
         // typed in, or at the machine's top speed (or the speed where the feed hits its top feed), whichever is lower.
-        const machineTop = Math.min(maxRpmOf(m), Math.floor(maxFeedIpmOf(m) / iprIn));
+        const machineTop = maxRpmAtFeed(m, iprIn);
+        if (machineTop < 1) fitted(m, maxRpmOf(m), iprIn, c); // no whole RPM runs this feed per rev: says why
         const capRpm = Math.min(g50, machineTop);
         const peak = Math.min(g50, inner > 0 ? rpmFromSfm(sfm, inner) : Infinity); // fastest the cut asks for
         if (Number.isFinite(peak)) {
-          const fit = fitToMachine(m, peak, iprIn, c);
+          const fit = fitted(m, peak, iprIn, c);
           warnings.push(...fit.warnings, ...spindleSanity(peak, m, "lathe", c));
         } else if (machineTop < maxRpmOf(m)) {
           // The machine's top feed, not its top speed, is what stops the spindle at this feed per rev.
@@ -88,25 +97,36 @@ export default register({
           how = { formula: `t = π (D² − d²) ÷ (${K} × f)`, plugged: `= π ((${D(odIn)})² − (${D(inner)})²) ÷ (${inch ? 48 : 4000} × ${V} × ${f}) = ${fmt(perPass, 3)} min` };
         }
       } else {
-        const fit = fitToMachine(m, v.rpm, iprIn, c);
+        const fit = fitted(m, v.rpm, iprIn, c);
         warnings.push(...fit.warnings, ...spindleSanity(v.rpm, m, "lathe", c));
         spindle = { label: "Spindle used", value: fit.rpm, clamped: fit.rpmCapped || fit.feedCapped };
+        usedRpm = fit.rpm;
         perPass = facingTimeRpm({ outerDia: odIn, innerDia: inner, ipr: iprIn, rpm: fit.rpm });
         how = { formula: "t = (D − d) ÷ (2 × f × N)", plugged: `= (${D(odIn)} − ${D(inner)}) ÷ (2 × ${f} × ${fmt(fit.rpm, 0)} RPM) = ${fmt(perPass, 3)} min` };
       }
     }
     const total = v.passes * perPass + v.passes * v.rapid / 60;
+    // At a typed G97 RPM the surface speed follows the diameter; at the OD it is the fastest the edge runs.
+    const explain = [{ title: "Cutting time", formula: how.formula, plugged: how.plugged }];
+    let odSpeed = null;
+    if (v.speedMode === "rpm" && usedRpm != null) {
+      odSpeed = { label: "Surface speed at the OD", value: fromSfm(sfmFromRpm(usedRpm, odIn), c.units), unit: c.L.speed, places: 0 };
+      explain.push(inch
+        ? { title: "Surface speed at the OD", formula: "SFM = π × D × N ÷ 12", plugged: `= π × ${D(odIn)} × ${fmt(usedRpm, 0)} RPM ÷ 12 = ${fmt(odSpeed.value, 0)} SFM` }
+        : { title: "Surface speed at the OD", formula: "m/min = π × D × N ÷ 1000", plugged: `= π × ${D(odIn)} × ${fmt(usedRpm, 0)} RPM ÷ 1000 = ${fmt(odSpeed.value, 0)} m/min` });
+    }
     return {
       primary: { label: `${v.op[0].toUpperCase() + v.op.slice(1)} · ${v.passes} pass${v.passes > 1 ? "es" : ""}`, value: total, unit: "min", places: 2 },
       stats: [
         { label: "Per pass (cutting)", value: perPass * 60, unit: "sec", places: 1 },
         { label: "Overhead", value: v.passes * v.rapid, unit: "sec", places: 0 },
         ...(spindle ? [{ ...spindle, unit: "RPM", places: 0 }] : []),
+        ...(odSpeed ? [odSpeed] : []),
         { label: "Total", text: hms(total) },
       ],
       warnings,
       source: "advanced",
-      explain: [{ title: "Cutting time", formula: how.formula, plugged: how.plugged }],
+      explain,
       historyLabel: `${v.op} Ø${fmt(v.od, p)} ${c.L.length} · ${fmt(total, 2)} min`,
     };
   },

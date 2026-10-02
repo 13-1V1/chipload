@@ -34,7 +34,7 @@ These move to `data/*.js` with source notes (brief §7).
 
 | Brief item | Fork status |
 |---|---|
-| Speeds & feeds mill/drill | ✅ `calculateSpeedsFeeds` — SFM→RPM, chip load→IPM, radial chip thinning, machine RPM/IPM clamp |
+| Speeds & feeds mill/drill | ✅ replaced: each tool's `compute` + `src/calcs/_machine.js` (`fitToMachine`) — SFM→RPM, chip load→IPM, radial chip thinning, machine RPM/IPM clamp |
 | Tap drill lookup | ✅ table lookup (UN + metric) and by-% formula |
 | Drill chart (fraction/number/letter/decimal) | ❌ missing — no standalone chart; tap drill table has names but no full drill-size list |
 | Thread data lookup (UN coarse/fine) | ✅ `parseThreadSpec` + tables. Also estimates class limits (flagged "estimate" in sources) |

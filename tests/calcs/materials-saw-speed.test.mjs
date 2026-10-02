@@ -70,6 +70,12 @@ test("hardened tool steel: told a bi-metal blade is the wrong blade", () => {
   assert.ok(out.warnings.some((w) => /carbide-tipped blade|abrasive/.test(w)));
 });
 
+// The How-was-this-figured line names the blade makers' charts, not the generic speeds & feeds note.
+test("source is the band saw entry", () => {
+  assert.equal(run({}).source, "saw");
+  assert.equal(run({}, "mm").source, "saw");
+});
+
 // USA Band Saw Blades tooth chart: 1/4 in tube wall → 5/8 (a solid-bar rule gave 32 TPI).
 test("tube uses the wall chart", () => {
   const out = run({ material: "s1018", shape: "tube", thickness: "0.25" });

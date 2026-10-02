@@ -43,6 +43,19 @@ test("true position: bonus stops at LMC, and an out-of-size feature never passes
   assert.throws(() => truePosition({ dx: 0, dy: 0, tolerance: 0.01, mmc: 0.25, lmc: 0.245, actualSize: 0.25, internal: true }), /LMC/);
 });
 
+// The comparison band is the caller's, so it can be the same physical size in both systems: 0.000001 in = 0.0000254 mm.
+// mm 0.110, 0.150 → TP = 2√(0.110² + 0.150²) = 0.3720215 mm, 0.0000215 mm (0.00000085 in) past a 0.372 zone.
+test("true position: the on-the-line band is the caller's eps", () => {
+  const mm = { dx: 0.110, dy: 0.150, tolerance: 0.372 };
+  near(truePosition(mm).deviation, 0.3720215, 1e-7);
+  assert.equal(truePosition(mm).positionOk, false, "default band is 1e-6 (the inch band)");
+  assert.equal(truePosition({ ...mm, eps: 0.0000254 }).positionOk, true, "0.000001 in written in mm");
+  assert.equal(truePosition({ ...mm, eps: 0.0000254, tolerance: 0.3719 }).positionOk, false, "0.0001 mm out is out");
+  // size limits use the same band
+  assert.equal(truePosition({ dx: 0, dy: 0, tolerance: 0.1, mmc: 6, lmc: 6.05, actualSize: 6.05002, eps: 0.0000254 }).sizeOk, true);
+  assert.equal(truePosition({ dx: 0, dy: 0, tolerance: 0.1, mmc: 6, lmc: 6.05, actualSize: 6.05002 }).sizeOk, false);
+});
+
 // ISO 286-2:1988 Table 8, footnote 2: "Deviations for K in tolerance grades above IT8 are not defined for basic
 // sizes greater than 3 mm." Up to 3 mm the table lists K9 = 0/−25 and K10 = 0/−40 µm.
 test("K holes above IT8 exist only up to 3 mm", () => {

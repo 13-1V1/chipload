@@ -34,3 +34,10 @@ test("roll-form tap drill is larger than cut-tap drill", () => {
   near(form, 0.228, 0.001);
   assert.ok(form > tapDrillByPercent(0.25, 0.05, 65));
 });
+
+// ASME B1.1 Table 1 lists 2-4.5 and 2-1/4-4.5 UNC; Machinery's Handbook tap drills 1-25/32" and 2-1/32".
+test("half-thread UNC sizes are on the tap drill chart", () => {
+  assert.equal(lookupTapDrillUN(2, 4.5).label, '1-25/32"');
+  assert.equal(lookupTapDrillUN(2.25, 4.5).label, '2-1/32"');
+  assert.equal(lookupTapDrillUN(0.25, 20.5), null);
+});

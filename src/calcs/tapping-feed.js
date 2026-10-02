@@ -30,7 +30,7 @@ export default register({
     const m = machineFor(c, "any");
     const fit = fitToMachine(m, v.rpm, leadIn, c);
     const rpm = fit.rpm;
-    if (rpm < 1) throw new Error(`${m.name} can't feed fast enough to tap this thread at any speed — check its max feed in Shop`);
+    if (fit.cantRun) throw new Error(fit.problem);
     const feedOut = fit.feedIpm;
     const metric = c.units === "mm";
     const timeLen = metric ? 25 / 25.4 : 1; // a round length in the user's units: 25 mm or 1 in
@@ -43,7 +43,7 @@ export default register({
         { label: "Thread", text: `${t.label} · ${t.pitchLabel}` },
         { label: metric ? "Time for 25 mm of thread" : "Time for 1 in of thread", value: 60 * timeLen / feedOut, unit: "sec", places: 1 },
       ],
-      warnings: [...fit.warnings, ...spindleSanity(v.rpm, m, "any", c)],
+      warnings: [...(t.caution ? [t.caution] : []), ...fit.warnings, ...spindleSanity(v.rpm, m, "any", c)],
       source: "advanced",
       explain: [{ title: "Synchronized tapping", formula: "feed = RPM × lead   (lead = 1 ÷ TPI, or pitch for metric)",
         plugged: `= ${rpm} × ${fmt(fromIn(leadIn, c.units), 4)} ${c.L.length} = ${fmt(fromIn(feedOut, c.units), 2)} ${c.L.feed}` }],

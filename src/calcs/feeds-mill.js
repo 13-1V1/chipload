@@ -63,6 +63,7 @@ export default register({
     const programmedChip = chipIn * thin;
     // Fit inside the machine: RPM cap first, then slow the spindle for a feed cap so the chip load holds.
     const fit = fitToMachine(m, requestedRpm, v.flutes * programmedChip, c);
+    if (fit.cantRun) throw new Error(fit.problem);
     const { rpm, feedIpm } = fit;
     const slowed = fit.rpmCapped || fit.feedCapped;
     const chipCut = rpm > 0 ? feedIpm / (rpm * v.flutes) : programmedChip;   // the chip the S and F on screen actually make
@@ -70,7 +71,7 @@ export default register({
     const mrr = wocIn > 0 && docIn > 0 ? wocIn * docIn * feedIpm : null;
 
     const warnings = [...fit.warnings, ...millAdvice({ dIn, wocIn, docIn, requestedRpm, machine: m, c })];
-    const caution = toolCaution(v.material, v.toolType);
+    const caution = toolCaution(v.material, v.toolType, c.units);
     if (caution) warnings.push(caution);
     // The math will happily feed 5× faster if you type 5× the chip load — the tool won't.
     const libChip = defaults(v).chipIn * chipLoadScale(dIn);

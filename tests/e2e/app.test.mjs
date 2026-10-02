@@ -239,19 +239,37 @@ const typeInto = async (page, selector, text) => { await page.locator(selector).
 /**
  * A stand-in for the Play Billing plugin that behaves like the real one with no receipt server:
  * the verified receipt's collection is empty, and ownership is only visible through store.owned().
+ * Like the real one it has the "initiated" (a pending payment) and "receiptsReady" (Play answered the purchase
+ * query) events and a localReceipts list. Options: offline — Play never answers (initialize never settles, no
+ * product); pending — an order comes back as a pending payment (cash, slow bank), never approved.
  */
-const FAKE_PLAY_STORE = () => {
-  const cb = { productUpdated: [], approved: [], verified: [], finished: [], error: [] };
+const FAKE_PLAY_STORE = ({ offline = false, pending = false } = {}) => {
+  const cb = { productUpdated: [], approved: [], verified: [], finished: [], initiated: [], receiptsReady: [], error: [] };
   let bought = false;
   const later = (fn) => setTimeout(fn, 15);
+  const localReceipts = [];
   const receipt = { collection: [], finish() { later(() => cb.finished.forEach((f) => f(tx))); } };
   const tx = { verify() { later(() => cb.verified.forEach((f) => f(receipt))); } };
-  const product = { id: "pro_unlock", pricing: { price: "$9.99" }, get owned() { return bought; }, getOffer: () => ({ order: async () => { bought = true; later(() => cb.approved.forEach((f) => f(tx))); } }) };
+  const order = async () => {
+    if (pending) {
+      // Google Play reports a pending payment as "initiated" with isPending, and keeps it in the local receipts
+      const waiting = { transactionId: "GPA.pending-1", isPending: true, isConsumed: false, products: [{ id: "pro_unlock" }] };
+      localReceipts.push({ transactions: [waiting] });
+      later(() => cb.initiated.forEach((f) => f(waiting)));
+      return undefined;
+    }
+    bought = true; later(() => cb.approved.forEach((f) => f(tx)));
+  };
+  const product = { id: "pro_unlock", pricing: { price: "$9.99" }, get owned() { return bought; }, getOffer: () => ({ order }) };
   const chain = {};
-  for (const name of ["productUpdated", "approved", "verified", "finished"]) chain[name] = (f) => { cb[name].push(f); return chain; };
+  for (const name of ["productUpdated", "approved", "verified", "finished", "initiated", "receiptsReady"]) chain[name] = (f) => { cb[name].push(f); return chain; };
   window.__billingEvents = cb;
   window.CdvPurchase = {
-    store: { verbosity: 0, register() {}, when: () => chain, error: (f) => cb.error.push(f), initialize: async () => { later(() => cb.productUpdated.forEach((f) => f(product))); }, owned: () => bought, get: () => product, restorePurchases: async () => undefined },
+    store: {
+      verbosity: 0, register() {}, when: () => chain, error: (f) => cb.error.push(f), localReceipts,
+      initialize: offline ? () => new Promise(() => {}) : async () => { later(() => { cb.productUpdated.forEach((f) => f(product)); cb.receiptsReady.forEach((f) => f()); }); },
+      owned: () => bought, get: () => (offline ? undefined : product), restorePurchases: async () => undefined,
+    },
     ProductType: { NON_CONSUMABLE: "non consumable" }, Platform: { GOOGLE_PLAY: "android-playstore" }, LogLevel: { WARNING: 2 }, ErrorCode: { PAYMENT_CANCELLED: 6777006 },
   };
 };
@@ -286,6 +304,87 @@ test("buying Pro unlocks it right away, and the Pro screen keeps working through
   await page.evaluate(() => { location.hash = "#/calc/chamfer"; });
   await page.waitForFunction(() => document.querySelector("#answerVal")?.textContent === "0.25");
   assert.equal(await page.locator(".lock").count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+/** The Pro screen with the fake Play store in it. */
+async function openWithStore(opts, tag) {
+  const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+  await ctx.addInitScript(FAKE_PLAY_STORE, opts);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await page.goto(`${BASE}?e2e=${tag}#/pro`, { waitUntil: "load", timeout: 10000 });
+  await page.locator("#buy").waitFor();
+  return { page, ctx, errors };
+}
+const toastText = (page) => page.evaluate(() => document.querySelector(".copied")?.firstChild?.textContent || "");
+
+test("Play out of reach: Unlock and Restore say so instead of failing quietly", async () => {
+  const { page, ctx, errors } = await openWithStore({ offline: true }, "offline");
+  // billing.js MSG.noPlay, word for word
+  const NO_PLAY = "Can't reach Google Play right now — check your connection and try again";
+  assert.match(await page.locator("#proHint").textContent(), /Can't reach Google Play right now/);
+  assert.doesNotMatch(await page.locator("#buy").textContent(), /\$/, "no price until Play answers");
+  await page.locator("#buy").click();
+  await page.waitForFunction(() => !!document.querySelector(".copied"));
+  assert.equal(await toastText(page), NO_PLAY);
+  await page.locator("#restore").click();
+  await page.waitForFunction((t) => document.querySelector(".copied")?.firstChild?.textContent === t, NO_PLAY);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("chipload.settings.v1") || "{}").pro === true), false, "still not Pro");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("a pending payment says so on the Pro screen, and Pro stays locked until Play confirms it", async () => {
+  const { page, ctx, errors } = await openWithStore({ pending: true }, "pending");
+  await page.waitForFunction(() => /\$9\.99/.test(document.querySelector("#buy")?.textContent || ""));
+  await page.locator("#buy").click();
+  await page.waitForFunction(() => /Payment pending/.test(document.querySelector("#proHint")?.textContent || ""));
+  assert.equal(await page.locator("#proHint").textContent(), "Payment pending — Pro unlocks as soon as Google Play confirms it.");
+  assert.match(await toastText(page), /^Payment pending — Pro unlocks as soon as Google Play confirms it/);
+  assert.equal(await page.locator("#buy").count(), 1, "not unlocked yet");
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("chipload.settings.v1") || "{}").pro === true), false, "a pending payment is not Pro");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Save job tells the truth when the phone won't store it", async () => {
+  const { page, ctx, errors } = await open("/calc/feeds-mill", { pro: true });
+  await page.evaluate(() => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) { if (String(k).endsWith("blob.jobs")) throw new DOMException("full", "QuotaExceededError"); return set.call(this, k, v); };
+  });
+  await page.locator("#answerMore").click();
+  await page.locator('.menu [data-act="job"]').click();
+  await page.locator("#jobSave").click();
+  assert.equal(await toastText(page), "Couldn't save — the phone's storage is full or blocked.");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("a choice that's no longer offered: the select shows the same size the answer used", async () => {
+  const { page, ctx, errors } = await open("/", { pro: true });
+  // a Recent row from before with a center drill size the list no longer has. The tool's
+  // default (#3) is not the first option, so falling back to options[0] (#00) would show a
+  // different drill than the answer uses, and the old code left the select blank.
+  await page.evaluate(() => localStorage.setItem("chipload.history.center-drill", JSON.stringify([
+    { key: "old", label: "old row", primary: "", raw: { size: "#99", csk: "" }, units: "in", at: 1 }])));
+  await page.goto(`${BASE}?e2e=stale#/calc/center-drill`);
+  await page.waitForLoadState("networkidle");
+  await page.locator("details.drawer summary", { hasText: "Recent" }).click();
+  await page.locator("button[data-h]").first().click();
+  await page.waitForFunction(() => /#3\)/.test(document.querySelector("#answerLbl")?.textContent || ""));
+  const s = await page.evaluate(() => {
+    const sel = document.querySelector("#f-center-drill-size");
+    return { value: sel.value, index: sel.selectedIndex, first: sel.options[0]?.value, lbl: document.querySelector("#answerLbl").textContent };
+  });
+  assert.notEqual(s.first, "#3", "the default is not the first option, so this test can tell the two fallbacks apart");
+  assert.equal(s.value, "#3");
+  assert.equal(s.index, 4);
+  assert.match(s.lbl, /\(#3\)/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

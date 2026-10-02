@@ -82,7 +82,7 @@ export default register({
     return {
       primary: { label: `Blade speed to start · ${m.name.split(" ")[0]}`, value: fromSfm(speed.start, c.units), unit: spUnit, places: 0 },
       stats, warnings, explain,
-      source: "feeds",
+      source: "saw",
       notes,
       historyLabel: `${m.name.split(" ")[0]} · ${size} → ${blade.pitch} TPI`,
     };

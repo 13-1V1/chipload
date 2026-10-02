@@ -360,13 +360,15 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     const save = () => {
       const saved = jobs.add({ calcId: def.id, name: nameEl.value.trim() || def.title, raw: { ...raw }, units, primary: lastPrimaryText });
       closeSheet();
-      toast(saved === false ? "Couldn't save — phone storage is full or blocked" : "Job saved");
+      toast(saved === false ? "Couldn't save — the phone's storage is full or blocked." : "Job saved");
     };
     sheet.querySelector("#jobSave").addEventListener("click", save);
     nameEl.addEventListener("keydown", (ev) => { if (ev.key === "Enter") save(); });
   }
   /** Put a whole set of raw values on screen (Reset, or a history row). */
   function showValues(next) {
+    // A row saved before a choice was renamed or dropped: the same fallback buildValues uses, so field and answer agree.
+    next = sanitizeChoices(def, Object.fromEntries(def.inputs.map((i) => [i.id, String(next[i.id] ?? "")])), ctx());
     for (const input of def.inputs) {
       raw[input.id] = String(next[input.id] ?? "");
       const el = fields[input.id];
@@ -394,13 +396,13 @@ export function mountCalculator(def, root, { params = {} } = {}) {
   function recalc() {
     clearTimeout(historyTimer); // a half-typed value must never be filed under the last good answer
     const c = ctx();
-    const { values, invalid, hidden, placeholder } = buildValues(def, raw, c);
+    const { values, invalid, hidden, placeholder, raw: clean } = buildValues(def, raw, c);
     for (const input of def.inputs) {
       const el = fields[input.id];
       fieldWraps[input.id].hidden = hidden.has(input.id);
       if (typeof input.label === "function") labelTexts[input.id].nodeValue = labelOf(input, raw);
       if (typeof input.as === "function") unitLabels[input.id].textContent = unitFor(input, units, raw);
-      if (input.kind === "select" && typeof input.options === "function") syncOptions(input, el, c);
+      if (input.kind === "select" && typeof input.options === "function") syncOptions(input, el, c, clean[input.id]);
       if (el.tagName === "INPUT") {
         // a locked tool's worked-out values are part of its answer: say "auto" without the number
         const ph = locked && /^auto /.test(placeholder[input.id] ?? "") ? "auto" : placeholder[input.id];
@@ -414,7 +416,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       // Say which field, in words: the typed one first, otherwise the first one still empty.
       const typed = def.inputs.find((i) => invalid.has(i.id) && String(raw[i.id] ?? "").trim() !== "");
       const first = typed || def.inputs.find((i) => invalid.has(i.id));
-      let msg = invalidReason(first, values[first.id], raw[first.id], raw);
+      let msg = invalidReason(first, values[first.id], raw[first.id], raw, units);
       // A blank "auto" field that couldn't be worked out means another field is the real problem — the tool knows which.
       if (!typed && typeof first.auto === "function") { try { def.compute(values, c); } catch (err) { if (err?.message) msg = err.message; } }
       if (typed && more?.contains(fields[typed.id])) more.open = true;
@@ -428,15 +430,18 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     render(out, values);
   }
 
-  /** Rebuild a dynamic select's options when they change; keep the value if still valid. */
-  function syncOptions(input, el, c) {
+  /**
+   * Rebuild a dynamic select's options when they change; keep the value if still valid. A value no longer
+   * offered falls back to `computed`, the choice buildValues already worked the answer out with
+   * (sanitizeChoices: the default if offered, else the first), so the select and the answer never disagree.
+   */
+  function syncOptions(input, el, c, computed) {
     const opts = optionsFor(input, raw, c);
     const sig = JSON.stringify(opts);
-    if (el.dataset.sig === sig) return;
-    el.dataset.sig = sig;
-    fillOptions(el, opts);
-    if (!opts.some((o) => o.value === raw[input.id])) raw[input.id] = opts[0]?.value ?? "";
-    el.value = raw[input.id];
+    if (el.dataset.sig !== sig) { el.dataset.sig = sig; fillOptions(el, opts); }
+    // checked even when the list didn't change: a history row or a Reset can bring a value it doesn't hold
+    if (!opts.some((o) => o.value === raw[input.id])) raw[input.id] = opts.some((o) => o.value === computed) ? computed : (opts[0]?.value ?? "");
+    if (el.value !== raw[input.id]) el.value = raw[input.id];
   }
 
   function renderEmpty(msg) {

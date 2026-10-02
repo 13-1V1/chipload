@@ -9,16 +9,17 @@ import { fmt, parseDimension } from "../core/format.js";
 import { convertRemembering } from "../app/values.js";
 import { lenPlaces } from "./_util.js";
 
-// A unit switch must not flip the verdict. The general rule writes a converted length to four figures
-// (0.08 mm → 0.00315 in), which can push a part sitting on the line just outside it. Here a length keeps
-// seven decimals in inches (off by under 0.0000001 in) and is exact in mm (inches × 25.4 always ends).
+// The general rule writes a converted length to four figures (0.08 mm → 0.00315 in), which can push a part
+// sitting on the line just outside it. Here a length keeps up to nine decimals in inches (off by under
+// 0.0000000005 in, 1/2000 of the verdict's 0.000001 in band) and is exact in mm (inches × 25.4 always ends).
+// mm → inch still rounds, so a part within that sliver of the band's edge can still change verdict.
 function convertLength(text, from, to) {
   if (from === to || String(text ?? "").trim() === "") return text;
   return convertRemembering("length", text, from, to, (t) => {
     const v = parseDimension(t, from);
     if (!Number.isFinite(v)) return t;
     const x = to === "mm" ? v * 25.4 : v / 25.4;
-    const most = to === "mm" ? 9 : 7;
+    const most = 9;
     for (let p = 0; p < most; p++) if (Math.abs(Number(x.toFixed(p)) - x) <= Math.abs(x) * 1e-12) return fmt(x, p);
     return fmt(x, most);
   });
@@ -52,9 +53,14 @@ export default register({
     const hole = v.feature !== "pin";
     const hasLmc = useMmc && Number.isFinite(v.lmc);
     const actual = v.actual;
-    const r = truePosition({ dx: v.dx, dy: v.dy, tolerance: v.tol, mmc: useMmc ? v.mmcSize : null, lmc: hasLmc ? v.lmc : null, actualSize: useMmc ? actual : null, internal: hole });
+    // One physical comparison band, 0.000001 in (= 0.0000254 mm): the same size in both units, so the unit
+    // itself doesn't decide the verdict. (A rounded mm → inch conversion can still nudge a part sitting right
+    // at the band's edge; see convertLength.)
+    const eps = c.units === "mm" ? 0.0000254 : 0.000001;
+    const r = truePosition({ dx: v.dx, dy: v.dy, tolerance: v.tol, mmc: useMmc ? v.mmcSize : null, lmc: hasLmc ? v.lmc : null, actualSize: useMmc ? actual : null, internal: hole, eps });
     const sizeTol = hasLmc ? Math.abs(v.lmc - v.mmcSize) : 0;
-    const underMmc = useMmc && (hole ? actual < v.mmcSize : actual > v.mmcSize);
+    // Same band as the verdict: a size inside it is in size, so it gets no "rejected" warning.
+    const underMmc = useMmc && !r.sizeOk && (hole ? actual < v.mmcSize : actual > v.mmcSize);
     // A miss smaller than the last shown digit gets more digits, never "out by 0"
     const shownPlaces = (x) => { for (let q = p; q < p + 3; q++) if (Number(fmt(Math.abs(x), q)) > 0) return q; return p + 3; };
     const pp = r.positionOk ? p : shownPlaces(r.margin);
@@ -68,7 +74,8 @@ export default register({
       primary: { label, value: r.deviation, unit: u, places: pp, clamped: !r.pass },
       stats: [
         { label: "Allowed (tol + bonus)", value: r.allowed, unit: u, places: pp },
-        { label: "Margin", value: r.margin, unit: u, places: pp, clamped: r.margin < 0 },
+        // Red exactly when the headline says out of position: the verdict's band, not the raw sign.
+        { label: "Margin", value: r.margin, unit: u, places: pp, clamped: !r.positionOk },
         { label: "Radial error", value: r.radial, unit: u, places: p },
         ...(useMmc ? [{ label: "Bonus tolerance", value: r.bonus, unit: u, places: p }, { label: "Size", text: !r.sizeOk ? "OUT of limits" : hasLmc ? "Within MMC–LMC" : "Not checked (no LMC)", clamped: !r.sizeOk }] : []),
         { label: "Used", value: 100 * r.deviation / r.allowed, unit: "% of zone", places: 0 },

@@ -8,7 +8,8 @@ import { rpmFromSfm, sfmFromRpm } from "../core/feeds.js";
 import { materialOptions, materialSpeeds, toolCaution } from "../data/materials-library.js";
 import { fmt } from "../core/format.js";
 import { toIn, fromIn, toSfm, fromSfm, lenPlaces } from "./_util.js";
-import { machineFor, fitToMachine, maxRpmOf, maxFeedIpmOf, spindleSanity } from "./_machine.js";
+import { machineFor, fitToMachine, maxRpmAtFeed, spindleSanity } from "./_machine.js";
+import { latheFeedIpr } from "./_advice.js";
 
 // Beyond this most lathes can't turn (same line spindleSanity draws for "lathe").
 const LATHE_SANE_RPM = 6000;
@@ -27,8 +28,9 @@ export default register({
     { id: "material", label: "Material", kind: "select", default: "s1018", options: materialOptions() },
     { id: "toolType", label: "Insert", kind: "segment", default: "coated", options: [{ value: "hss", label: "HSS" }, { value: "carbide", label: "Carbide" }, { value: "coated", label: "Coated" }] },
     { id: "cut", label: "Cut", kind: "segment", default: "rough", options: [{ value: "rough", label: "Rough" }, { value: "finish", label: "Finish" }] },
-    { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType).sfm * 1.2, c.units), hint: "Blank = library value × 1.2 (turning runs a bit faster)." },
-    { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(raw.cut === "finish" ? 0.004 : 0.012, c.units), hint: "Blank = 0.012 rough / 0.004 finish." },
+    { id: "sfm", advanced: true, label: "Surface speed", kind: "speed", default: "", places: 0, auto: (raw, c) => fromSfm(materialSpeeds(raw.material, raw.toolType).turnSfm, c.units), hint: "Blank = library turning speed." },
+    { id: "ipr", advanced: true, label: "Feed per revolution", kind: "feedRev", default: "", places: 4, auto: (raw, c) => fromIn(latheFeedIpr(raw.material, raw.cut), c.units),
+      hint: "Blank = library rough or finish feed (lighter for hardened stock, 45 HRC and up)." },
     { id: "length", positive: true, advanced: true, label: "Length of cut", kind: "length", default: "", optional: true, placeholder: "optional — gives time per pass" },
     { id: "minDia", positive: true, advanced: true, label: "Smallest diameter this cut reaches", kind: "length", default: "", optional: true, placeholder: "optional — sets the G50", hint: "Facing toward center? Enter how far in you go. Blank = the work diameter." },
   ],
@@ -41,6 +43,7 @@ export default register({
     const requestedRpm = rpmFromSfm(sfm, dIn);
     const m = machineFor(c, "lathe");
     const fit = fitToMachine(m, requestedRpm, iprIn, c);
+    if (fit.cantRun) throw new Error(fit.problem);
     const { rpm, feedIpm: ipm } = fit;
     const slowed = fit.rpmCapped || fit.feedCapped;
     const time = Number.isFinite(v.length) ? toIn(v.length, c.units) / ipm : null;
@@ -48,10 +51,10 @@ export default register({
     // machine's top speed. It is not the machine's top speed itself — that would make the clamp do nothing.
     const smallIn = Number.isFinite(v.minDia) ? Math.min(dIn, toIn(v.minDia, c.units)) : dIn;
     const jobCap = Math.ceil(rpmFromSfm(sfm, smallIn) / 100) * 100;
-    const g50 = Math.min(jobCap, maxRpmOf(m), Math.floor(maxFeedIpmOf(m) / iprIn));
+    const g50 = Math.min(jobCap, maxRpmAtFeed(m, iprIn));
     // With no machine, a cap beyond any lathe isn't advice; the chuck's rating is the number to use.
     const g50Wild = !m && g50 > LATHE_SANE_RPM;
-    const caution = toolCaution(v.material, v.toolType);
+    const caution = toolCaution(v.material, v.toolType, c.units);
     const sanity = spindleSanity(requestedRpm, m, "lathe", c);
     return {
       primary: { label: fit.rpmCapped ? "Spindle (machine max)" : fit.feedCapped ? "Spindle (slowed for max feed)" : "Spindle", value: rpm, unit: "RPM", places: 0, clamped: slowed },

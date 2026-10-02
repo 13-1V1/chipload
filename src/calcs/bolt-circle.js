@@ -5,7 +5,7 @@
 
 import { register } from "../app/registry.js";
 import { boltCircleCoordinates, partialBoltCircleCoordinates, buildBoltGcode, buildBoltPositions, buildBoltCsv, buildBoltDxf, boltGcodeProblems, boltFeedCaution, usesOtherDialect } from "../core/boltcircle.js";
-import { fmt } from "../core/format.js";
+import { fmt, gcodeNumber } from "../core/format.js";
 import { machineFor, fitToMachine, spindleSanity } from "./_machine.js";
 
 const isCycle = (r) => r.gcode === "drill" || r.gcode === "peck";
@@ -66,19 +66,30 @@ export default register({
     if (partial && v.holes > 1 && 360 - v.sweep < step / 2) {
       warnings.push(`The last hole lands only ${fmt(360 - v.sweep, 3)}° short of the first, closer than the ${fmt(step, 3)}° between the others. For holes evenly all the way round, leave Partial circle sweep blank.`);
     }
+    // Neighbor holes closer than the last digit the coordinates are written to (0.0001 in / 0.001 mm) all land
+    // on one spot: G81 would drill the same X/Y over and over. Say so, and don't write a program for it.
+    const unitStep = c.units === "in" ? 0.0001 : 0.001;
+    const stacked = v.holes > 1 && chord < unitStep;
+    if (stacked) {
+      const check = partial ? "Check Partial circle sweep (degrees from the first hole to the last) and the number of holes." : "Check the bolt circle diameter and the number of holes.";
+      const said = `holes are less than ${fmt(unitStep, p)} ${c.L.length} apart, the last digit the coordinates are written to, so neighbors land on top of each other. ${check}`;
+      warnings.push(v.gcode === "none" ? `Neighbor ${said}` : `G-code not written: neighbor ${said}`);
+    }
     // The program is a mill program (X/Y moves; drill and peck add T M6 and G43 H). A lathe profile doesn't apply: say so and post for a mill.
     const m = machineFor(c, "mill");
     const holds = isCycle(v) ? "tool change, G43 length offset, X/Y moves" : "X/Y moves";
     if (v.gcode !== "none" && c.machine && !m) warnings.push(`${c.machine.name} is set up as a lathe. This is a mill program (${holds}) — run it on a mill. On a lathe X is a diameter, so every hole would land at half the radius.`);
-    const other = v.gcode === "none" ? null : usesOtherDialect(m?.controller);
-    const gcodeProblems = v.gcode === "none" || other ? [] : boltGcodeProblems({ mode: v.gcode, units: c.units, z: v.z, r: v.r, safeZ: v.safeZ, feed: v.feed, peck: v.peck, spindle: v.spindle });
+    const other = v.gcode === "none" || stacked ? null : usesOtherDialect(m?.controller);
+    const gcodeProblems = v.gcode === "none" || other || stacked ? [] : boltGcodeProblems({ mode: v.gcode, units: c.units, z: v.z, r: v.r, safeZ: v.safeZ, feed: v.feed, peck: v.peck, spindle: v.spindle });
     warnings.push(...gcodeProblems.map((problem) => `G-code not written: ${problem}`));
-    if (other) {
+    if (stacked) {
+      // said above; nothing to post
+    } else if (other) {
       // G54, G43 H and G81 are different words (or different things) on these controls — hand over the numbers only.
       code.push({ title: "Hole positions (X Y)", pro: true, filename: `bolt-circle-${v.holes}x${fmt(v.diameter, 3)}.txt`, mime: "text/plain", text: buildBoltPositions(coords, c.units) });
       warnings.push(`${m.name} is set to ${other}, which doesn't use Fanuc-style cycles and offsets. Here are the positions — write the cycle in your control's own format.`);
     } else if (v.gcode !== "none" && !gcodeProblems.length) {
-      let spindle = v.spindle, feed = v.feed;
+      let spindle = v.spindle, feed = v.feed, blocked = null;
       if (isCycle(v)) {
         // Fit S and F inside the machine the same way every speeds & feeds tool does: the control would clamp
         // S but run F as written, and the drill's feed per rev would jump by that ratio.
@@ -88,13 +99,21 @@ export default register({
           // A whole RPM at or under the cap, and F figured from that S so the feed per rev is exactly the one typed.
           spindle = Math.floor(fit.rpm + 1e-9);
           feed = (v.feed / v.spindle) * spindle;
-          warnings.push(...fit.warnings, `The program posts S${fmt(spindle, 0)} F${fmt(feed, c.units === "in" ? 4 : 3)} (${c.L.feed}): the same feed per rev you asked for.`);
+          // The fitted S and F are what the control reads, so they get the same check as the typed ones: a
+          // feed-capped spindle can floor under 1 RPM, and a tiny feed scaled down by the RPM cap can post as F0.
+          // Both are almost always Spindle and Feed typed into each other's boxes.
+          const swapped = `Check that Spindle and Feed aren't swapped: Spindle is RPM, Feed is per minute (${c.L.feed}).`;
+          const feedPlaces = c.units === "in" ? 4 : 3;
+          if (fit.cantRun || spindle < 1) blocked = `${fmt(v.feed, 4)} ${c.L.feed} at ${fmt(v.spindle, 0)} RPM is ${fmt(v.feed / v.spindle, feedPlaces)} ${c.L.feedRev}, more than ${m.name}'s max feed moves in a minute, so no spindle speed can run it. ${swapped}`;
+          else if (!(Number(gcodeNumber(feed, feedPlaces)) > 0)) blocked = `at ${fmt(spindle, 0)} RPM${fit.feedCapped ? "" : ` (${m.name}'s top speed)`} the same feed per rev comes to ${fmt(feed, 6)} ${c.L.feed}, which posts as zero and the control would alarm. ${swapped}`;
+          if (blocked) warnings.push(`G-code not written: ${blocked}`);
+          else warnings.push(...fit.warnings, `The program posts S${fmt(spindle, 0)} F${fmt(feed, feedPlaces)} (${c.L.feed}): the same feed per rev you asked for.`);
         }
         warnings.push(...spindleSanity(v.spindle, m, "mill", c));
         const crawl = boltFeedCaution(v.feed, v.spindle, c.units);
         if (crawl) warnings.push(crawl);
       }
-      code.push({
+      if (!blocked) code.push({
         title: v.gcode === "positions" ? "Positions, stop at each hole" : v.gcode === "peck" ? "G83 peck drill" : "G81 drill", pro: true,
         filename: `bolt-circle-${v.holes}x${fmt(v.diameter, 3)}.nc`, mime: "text/plain",
         text: buildBoltGcode(coords, { units: c.units, mode: v.gcode, z: v.z, r: v.r, feed, peck: v.peck, safeZ: v.safeZ, spindle, tool: v.tool, workOffset: v.workOffset, controller: m?.controller || "fanuc" }),

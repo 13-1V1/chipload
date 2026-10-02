@@ -3,7 +3,7 @@
 
 // Shared helpers for calculator definitions: unit conversion and thread normalization.
 
-import { parseThreadSpec } from "../core/thread.js";
+import { parseThreadSpec, threadSpecProblem } from "../core/thread.js";
 import { fmt } from "../core/format.js";
 
 export const toIn = (v, units) => (units === "in" ? v : v / 25.4);
@@ -12,10 +12,14 @@ export const toSfm = (v, units) => (units === "in" ? v : v * 3.28084);
 export const fromSfm = (v, units) => (units === "in" ? v : v / 3.28084);
 export const lenPlaces = (units) => (units === "in" ? 4 : 3);
 
-/** Parse a thread spec and return everything in inches plus the native system. Throws a friendly error. */
+/**
+ * Parse a thread spec and return everything in inches plus the native system. Throws a friendly error: the plain
+ * reason when the callout can't exist (pitch too coarse for the diameter), else how to type one. A thread that
+ * parses but is unusual carries `caution` — every tool that calls this shows it once in its warnings.
+ */
 export function threadFromSpec(text) {
   const t = parseThreadSpec(text);
-  if (!t) throw new Error("Type a thread like 1/4-20, #10-32, or M10x1.5");
+  if (!t) throw new Error(threadSpecProblem(text) || "Type a thread like 1/4-20, #10-32, or M10x1.5");
   const isUn = t.system === "un";
   const majorIn = isUn ? t.major : t.major / 25.4;
   const pitchIn = isUn ? 1 / t.tpi : t.pitch / 25.4;

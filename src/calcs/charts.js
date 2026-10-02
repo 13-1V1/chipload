@@ -9,7 +9,8 @@ import { UN_THREAD_TABLE, TAP_DRILL_UN_TABLE } from "../data/threads-un.js";
 import { METRIC_THREAD_TABLE, TAP_DRILL_METRIC_TABLE } from "../data/threads-metric.js";
 import { G_CODES, M_CODES } from "../data/gcodes.js";
 import { basicThreadGeometry } from "../core/thread.js";
-import { decimalToFraction } from "../core/format.js";
+import { tapDrillByPercent } from "../core/tapdrill.js";
+import { decimalToFraction, fmt } from "../core/format.js";
 
 register({
   id: "drill-chart",
@@ -42,23 +43,29 @@ register({
   keywords: ["tap drill chart", "tap chart", "unc", "unf", "metric tap"],
   view: "chart",
   placeholder: "Filter: 1/4-20, #10, M8",
-  columns: [
+  // The size column reads in the screen's unit: inches (#7 = 0.2010) or mm (#7 = 5.105, ASME B94.11M).
+  columns: (ctx) => [
     { key: "thread", label: "Thread" },
     { key: "drill", label: "Tap drill" },
-    { key: "dec", label: "Decimal", align: "right", places: 4 },
+    ctx?.units === "mm" ? { key: "dec", label: "mm", align: "right", places: 3 } : { key: "dec", label: "Decimal", align: "right", places: 4 },
     { key: "pct", label: "%", align: "right", places: 0 },
   ],
-  rows() {
+  rows(ctx) {
+    const mm = ctx?.units === "mm";
+    const size = (inches) => (mm ? inches * 25.4 : inches);
+    // A thread past the end of the drill chart (4-4 UNC, M64 fine) gets the 75% hole to bore, not a drill.
+    const bore = (thread, holeIn, nativeMm) => ({ thread, drill: nativeMm || mm ? `Bore to ${fmt(holeIn * 25.4, 2)} mm` : `Bore to ${fmt(holeIn, 4)} in`, dec: size(holeIn), pct: 75 });
     const un = UN_THREAD_TABLE.map(([major, tpi, name]) => {
       const row = TAP_DRILL_UN_TABLE[`${major.toFixed(4)}|${tpi}`];
-      return row ? { thread: name, drill: row[1], dec: row[0], pct: row[2], sort: major } : null;
-    }).filter(Boolean);
+      return row ? { thread: name, drill: row[1], dec: size(row[0]), pct: row[2] } : bore(name, tapDrillByPercent(major, 1 / tpi, 75), false);
+    });
     const metric = METRIC_THREAD_TABLE.map(([major, pitch, name]) => {
       const row = TAP_DRILL_METRIC_TABLE[`${major.toFixed(1)}|${pitch.toFixed(2)}`];
-      return row ? { thread: name, drill: row[1], dec: row[0] / 25.4, pct: row[2], sort: major / 25.4 } : null;
-    }).filter(Boolean);
+      return row ? { thread: name, drill: row[1], dec: size(row[0] / 25.4), pct: row[2] } : bore(name, tapDrillByPercent(major, pitch, 75) / 25.4, true);
+    });
     return [...un, ...metric];
   },
+  note: "About 75% thread with a cutting tap. A hole past the end of the drill chart reads “Bore to” the 75% size.",
 });
 
 register({

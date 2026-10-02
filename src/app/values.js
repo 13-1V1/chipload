@@ -170,7 +170,9 @@ function limitUnit(input, measure, units) {
   if (measure === "percent") return "%";
   const label = UNIT_LABEL[units === "mm" ? "mm" : "in"][measure];
   if (label) return ` ${label}`;
-  return typeof input.unit === "string" && input.unit ? ` ${input.unit}` : "";
+  // A unit that follows the system (surface finish: µin or µm) is a function of it, the same as the field's label.
+  const own = typeof input.unit === "function" ? input.unit(units === "mm" ? "mm" : "in") : input.unit;
+  return typeof own === "string" && own ? ` ${own}` : "";
 }
 
 // The unit system of the last buildValues run: the screen asks for a message right after building, so a caller

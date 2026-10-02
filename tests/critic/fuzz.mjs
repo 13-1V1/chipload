@@ -41,20 +41,15 @@ const LONG_LIST = 20;    // a list longer than this is "long": the hostile pass 
  * Fields that may sit visible without changing the answer, and why. A field listed here that comes back
  * to life is reported as stale so the list stays honest. `handoff` = an app defect reported to its owner.
  */
-const INERT = [
-  { calc: "lathe-cycle", input: "od", when: (r) => r.op === "turn" && r.speedMode === "rpm",
-    why: "handoff (lathe-cycle.js): turning at a typed G97 RPM, time = L ÷ (f × N) never reads the OD, yet the field stays on screen" },
-];
+const INERT = [];
 
 /**
  * App defects already handed to their owners (10/02/2026). They print as notes, not failures, until fixed;
  * an entry that no longer matches anything is reported as stale. Never park a new defect here without a handoff.
  */
 const KNOWN = [
-  { calc: /^(thread-mill|lathe-cycle)$/, issue: /^stat "Feed per rev of helix" value=NaN|^primary has neither a finite value nor text \(value=Infinity\)|^stat "Per pass \(cutting\)" value=Infinity|^stat "Total" shows "Infinity:NaN min"/,
-    why: "handoff (_machine.js fitToMachine, lathe-cycle.js face/groove CSS cap): a feed per rev bigger than the machine's max feed per minute floors the spindle to 0 RPM, so time reads Infinity and helix feed NaN" },
-  { calc: /^(feeds-mill|lathe-feeds|feeds-drill|job-sheet)$/, issue: /^inch unit in mm mode: "(Uncoated carbide wears|Milling at these speeds)/,
-    why: "handoff (materials team, open): pass c.units as toolCaution's third argument so the hard-material caution is metric-only in mm" },
+  { calc: /^chip-thinning$/, issue: /is 0 RPM$/,
+    why: "handoff (chip-thinning.js, mill tools owner): fitToMachine returns cantRun + problem when one turn moves more than the machine's max feed; chip-thinning still shows 'Spindle (slowed for max feed)' 0 RPM instead of `if (fit.cantRun) throw new Error(fit.problem)`" },
 ];
 
 const BAD = /\bNaN\b|undefined|Infinity|\[object|null\b/;
@@ -103,6 +98,8 @@ function scan(def, out, where, units) {
     if (s.value !== undefined && !Number.isFinite(s.value) && s.text === undefined) issues.push(`stat "${s.label}" value=${s.value}`);
     if (BAD.test(shown) || BAD.test(String(s.label))) issues.push(`stat "${s.label}" shows "${shown}"`);
     if (Number.isFinite(s.value) && s.value < 0 && /time|rpm|spindle|passes|weight|removal|speed used|teeth/i.test(s.label)) issues.push(`negative ${s.label} = ${s.value}`);
+    // A spindle the screen tells you to run at 0 RPM: a cut the machine can't make, shown as numbers.
+    if (s.value === 0 && s.unit === "RPM") issues.push(`stat "${s.label}" is 0 RPM`);
   }
   for (const w of out.warnings || []) if (BAD.test(w)) issues.push(`warning "${w.slice(0, 80)}"`);
   for (const e of out.explain || []) if (BAD.test(`${e.formula} ${e.plugged || ""}`)) issues.push(`explain "${(e.plugged || e.formula).slice(0, 90)}"`);
@@ -110,6 +107,8 @@ function scan(def, out, where, units) {
   for (const b of out.code || []) if (BAD.test(b.text)) issues.push(`code contains NaN/undefined: ${b.text.split("\n").find((l) => BAD.test(l))}`);
   for (const n of out.next || []) if (!n.add || !n.get) issues.push("next item missing text");
   if (Number.isFinite(p?.value) && p.value < 0 && /feed|time|rpm|spindle|weight|price|speed/i.test(String(p.label))) issues.push(`negative primary ${p.label} = ${p.value}`);
+  if (p?.value === 0 && p.unit === "RPM") issues.push(`primary "${p.label}" is 0 RPM`);
+  for (const b of out.code || []) if (/^[^(;]*\bS0\b(?!\.)/m.test(b.text)) issues.push(`code posts S0: ${b.text.split("\n").find((l) => /\bS0\b/.test(l))}`);
   if (units === "mm") { // metric rule: in mm every number the user reads is metric (a drill's name like 7/16" is a name, not a unit)
     const read = [`${p?.label ?? ""} ${p?.text ?? ""} ${p?.unit ?? ""}`, ...(out.stats || []).map((s) => `${s.label} ${s.text ?? ""} ${s.unit ?? ""}`), ...(out.warnings || []), ...(out.notes || []), ...(out.explain || []).map((e) => `${e.title} ${e.formula} ${e.plugged || ""}`)];
     for (const t of read) if (INCH_UNIT.test(t.replace(/20 °C \(68 °F\)/g, ""))) issues.push(`inch unit in mm mode: "${t.slice(0, 90)}"`);
