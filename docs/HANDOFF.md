@@ -13,7 +13,7 @@ Everything below is a step only you can do (your phone, your Google account, you
   1. **Print / PDF** — any tool → ⋯ → Print / PDF. Android's print screen should open with a one-page sheet: tool name, the answer, every input. Try "Save as PDF".
   2. **Save CSV / DXF** — Bolt circle (needs Pro, so do this one after step 4) → the share sheet should offer to save the file.
   3. **Shortcuts from cold** — swipe the app away, long-press the icon, pick "Tap drill": it should open straight on that tool.
-- Pro is locked in this build (billing is Play-only). To look at the Pro tools before the Play listing exists, run the app on your PC: `npm run serve`, open <http://127.0.0.1:4173/>, paste this in the browser console and reload: `localStorage.setItem("chipload.settings.v1", JSON.stringify({units:"in",theme:"dark",glove:false,pro:true}))`. The public web copy ignores that flag on purpose — Pro there would be free for anyone who knows the trick.
+- Pro can't be bought in this build (purchases only work in the Play Store version). To try the Pro tools: **Settings → Test build → Pro for testing**, or tap **Turn on Pro for testing** on the Pro screen. Flip the switch off to see what a free user sees. Only test builds have this switch: the Play Store build and the public web copy don't, because the app asks Android itself whether it's a test build.
 - Anything broken: tell me the tool name and what you typed. `adb logcat | grep -i chipload` catches crashes if the phone is plugged in with USB debugging.
 
 ## 2. Google Play developer account ($25 one time)

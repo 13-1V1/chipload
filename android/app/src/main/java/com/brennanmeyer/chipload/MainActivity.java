@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // App-local plugins have to be registered before the bridge starts.
         registerPlugin(PrintPlugin.class);
+        registerPlugin(BuildInfoPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

@@ -584,3 +584,29 @@ test("charts too wide for the phone stack into cards, and nothing is cut off", a
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+// A sideloaded test build can't buy Pro, so it gets a switch. (127.0.0.1 counts as a test build; the
+// Play Store version and the public web copy never show it — see tests/calcs/build.test.mjs.)
+test("test build: Pro can be switched on and off without a purchase", async () => {
+  const { page, ctx, errors } = await open("/calc/chamfer");
+  assert.equal(await page.locator(".lock").count(), 1, "Pro tool starts locked");
+  // the Pro screen, where a locked tool sends you, offers it
+  await page.evaluate(() => { location.hash = "#/pro"; });
+  await page.locator("#testPro").click();
+  await page.waitForFunction(() => document.querySelector("main button[disabled]")?.textContent === "Pro unlocked");
+  await page.evaluate(() => { location.hash = "#/calc/chamfer"; });
+  await page.waitForFunction(() => document.querySelector("#answerVal")?.textContent === "0.25");
+  assert.equal(await page.locator(".lock").count(), 0, "unlocked");
+  // and Settings turns it back off
+  await page.evaluate(() => { location.hash = "#/settings"; });
+  const sw = page.locator('[data-set="testpro"]');
+  await sw.waitFor();
+  assert.equal(await sw.getAttribute("aria-checked"), "true");
+  assert.match(await page.locator("#proRow").textContent(), /Pro is unlocked/);
+  await sw.click();
+  assert.match(await page.locator("#proRow").textContent(), /Chipload Pro/);
+  await page.evaluate(() => { location.hash = "#/calc/chamfer"; });
+  await page.locator(".lock").waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

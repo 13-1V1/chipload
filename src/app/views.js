@@ -11,6 +11,7 @@ import { getSettings, setSetting } from "./settings.js";
 import { loadFavorites, loadRecents, loadBlob, saveBlob } from "./store.js";
 import { COMMON_JOBS } from "./common-jobs.js";
 import { getBillingState, onBilling } from "./billing.js";
+import { isTestBuild, buildKnown } from "./build.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -98,16 +99,25 @@ export function renderSettings(root) {
       ${sw("light", "Light theme", "For bright shops and outdoors", s.theme === "light")}
     </div>
     <h2 class="sec">Pro</h2>
-    <div class="list">
-      <div class="setting"><span class="t">${s.pro ? "Pro is unlocked" : "Chipload Pro"}<span class="sub">${s.pro ? "Every tool, forever. Thank you." : "One-time unlock. No subscription, no ads."}</span></span>
-        <button type="button" class="btn ${s.pro ? "" : "primary"}" data-nav="/pro">${s.pro ? "Details" : "Unlock"}</button></div>
-    </div>
+    <div class="list" id="proRow"></div>
+    <div id="testBuild"></div>
     <h2 class="sec">About</h2>
     <div class="about">
       <p><b>Chipload</b> keeps everything on this phone. No account, no server, no analytics. Results are starting points — verify with your tooling maker and dry run.</p>
       <p>Built on <a href="https://github.com/ianarsenault-tn/Machinist_calc" rel="noopener" target="_blank">Marcos's Calculator</a> (MIT License). Fonts: IBM Plex Sans and IBM Plex Mono (SIL Open Font License).</p>
       <div class="linkrow"><a class="btn" href="#/licenses">Licenses</a><a class="btn" href="#/privacy">Privacy</a><a class="btn" href="#/calc/glossary">Shop terms</a></div>
     </div>`;
+  const drawPro = () => {
+    const pro = getSettings().pro;
+    root.querySelector("#proRow").innerHTML = `<div class="setting"><span class="t">${pro ? "Pro is unlocked" : "Chipload Pro"}<span class="sub">${pro ? "Every tool, forever. Thank you." : "One-time unlock. No subscription, no ads."}</span></span>
+        <button type="button" class="btn ${pro ? "" : "primary"}" data-nav="/pro">${pro ? "Details" : "Unlock"}</button></div>`;
+  };
+  drawPro();
+  // Test builds only (never the Play Store version): try the Pro tools before Pro can be bought.
+  buildKnown.then(() => {
+    if (!isTestBuild() || !root.isConnected) return;
+    root.querySelector("#testBuild").innerHTML = `<h2 class="sec">Test build</h2><div class="list">${sw("testpro", "Pro for testing", "Turns every Pro tool on or off. Only test builds have this; the Play Store version doesn't.", getSettings().pro)}</div>`;
+  });
   root.addEventListener("click", (e) => {
     const u = e.target.closest("[data-units]");
     if (u) { setSetting("units", u.dataset.units); root.querySelectorAll("[data-units]").forEach((b) => b.setAttribute("aria-pressed", String(b === u))); return; }
@@ -118,6 +128,7 @@ export function renderSettings(root) {
       if (t.dataset.set === "glove") setSetting("glove", on);
       if (t.dataset.set === "light") setSetting("theme", on ? "light" : "dark");
       if (t.dataset.set === "tips") setSetting("tips", on);
+      if (t.dataset.set === "testpro" && isTestBuild()) { setSetting("pro", on); drawPro(); }
       return;
     }
     const n = e.target.closest("[data-nav]");
@@ -152,11 +163,14 @@ export function renderPro(root) {
       : `<button type="button" class="btn primary block" id="buy">Unlock Pro${price}</button>
          <div style="height:10px"></div>
          <button type="button" class="btn block" id="restore">Restore purchase</button>`}
-    <p class="hint" style="margin-top:14px">${noStore ? "Pro is sold through Google Play. Install Chipload from the Play Store to unlock." : "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back."}</p>`;
+    <p class="hint" style="margin-top:14px">${noStore ? "Pro is sold through Google Play. Install Chipload from the Play Store to unlock." : "One-time purchase through Google Play. Reinstalling? Tap Restore once while online and Pro comes back."}</p>
+    ${isTestBuild() && !s.pro ? `<div class="help"><div><b>Test build.</b> Buying needs the Play Store version. To try the Pro tools now, turn Pro on here. Turn it off again in Settings → Test build.</div><div class="row"><button type="button" class="btn small primary" id="testPro">Turn on Pro for testing</button></div></div>` : ""}`;
     root.querySelector("#buy")?.addEventListener("click", () => window.chiploadBilling?.buy?.());
     root.querySelector("#restore")?.addEventListener("click", () => window.chiploadBilling?.restore?.());
+    root.querySelector("#testPro")?.addEventListener("click", () => { if (isTestBuild()) { setSetting("pro", true); draw(); } });
   };
   draw();
+  buildKnown.then(() => { if (root.isConnected) draw(); });
   // The price and the purchase arrive from Play after the screen is up: redraw in place.
   // One subscription for the life of the screen; main.js calls destroy() when you leave.
   return { destroy: onBilling(draw) };
