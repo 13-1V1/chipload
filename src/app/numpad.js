@@ -44,6 +44,7 @@ function build() {
     }
     el.append(b);
   }
+  el.inert = true;
   document.body.append(el);
 }
 
@@ -61,27 +62,43 @@ function press(k) {
   onChange?.(active);
 }
 
-/** Tell the page how tall the pad is right now: the answer bar rides on top of it and the content gets room to scroll. */
+// Phone on its side: the pad is a full-height column on the right instead of a sheet at the bottom.
+// Must match the landscape media query in app.css.
+const SIDE_PAD = window.matchMedia("(orientation: landscape) and (max-height: 500px)");
+
+/**
+ * Tell the page where the pad is. As a bottom sheet the answer bar rides on top of it and the content
+ * gets room to scroll; as a side column the stylesheet moves the page left of it (html.pad-open).
+ */
 function setPadHeight() {
-  const h = el.classList.contains("open") ? el.offsetHeight : 0;
-  document.documentElement.style.setProperty("--pad-h", `${h}px`);
+  const open = el.classList.contains("open");
+  const root = document.documentElement;
+  root.classList.toggle("pad-open", open);
+  el.inert = !open; // a hidden pad's keys stay out of reach of Tab and screen readers
+  const h = open && !SIDE_PAD.matches ? el.offsetHeight : 0;
+  root.style.setProperty("--pad-h", `${h}px`);
   document.querySelector(".answer")?.classList.toggle("up", h > 0);
   const main = document.querySelector("main");
   if (h > 0) main?.style.setProperty("padding-bottom", `calc(var(--answer-h) + var(--gutter) + ${h}px)`);
   else main?.style.removeProperty("padding-bottom"); // back to the stylesheet, which knows whether this screen has an answer bar
 }
 
-/** Keep the field being typed in inside the strip between the top bar and the answer bar + pad. */
-function keepVisible() {
+/** Keep the field being typed in between the top bar and whatever covers the screen below it. */
+function keepVisible(behavior = "smooth") {
   if (!active) return;
-  const answer = document.querySelector(".answer");
-  const covered = el.offsetHeight + (answer && !answer.hidden ? answer.offsetHeight : 0);
-  const visibleBottom = window.innerHeight - covered;
   const r = active.getBoundingClientRect();
+  let bottom = window.innerHeight;
+  const answer = document.querySelector(".answer");
+  if (answer && !answer.hidden) {
+    const a = answer.getBoundingClientRect();
+    if (a.left < r.right && a.right > r.left) bottom = Math.min(bottom, a.top);
+  }
+  // where the pad comes to rest, not how far its slide-in has got; a side column covers nothing below the field
+  if (isNumpadOpen() && !SIDE_PAD.matches) bottom = Math.min(bottom, window.innerHeight - el.offsetHeight);
   const bar = document.querySelector(".topbar");
-  const top = bar && getComputedStyle(bar).position === "sticky" ? bar.offsetHeight : 0;
-  if (r.bottom > visibleBottom - 12) window.scrollBy({ top: r.bottom - visibleBottom + 12, behavior: "smooth" });
-  else if (r.top < top + 12) window.scrollBy({ top: r.top - top - 12, behavior: "smooth" });
+  const top = bar && getComputedStyle(bar).position === "sticky" ? bar.getBoundingClientRect().bottom : 0;
+  if (r.bottom > bottom - 12) window.scrollBy({ top: r.bottom - bottom + 12, behavior });
+  else if (r.top < top + 12) window.scrollBy({ top: r.top - top - 12, behavior });
 }
 
 export function openNumpad(input, { change, next } = {}) {
@@ -92,7 +109,8 @@ export function openNumpad(input, { change, next } = {}) {
   onNext = next;
   input.dataset.active = "true";
   el.classList.add("open");
-  requestAnimationFrame(() => { setPadHeight(); keepVisible(); });
+  setPadHeight(); // the page makes room in the same frame the pad starts to slide in
+  requestAnimationFrame(() => keepVisible());
 }
 
 export function closeNumpad() {
@@ -141,7 +159,13 @@ document.addEventListener("click", (e) => {
   closeNumpad();
 });
 
-// Rotating the phone changes the pad's height: re-measure, and bring the field back into view.
+// Rotating the phone moves the pad (bottom sheet ⇄ side column) and sends several resize events while the
+// system bars settle. Re-place the pad on each one, but scroll only once the size stops changing,
+// and jump rather than glide so a half-finished scroll can't strand the field.
+let settle = null;
 window.addEventListener("resize", () => {
-  if (isNumpadOpen()) requestAnimationFrame(() => { setPadHeight(); keepVisible(); });
+  if (!isNumpadOpen()) return;
+  setPadHeight();
+  clearTimeout(settle);
+  settle = setTimeout(() => { if (isNumpadOpen()) { setPadHeight(); keepVisible("auto"); } }, 150);
 });

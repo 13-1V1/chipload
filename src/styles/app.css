@@ -221,7 +221,7 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
 .answer .empty-msg { color: var(--text-3); font-size: 1rem; }
 .answer .icon-btn { width: var(--tap); height: var(--tap); }
 .answer.up { bottom: var(--pad-h, 0px); }
-.copied { position: fixed; left: 50%; bottom: calc(var(--answer-h) + 12px); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 0.875rem; z-index: 7; animation: fade 1.6s forwards; }
+.copied { position: fixed; left: 50%; bottom: calc(var(--answer-h) + 12px + var(--pad-h, 0px)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 0.875rem; z-index: 7; animation: fade 1.6s forwards; }
 @keyframes fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 /* a toast with a way back (Undo): stays longer, and the button is a full touch target */
 .copied.has-action { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 16px; animation-duration: 5.9s; }
@@ -243,7 +243,7 @@ details.drawer .body { padding: 0 14px 14px; color: var(--text-2); font-size: 0.
 }
 .numpad button:active { background: var(--card-2); }
 .numpad button.fn { background: var(--card-2); color: var(--text-2); font-size: 1.125rem; font-family: var(--sans); }
-.numpad button.go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-family: var(--sans); font-size: 1.125rem; font-weight: 600; grid-row: span 2; }
+.numpad button.go { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-family: var(--sans); font-size: 1.125rem; font-weight: 600; }
 .numpad button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 2; }
 
 /* ── Settings ─────────────────────────────────────────────────── */
@@ -344,33 +344,69 @@ pre.code { margin: 0; padding: 12px 14px; font-size: 0.875rem; line-height: 1.5;
 }
 
 /* ── Charts / tables ──────────────────────────────────────────── */
-.table-wrap { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+/* clip, not hidden: hidden makes the box its own scroller, and the pinned header row then sits 57 px down inside it, over row 1 */
+.table-wrap { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; overflow: clip; }
 table.chart { width: 100%; border-collapse: collapse; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-table.chart th { position: sticky; top: calc(var(--tap) + 1px); background: var(--card-2); text-align: left; font: 600 0.75rem/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); padding: 12px 12px; }
+table.chart th { position: sticky; top: calc(var(--tap) + 1px + env(safe-area-inset-top, 0px)); /* just under the top bar */ background: var(--card-2); text-align: left; font: 600 0.75rem/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); padding: 12px 12px; }
 table.chart td { padding: 0 12px; height: var(--tap); border-top: 1px solid var(--line); }
 table.chart tr.hit td { background: color-mix(in srgb, var(--scribe) 12%, var(--card)); }
 table.chart td.r, table.chart th.r { text-align: right; }
+/* sentences read better (and run narrower) in the regular font than in the number font */
+table.chart td.long { font-family: var(--sans); padding-top: 8px; padding-bottom: 8px; }
+@media (max-width: 359px) {
+  table.chart { font-size: 0.9375rem; }
+  table.chart th, table.chart td { padding-left: 8px; padding-right: 8px; }
+}
+/* Too wide for the screen (tables.js decides): each row becomes a card — first column as its title,
+   the others as label + value, sentences under their label. */
+.table-wrap.stack thead { display: none; }
+.table-wrap.stack table, .table-wrap.stack tbody, .table-wrap.stack tr { display: block; }
+.table-wrap.stack tr { padding: 10px 14px; border-top: 1px solid var(--line); }
+.table-wrap.stack tbody tr:first-child { border-top: 0; }
+.table-wrap.stack tr.hit { background: color-mix(in srgb, var(--scribe) 12%, var(--card)); }
+.table-wrap.stack td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; height: auto; padding: 3px 0; border: 0; background: none; text-align: right; }
+.table-wrap.stack td::before { content: attr(data-label); flex: none; color: var(--text-2); font: 600 0.75rem/1.5 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; text-align: left; }
+.table-wrap.stack td:first-child { display: block; padding: 0 0 4px; font-weight: 600; font-size: 1.0625rem; text-align: left; }
+.table-wrap.stack td:first-child::before, .table-wrap.stack td.empty::before { content: none; }
+.table-wrap.stack td.long { display: block; text-align: left; }
+.table-wrap.stack td.long::before { display: block; }
+.table-wrap.stack td:empty { display: none; }
 
 @media (min-width: 720px) {
   main { max-width: 720px; margin: 0 auto; width: 100%; }
   .grid { grid-template-columns: repeat(4, 1fr); }
   .answer > .inner, .numpad { max-width: 720px; margin: 0 auto; }
 }
-/* Phone on its side: the pad and answer bar shrink so the field being typed in stays on screen. */
+/* Phone on its side. Stacked under the answer bar, the pad left 3–77 px for the field on real phones,
+   so here it is a full-height column on the right instead (big keys, same 4×4 layout), and the page
+   moves left of it while it's open. Keep this media query in step with SIDE_PAD in numpad.js. */
 @media (orientation: landscape) and (max-height: 500px) {
-  :root { --pad-key: 40px; --answer-h: 68px; }
-  :root[data-glove="on"] { --pad-key: 46px; }
+  :root { --answer-h: 68px; --pad-w: min(42vw, 360px); }
+  :root[data-glove="on"] { --pad-w: min(44vw, 400px); }
   .topbar { position: static; }
   table.chart th { top: 0; }
-  .numpad { gap: 4px; padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
-  .numpad button { font-size: 1.25rem; }
+  .numpad {
+    top: 0; left: auto; width: var(--pad-w); max-width: none; margin: 0;
+    border-top: 0; border-left: 1px solid var(--line);
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) 8px;
+    grid-template-rows: repeat(4, 1fr);
+    transform: translateX(100%);
+  }
+  .numpad.open { transform: none; }
+  .numpad button { min-height: 0; }
+  :root.pad-open .topbar { padding-right: calc(var(--pad-w) + var(--gutter)); }
+  :root.pad-open main { max-width: none; margin: 0; padding-right: calc(var(--pad-w) + var(--gutter)); }
+  :root.pad-open .answer, :root.pad-open .sheet { right: var(--pad-w); }
+  :root.pad-open .menu { right: calc(var(--pad-w) + var(--gutter)); }
+  :root.pad-open .copied { left: calc((100% - var(--pad-w)) / 2); }
   .answer { padding-top: 8px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
   /* no room for the label under the number — but a message ("Enter tool diameter") takes the number's place */
   .answer:not(.msg) .lbl { display: none; }
   .answer.msg .big { display: none; }
   .answer.msg .lbl { grid-column: 1; grid-row: 1; margin: 0; text-transform: none; letter-spacing: 0; }
-  .answer .val { font-size: 1.625rem; }
-  .answer .icon-btn { height: 48px; }
+  .answer .val { font-size: 1.5rem; }
+  /* the number needs the width more than the buttons do: 56 wide is still a full touch target */
+  .answer .icon-btn { height: 48px; width: 56px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .numpad, .switch, .switch::after, details.drawer summary::after { transition: none; }

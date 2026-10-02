@@ -94,7 +94,7 @@ register({
   keywords: ["g-code", "gcode", "m-code", "g81", "g83", "g43", "g54", "m03", "m30", "canned cycle", "fanuc", "haas", "what does g", "code meaning", "g code list"],
   view: "chart",
   placeholder: "Filter: G8, tap, coolant, offset",
-  columns: [{ key: "code", label: "Code" }, { key: "meaning", label: "Meaning" }, { key: "note", label: "Note" }],
+  columns: [{ key: "code", label: "Code" }, { key: "meaning", label: "Meaning", long: true }, { key: "note", label: "Note", long: true }],
   rows() {
     return [
       ...G_CODES.map(([code, meaning, group, note]) => ({ code, meaning, note: [group, note].filter(Boolean).join(" · ") })),

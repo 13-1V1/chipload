@@ -12,6 +12,7 @@ import { loadInputs, saveInputs, loadHistory, pushHistory, isFavorite, toggleFav
 import { attachNumpad, closeNumpad } from "./numpad.js";
 import { ICONS } from "./icons.js";
 import { toast, download, share, printScreen } from "./ui.js";
+import { cellAttrs, fitTable } from "./tables.js";
 import { jobs, machines } from "./shop.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -445,7 +446,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
     let html = "";
     for (const t of out.tables || []) {
       if (t.pro && !pro) { html += lockStub(t.title || "Table"); continue; }
-      html += `<div class="table-wrap">${t.title ? `<div class="table-title">${esc(t.title)}</div>` : ""}<table class="chart"><thead><tr>${t.columns.map((c) => `<th${c.align === "right" ? ' class="r"' : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${t.rows.map((r) => `<tr${r._hit ? ' class="hit"' : ""}>${t.columns.map((c) => `<td${c.align === "right" ? ' class="r"' : ""}>${esc(typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : r[c.key])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      html += `<div class="table-wrap">${t.title ? `<div class="table-title">${esc(t.title)}</div>` : ""}<table class="chart"><thead><tr>${t.columns.map((c) => `<th${cellAttrs(c)}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${t.rows.map((r) => `<tr${r._hit ? ' class="hit"' : ""}>${t.columns.map((c) => `<td${cellAttrs(c)}>${esc(typeof r[c.key] === "number" ? fmt(r[c.key], c.places ?? 4) : r[c.key])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     }
     for (const b of out.code || []) {
       if (b.pro && !pro) { html += lockStub(b.title || "Code"); continue; }
@@ -459,6 +460,7 @@ export function mountCalculator(def, root, { params = {} } = {}) {
       html += `<div class="next"><div class="next-h">Add one more number to get…</div>${out.next.map((n) => `<button type="button" class="next-item" ${n.input ? `data-focus="${esc(n.input)}"` : ""} ${n.href ? `data-href="${esc(n.href)}"` : ""}><b>${esc(n.add)}</b><span>→ ${esc(n.get)}</span></button>`).join("")}</div>`;
     }
     extras.innerHTML = html;
+    extras.querySelectorAll(".table-wrap").forEach((wrap) => fitTable(wrap));
     extras.querySelectorAll("[data-href]").forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.href; }));
     extras.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", (ev) => {
       ev.stopPropagation(); // keep the "tap outside closes the pad" handler from undoing the focus below

@@ -458,20 +458,58 @@ test("web copy works with no signal after one visit", async () => {
   await ctx.close();
 });
 
-test("rotating the phone with the pad open keeps the field in view and the answer bar on the pad", async () => {
+// Stacked under the answer bar, a sideways pad left 3–77 px for the field on real phones (S23: 77, with a
+// larger display size or glove mode: 3–53). On its side the pad is a full-height column on the right.
+const SIDEWAYS = [[915, 365], [780, 330], [740, 300], [640, 280]];
+
+test("phone on its side: the pad is a column on the right and the field being typed in stays in view", async () => {
+  for (const glove of [false, true]) {
+    for (const [w, h] of SIDEWAYS) {
+      const { page, ctx, errors } = await open("/calc/lathe-cycle", { pro: true });
+      if (glove) await page.locator("#gloveBtn").click();
+      await page.locator("#f-lathe-cycle-passes").click(); // low on the form
+      await page.waitForSelector(".numpad.open");
+      await page.setViewportSize({ width: w, height: h }); // rotate with the pad up
+      await page.waitForTimeout(700);
+      const where = `${w}x${h}${glove ? " glove" : ""}`;
+      const box = await page.evaluate(() => {
+        const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+        const pad = r(".numpad"), bar = r(".answer"), field = r('[data-active="true"]'), key = r('.numpad [data-key="5"]');
+        return { pad, bar, field, key, vh: innerHeight };
+      });
+      assert.ok(box.pad.top <= 1 && box.pad.bottom >= box.vh - 1, `${where}: pad runs the full height`);
+      assert.ok(Math.abs(box.bar.right - box.pad.left) <= 1 && Math.abs(box.bar.bottom - box.vh) <= 1, `${where}: answer bar sits left of the pad, at the bottom`);
+      assert.ok(box.field.right <= box.pad.left, `${where}: the form moved left of the pad`);
+      assert.ok(box.field.top >= 0 && box.field.bottom <= box.bar.top + 1, `${where}: field ${Math.round(box.field.top)}–${Math.round(box.field.bottom)} is above the answer bar at ${Math.round(box.bar.top)}`);
+      assert.ok(box.key.height >= 48 && box.key.width >= 48, `${where}: keys are full touch targets (${Math.round(box.key.width)}×${Math.round(box.key.height)})`);
+      // the top-bar buttons aren't hiding under the pad
+      const glovePos = await page.evaluate(() => { window.scrollTo(0, 0); const g = document.querySelector("#gloveBtn").getBoundingClientRect(); return { right: g.right, padLeft: document.querySelector(".numpad").getBoundingClientRect().left }; });
+      assert.ok(glovePos.right <= glovePos.padLeft + 1, `${where}: glove button is clear of the pad`);
+      // the whole answer fits next to the buttons
+      const val = await page.evaluate(() => { const v = document.querySelector("#answerVal"); return { full: v.scrollWidth <= v.clientWidth + 1, text: v.textContent }; });
+      assert.ok(val.full, `${where}: answer "${val.text}" isn't cut off`);
+      // and back upright: a bottom sheet again, with the bar riding on it
+      await page.locator("#f-lathe-cycle-passes").click();
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.waitForTimeout(700);
+      const up = await page.evaluate(() => {
+        const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+        const pad = r(".numpad"), bar = r(".answer"), field = r('[data-active="true"]');
+        return { gap: Math.round(pad.top - bar.bottom), padLeft: pad.left, fieldOk: field.top >= 0 && field.bottom <= bar.top + 1 };
+      });
+      assert.ok(Math.abs(up.gap) <= 1 && Math.abs(up.padLeft) <= 1 && up.fieldOk, `${where} → upright: ${JSON.stringify(up)}`);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  }
+});
+
+test("sideways: a bad entry still gets its message in the short answer bar", async () => {
   const { page, ctx, errors } = await open("/calc/feeds-mill");
   await page.locator("#f-feeds-mill-flutes").click();
   await page.waitForSelector(".numpad.open");
   await page.setViewportSize({ width: 812, height: 375 });
-  await page.waitForTimeout(700);
-  const box = await page.evaluate(() => {
-    const r = (sel) => document.querySelector(sel).getBoundingClientRect();
-    const pad = r(".numpad"), bar = r(".answer"), field = r('[data-active="true"]');
-    return { gap: Math.round(pad.top - bar.bottom), barTop: Math.round(bar.top), fieldTop: Math.round(field.top), fieldBottom: Math.round(field.bottom), padBottom: Math.round(pad.bottom), vh: innerHeight };
-  });
-  assert.ok(Math.abs(box.gap) <= 1, `answer bar sits on the pad (gap ${box.gap})`);
-  assert.ok(box.fieldTop >= 0 && box.fieldBottom <= box.barTop + 1, `field ${box.fieldTop}–${box.fieldBottom} is above the answer bar at ${box.barTop}`);
-  // an invalid entry still gets its message in the short landscape bar
+  await page.waitForTimeout(400);
   await page.locator('.numpad [data-key="bksp"]').dispatchEvent("pointerdown");
   await page.waitForTimeout(60);
   const msg = await page.evaluate(() => { const el = document.querySelector("#answerLbl"); return { text: el.textContent, shown: getComputedStyle(el).display !== "none" && el.getBoundingClientRect().height > 0 }; });
@@ -488,6 +526,61 @@ test("bolt circle: no -0 in the table, and the drill program calls the tool befo
   const code = await page.locator("pre.code").textContent();
   assert.ok(code.indexOf("G49") < code.indexOf("T4 M6") && code.indexOf("T4 M6") < code.indexOf("G43 H4 Z1.0"), code);
   assert.ok(!code.includes("G0 Z0.1"), "no drop to the R plane before the cycle");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+// The header row once sat 57 px down inside the chart's box, over the first row (G00), and scrolled away.
+test("charts: the header row sits above row 1 and stays pinned under the top bar while scrolling", async () => {
+  for (const [w, h] of [[375, 812], [812, 375]]) {
+    for (const id of ["gcode-ref", "drill-chart"]) {
+      const { page, ctx, errors } = await open(`/calc/${id}`);
+      await page.setViewportSize({ width: w, height: h });
+      const where = `${id} ${w}x${h}`;
+      const at = () => page.evaluate(() => {
+        const th = document.querySelector("table.chart thead th").getBoundingClientRect();
+        const row1 = document.querySelector("#cbody tr").getBoundingClientRect();
+        const bar = document.querySelector(".topbar");
+        const pinnedAt = getComputedStyle(bar).position === "sticky" ? bar.getBoundingClientRect().bottom : 0;
+        return { thTop: th.top, thBottom: th.bottom, row1Top: row1.top, pinnedAt };
+      });
+      const top = await at();
+      assert.ok(Math.abs(top.thBottom - top.row1Top) <= 1, `${where}: header ends where row 1 starts (${top.thBottom} vs ${top.row1Top})`);
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await page.waitForTimeout(100);
+      const scrolled = await at();
+      assert.ok(Math.abs(scrolled.thTop - scrolled.pinnedAt) <= 1, `${where}: header pinned at ${scrolled.pinnedAt}, found at ${scrolled.thTop}`);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  }
+});
+
+// At 375 px the bolt chart's Close / Normal / Loose drill columns were cut off with no way to reach them.
+test("charts too wide for the phone stack into cards, and nothing is cut off", async () => {
+  for (const w of [375, 320]) {
+    const { page, ctx, errors } = await open("/calc/shcs?q=1%2F4");
+    await page.setViewportSize({ width: w, height: 812 });
+    await page.waitForTimeout(300);
+    const info = await page.evaluate(() => {
+      const wrap = document.querySelector(".table-wrap"), table = wrap.querySelector("table");
+      const first = document.querySelector("#cbody tr");
+      const cells = [...first.querySelectorAll("td")].map((td) => { const r = td.getBoundingClientRect(); return { label: td.dataset.label, text: td.textContent, inside: r.right <= wrap.getBoundingClientRect().right + 1 && r.left >= wrap.getBoundingClientRect().left - 1 }; });
+      return { stacked: wrap.classList.contains("stack"), fits: table.scrollWidth <= wrap.clientWidth + 1, cells };
+    });
+    assert.equal(info.stacked, true, `${w}px: the 7-column chart stacks`);
+    assert.equal(info.fits, true, `${w}px: nothing runs past the box`);
+    assert.equal(info.cells[0].text, "1/4 SHCS", "typing 1/4 puts the 1/4 bolt first");
+    for (const c of info.cells) assert.ok(c.inside, `${w}px: ${c.label} "${c.text}" is on screen`);
+    assert.deepEqual(info.cells.slice(4).map((c) => c.label), ["Close fit", "Normal", "Loose"]);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+  // a chart that fits stays a table: the drill chart, even at 320 px
+  const { page, ctx, errors } = await open("/calc/drill-chart");
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => document.querySelector(".table-wrap").classList.contains("stack")), false);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

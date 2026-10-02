@@ -9,6 +9,7 @@ import { getSettings, UNIT_LABEL } from "./settings.js";
 import { ICONS } from "./icons.js";
 import { pushRecent } from "./store.js";
 import { helpSeen, markHelpSeen } from "./render.js";
+import { cellAttrs, fitTable } from "./tables.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -26,7 +27,7 @@ export function mountChart(def, root, { params = {} } = {}) {
     <label class="search"><span class="sr-only">Filter rows</span>${ICONS.search}<input id="cq" type="search" placeholder="${esc(def.placeholder || "Filter…")}" autocomplete="off" autocapitalize="off" value="${esc(params.q || "")}"></label>
     ${def.note ? `<p class="hint" style="margin:10px 0 0">${esc(def.note)}</p>` : ""}
     <div style="height:12px"></div>
-    ${locked ? `<div class="lock"><div><b>Pro chart</b><br><span>${esc(def.short || "")}</span></div><a class="btn primary" href="#/pro">Unlock Pro</a></div>` : `<div class="table-wrap"><table class="chart"><thead><tr>${cols.map((c) => `<th${c.align === "right" ? ' class="r"' : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody id="cbody"></tbody></table></div>`}`;
+    ${locked ? `<div class="lock"><div><b>Pro chart</b><br><span>${esc(def.short || "")}</span></div><a class="btn primary" href="#/pro">Unlock Pro</a></div>` : `<div class="table-wrap"><table class="chart"><thead><tr>${cols.map((c) => `<th${cellAttrs(c)}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody id="cbody"></tbody></table></div>`}`;
 
   const helpHost = root.querySelector("#chartHelp");
   const helpText = def.help || def.short || "";
@@ -46,15 +47,18 @@ export function mountChart(def, root, { params = {} } = {}) {
   function draw() {
     const term = q.value.trim().toLowerCase();
     const terms = term.split(/\s+/).filter(Boolean);
-    // Exact cell matches float to the top and get highlighted; substring matches follow in chart order.
-    const exact = [], partial = [];
+    // Exact cell matches float to the top and get highlighted, then rows whose name starts with what was typed
+    // ("1/4" → the 1/4 bolt before #5, whose counterbore is 1/4"), then the rest in chart order.
+    const exact = [], leading = [], partial = [];
     rows.forEach((r, i) => {
       if (terms.length && !terms.every((t) => text[i].includes(t))) return;
       const isExact = terms.length && cols.some((c) => terms.includes(cell(r, c).toLowerCase()));
-      (isExact ? exact : partial).push(`<tr${isExact ? ' class="hit"' : ""}>${cols.map((c) => `<td${c.align === "right" ? ' class="r"' : ""}>${esc(cell(r, c))}</td>`).join("")}</tr>`);
+      const bucket = isExact ? exact : terms.length && cell(r, cols[0]).toLowerCase().startsWith(terms[0]) ? leading : partial;
+      bucket.push(`<tr${isExact ? ' class="hit"' : ""}>${cols.map((c) => `<td${cellAttrs(c)}>${esc(cell(r, c))}</td>`).join("")}</tr>`);
     });
-    const html = exact.join("") + partial.join("");
+    const html = exact.join("") + leading.join("") + partial.join("");
     body.innerHTML = html || `<tr><td colspan="${cols.length}" class="empty">Nothing matches “${esc(q.value)}”.</td></tr>`;
+    fitTable(root.querySelector(".table-wrap"), { keepStacked: true });
   }
   q.addEventListener("input", draw);
   draw();

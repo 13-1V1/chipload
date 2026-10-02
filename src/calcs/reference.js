@@ -22,7 +22,7 @@ register({
   view: "chart",
   pro: true,
   placeholder: "Filter: runout, MMC, datum",
-  columns: [{ key: "sym", label: "Sym" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }, { key: "meaning", label: "Means" }],
+  columns: [{ key: "sym", label: "Sym" }, { key: "name", label: "Name", long: true }, { key: "type", label: "Type" }, { key: "meaning", label: "Means", long: true }],
   rows: () => GDT_SYMBOLS.map((s) => ({ ...s, meaning: s.datum ? `${s.meaning} Datum: ${s.datum}.` : s.meaning })),
   note: "ASME Y14.5-2018, paraphrased. Form controls need no datum; orientation, location, and runout do.",
 });
@@ -164,7 +164,7 @@ register({
   keywords: ["glossary", "terms", "what is", "what does", "meaning", "definition", "sfm", "ipm", "chip load", "beginner", "learn"],
   view: "chart",
   placeholder: "Find a term: sfm, chip load, tenths",
-  columns: [{ key: "term", label: "Term" }, { key: "name", label: "Stands for" }, { key: "meaning", label: "Means" }],
+  columns: [{ key: "term", label: "Term" }, { key: "name", label: "Stands for", long: true }, { key: "meaning", label: "Means", long: true }],
   rows: () => GLOSSARY.map(([term, name, meaning]) => ({ term, name, meaning })),
   note: "Written for people new to the shop. Pros: skip it, or send it to the new guy.",
 });

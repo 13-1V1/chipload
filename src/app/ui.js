@@ -52,6 +52,18 @@ export async function share({ title, text, url }) {
   }
 }
 
+/** Run `fn` once the page has been covered by another screen and then shown again. */
+function whenBackInFront(fn) {
+  let covered = document.visibilityState === "hidden";
+  const onChange = () => {
+    if (document.visibilityState === "hidden") { covered = true; return; }
+    if (!covered) return;
+    document.removeEventListener("visibilitychange", onChange);
+    fn();
+  };
+  document.addEventListener("visibilitychange", onChange);
+}
+
 /**
  * Print the current screen as a setup sheet (the print stylesheet lays it out).
  * Android's WebView has no window.print — the app's own Print plugin hands the page to the system print dialog.
@@ -64,8 +76,9 @@ export async function printScreen(title = "Chipload") {
   try {
     if (window.chiploadNative?.print) {
       await window.chiploadNative.print(title);
-      // the system dialog reads the page after this call returns; give it a moment before folding the drawers back
-      setTimeout(restore, 1500);
+      // Android's print screen covers the app and lays the page out again every time the paper size or
+      // "Save as PDF" is picked, so the drawers stay open until the app is back in front.
+      whenBackInFront(restore);
       return;
     }
     if (typeof window.print !== "function") throw new Error("no print support");
